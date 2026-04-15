@@ -283,3 +283,38 @@ python research_core\backtest_adapter\example_gm_plan.py gm_style_rotation
 - contracts.attribution.AttributionReport
 
 并形成网站前端首版可展示字段。
+
+## 14. 掘金导出结果解析器首版
+
+本轮已新增首版掘金导出 ZIP 解析能力，可将净值、持仓、交易三类 CSV 映射为标准化回测结果与基础收益归因。
+
+### 14.1 新增模块
+
+- research_core/backtest_adapter/gm_export_parser.py
+- research_core/backtest_adapter/example_parse_gm_export.py
+
+### 14.2 当前能力
+
+- 自动识别 ZIP 中的净值数据、持仓数据、交易数据 CSV
+- 生成标准化 PerformanceMetrics
+- 生成标准化 EquityCurve、TradeRecord、HoldingSnapshot
+- 生成基础 AttributionReport
+- 可将解析结果写入 data/gm_exports/33_parsed_backtest.json
+
+### 14.3 已完成的真实数据验证
+
+已使用桌面导出包 C:\Users\admin\Desktop\33.zip 验证，导出包包含：
+
+- 持仓数据_20241231_20251231.csv
+- 净值数据_20241231_20251231.csv
+- 交易数据_20241231_20251231.csv
+
+这三份数据已足够支撑 BacktestResult V1 与 AttributionReport V1。
+
+### 14.4 后续重点
+
+下一步继续补足：
+
+- 更精确的收益归因方法
+- 网站前端展示字段映射
+- 多策略导出批量解析
