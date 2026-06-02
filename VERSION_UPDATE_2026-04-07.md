@@ -1,18 +1,18 @@
 # AgentMatrix Research Core 升级记录
 
 **日期**: 2026-04-07  
-**范围**: `agentmatrix-research-core` 首次拆分落地与第二阶段结构重组  
+**范围**: `agentmatrix-research` 首次拆分落地与第二阶段结构重组  
 **当前版本基线**: `0911a14` (`refactor: establish research core package structure`)
 
 ## 1. 本次升级目的
 
-本次升级的目标是把原先混合在 `agentmatrix-web` 仓库中的研究相关能力，独立沉淀到新的 `agentmatrix-research-core` 仓库中，降低前台网站代码、支付登录逻辑、营销页面对研究系统的语义干扰，提升研究协作效率、Agent 解析准确率和后续模块化演进能力。
+本次升级的目标是把原先混合在 `agentmatrix-web` 仓库中的研究相关能力，独立沉淀到新的 `agentmatrix-research` 仓库中，降低前台网站代码、支付登录逻辑、营销页面对研究系统的语义干扰，提升研究协作效率、Agent 解析准确率和后续模块化演进能力。
 
 ## 2. 已完成事项
 
 ### 2.1 新仓库建立与远程同步
 
-- 新建 GitHub 仓库：`https://github.com/AgentMatrixLab/agentmatrix-research-core`
+- 新建 GitHub 仓库：`https://github.com/AgentMatrixLab/agentmatrix-research`
 - 本地仓库已初始化并连接远程 `origin`
 - 主分支统一为 `main`
 - 已完成首批迁移提交：`60b8843` `chore: bootstrap research core repository`
@@ -55,7 +55,7 @@
 当前仓库已经建立与新架构图相匹配的基础骨架：
 
 ```text
-agentmatrix-research-core/
+agentmatrix-research/
   common/
   deerflow/
     research_copilot/
@@ -137,7 +137,7 @@ python -m py_compile common\paths.py deerflow\research_copilot\document_normaliz
 
 原因：
 
-- 本次所有结构化改造都发生在 `agentmatrix-research-core`
+- 本次所有结构化改造都发生在 `agentmatrix-research`
 - 当前 `agentmatrix-web` 仓库的站点入口、页面、部署逻辑未被改动
 - 现有线上网站继续以当前 web 仓为准运行
 
@@ -164,7 +164,7 @@ python -m py_compile common\paths.py deerflow\research_copilot\document_normaliz
 ## 9. 团队协作建议
 
 - `agentmatrix-web` 继续承接线上网站和前台产品迭代
-- `agentmatrix-research-core` 继续承接研究编排、数据处理、策略引擎和研究服务能力
+- `agentmatrix-research` 继续承接研究编排、数据处理、策略引擎和研究服务能力
 - 与研究内核直接相关的新增代码，默认进入新仓
 - 对外页面、登录、支付、展示、运营后台默认留在 web 仓
 
@@ -172,7 +172,7 @@ python -m py_compile common\paths.py deerflow\research_copilot\document_normaliz
 
 一句话总结：
 
-> `agentmatrix-research-core` 已经从“新建空仓”升级成“可开始承接研究开发的独立仓库”，并完成了首批研究模块迁移与结构骨架搭建；当前网站不受影响，后续研究开发应优先在新仓推进。
+> `agentmatrix-research` 已经从“新建空仓”升级成“可开始承接研究开发的独立仓库”，并完成了首批研究模块迁移与结构骨架搭建；当前网站不受影响，后续研究开发应优先在新仓推进。
 
 ## 11. 第三阶段启动：策略统一接口 / 回测 / 归因骨架
 

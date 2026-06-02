@@ -1,4 +1,4 @@
-# AgentMatrix Research Core
+# AgentMatrix Research
 
 > Quantitative research framework: unified contracts, backtest adapters, strategy engine, and factor library for systematic alpha discovery.
 
@@ -6,7 +6,7 @@
 
 ## What Is This?
 
-`agentmatrix-research-core` is the research backbone of [AgentMatrixLab](https://agentmatrixlab.com). It provides:
+`agentmatrix-research` is the research backbone of [AgentMatrixLab](https://agentmatrixlab.com). It provides:
 
 - **Unified Contracts** — Standardized data structures for strategies, backtests, and attribution
 - **Backtest Adapters** — Pluggable adapters for backtest engines (GM/掘金, RQAlpha, with more to come)
@@ -18,7 +18,7 @@
 ## Project Structure
 
 ```
-agentmatrix-research-core/
+agentmatrix-research/
 ├── common/                  # Shared utilities (paths, configs)
 ├── contracts/               # Data contracts & interfaces
 │   ├── strategy.py          #   StrategyMetadata, StrategyDecision, TargetPosition
@@ -52,8 +52,8 @@ agentmatrix-research-core/
 ### Install
 
 ```bash
-git clone https://github.com/AgentMatrixLab/agentmatrix-research-core.git
-cd agentmatrix-research-core
+git clone https://github.com/AgentMatrixLab/agentmatrix-research.git
+cd agentmatrix-research
 pip install -r scripts/requirements.txt
 ```
 
