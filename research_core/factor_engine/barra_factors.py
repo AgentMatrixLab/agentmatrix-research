@@ -53,8 +53,13 @@ class MomentumFactor(FactorBase):
     def compute(self, data: pd.DataFrame, **kwargs) -> FactorResult:
         self.validate_input(data, ["close", "symbol"])
         df = data.copy()
+        max_days = df.groupby("symbol")["close"].transform("count").max()
+        effective_lookback = min(self.lookback, max(max_days - self.skip_days - 1, 10))
+        skip = min(self.skip_days, effective_lookback // 4)
+        if effective_lookback + skip >= max_days:
+            effective_lookback = max(max_days - skip - 1, 10)
         df["mom"] = df.groupby("symbol")["close"].transform(
-            lambda x: x.shift(self.skip_days) / x.shift(self.lookback) - 1
+            lambda x: x.shift(skip) / x.shift(effective_lookback + skip) - 1
         )
         df["factor"] = df["mom"]
 
@@ -134,19 +139,25 @@ class ValueFactor(FactorBase):
             factor_id="barra_value",
             name="Barra Value (BP)",
             category="barra",
-            description="Book-to-Price ratio. Captures the value premium.",
-            formula="1/PB",
+            description="Book-to-Price ratio. Captures the value premium. Uses PB if available, otherwise (total_assets - total_liab) / total_mv.",
+            formula="1/PB or (total_assets - total_liab) / total_mv",
             lookback_days=0,
         )
         super().__init__(meta)
 
     def compute(self, data: pd.DataFrame, **kwargs) -> FactorResult:
         self.validate_input(data, ["symbol"])
-        pb_col = kwargs.get("pb_col", "pb")
-        if pb_col not in data.columns:
-            raise ValueError(f"Column '{pb_col}' not found. Provide PB data or specify pb_col.")
         df = data.copy()
-        df["factor"] = 1.0 / df[pb_col].replace({0: np.nan})
+        pb_col = kwargs.get("pb_col", "pb")
+        if pb_col in df.columns:
+            df["factor"] = 1.0 / df[pb_col].replace({0: np.nan})
+        elif "total_assets" in df.columns and "total_liab" in df.columns and "total_mv" in df.columns:
+            book_value = df["total_assets"] - df["total_liab"]
+            df["factor"] = book_value / df["total_mv"].replace(0, np.nan)
+        else:
+            raise ValueError(
+                f"Column '{pb_col}' not found. Provide PB data, or (total_assets, total_liab, total_mv) columns."
+            )
 
         latest_date = df["date"].max() if "date" in df.columns else "N/A"
         values = df.set_index("symbol")["factor"]
@@ -163,19 +174,24 @@ class EarningsYieldFactor(FactorBase):
             factor_id="barra_earnings_yield",
             name="Barra Earnings Yield (EP)",
             category="barra",
-            description="Earnings-to-Price ratio. Captures the earnings yield premium.",
-            formula="1/PE_TTM",
+            description="Earnings-to-Price ratio. Uses PE_TTM if available, otherwise net_profit / total_mv.",
+            formula="1/PE_TTM or net_profit / total_mv",
             lookback_days=0,
         )
         super().__init__(meta)
 
     def compute(self, data: pd.DataFrame, **kwargs) -> FactorResult:
         self.validate_input(data, ["symbol"])
-        pe_col = kwargs.get("pe_col", "pe_ttm")
-        if pe_col not in data.columns:
-            raise ValueError(f"Column '{pe_col}' not found. Provide PE data or specify pe_col.")
         df = data.copy()
-        df["factor"] = 1.0 / df[pe_col].replace({0: np.nan})
+        pe_col = kwargs.get("pe_col", "pe_ttm")
+        if pe_col in df.columns:
+            df["factor"] = 1.0 / df[pe_col].replace({0: np.nan})
+        elif "net_profit" in df.columns and "total_mv" in df.columns:
+            df["factor"] = df["net_profit"] / df["total_mv"].replace(0, np.nan)
+        else:
+            raise ValueError(
+                f"Column '{pe_col}' not found. Provide PE data, or (net_profit, total_mv) columns."
+            )
 
         latest_date = df["date"].max() if "date" in df.columns else "N/A"
         values = df.set_index("symbol")["factor"]
