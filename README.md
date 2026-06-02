@@ -43,6 +43,15 @@ agentmatrix-research-core/
 
 ## Quick Start
 
+### Workflow Summary
+
+1. **Fork** the repository to your GitHub account
+2. **Clone** your fork locally
+3. **Create a feature branch**: `git checkout -b feature/your-feature-name`
+4. **Make changes** and test locally
+5. **Commit** and **push** to your fork
+6. **Create a Pull Request** to the original repository
+
 ### Prerequisites
 
 - Python 3.10+
