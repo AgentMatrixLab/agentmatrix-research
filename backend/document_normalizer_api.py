@@ -1,6 +1,5 @@
 import json
 import os
-import re
 from pathlib import Path
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
@@ -27,18 +26,7 @@ def load_supabase_credentials():
     if url and key:
         return url.rstrip("/"), key
 
-    config_path = project_root / "config.js"
-    if not config_path.exists():
-        raise RuntimeError("Supabase configuration not found")
-
-    config_text = config_path.read_text(encoding="utf-8")
-    url_match = re.search(r"URL:\s*'([^']+)'", config_text)
-    key_match = re.search(r"ANON_KEY:\s*'([^']+)'", config_text)
-
-    if not url_match or not key_match:
-        raise RuntimeError("Supabase configuration incomplete")
-
-    return url_match.group(1).rstrip("/"), key_match.group(1)
+    raise RuntimeError("Supabase credentials not configured in environment")
 
 
 def build_recent_date_keys(days):

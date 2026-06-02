@@ -1,14 +1,17 @@
+import argparse
+from pathlib import Path
+
 import pandas as pd
 import akshare as ak
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import numpy as np
-import os
-from datetime import datetime
+
+from common.paths import data_path
 
 # Settings
-FILE_PATH = r'C:\Users\admin\Desktop\worth.csv'
-OUTPUT_IMAGE = r'C:\Users\admin\Desktop\fund_analysis.png'
+DEFAULT_INPUT_FILE = data_path('fund_sample.csv')
+DEFAULT_OUTPUT_IMAGE = data_path('fund_analysis.png')
 BENCHMARK_CODE = "sh000300" # CSI 300
 
 # Plot Style
@@ -137,7 +140,7 @@ def calculate_metrics(df):
         "yearly_returns": yearly_returns
     }
 
-def plot_chart(fund_df, bench_df, metrics):
+def plot_chart(fund_df, bench_df, metrics, output_image):
     # Merge for alignment
     df = pd.merge(fund_df, bench_df, on='date', how='inner')
     
@@ -192,12 +195,27 @@ def plot_chart(fund_df, bench_df, metrics):
     ax.legend(loc='upper left', bbox_to_anchor=(0.25, 0.98), frameon=True)
     
     plt.tight_layout()
-    plt.savefig(OUTPUT_IMAGE, dpi=300)
-    print(f"Chart saved to: {OUTPUT_IMAGE}")
+    output_path = Path(output_image)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    plt.savefig(output_path, dpi=300)
+    print(f"Chart saved to: {output_path}")
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--input",
+        default=str(DEFAULT_INPUT_FILE),
+        help="Path to the fund CSV file to analyze.",
+    )
+    parser.add_argument(
+        "--output",
+        default=str(DEFAULT_OUTPUT_IMAGE),
+        help="Path to save the generated analysis chart.",
+    )
+    args = parser.parse_args()
+
     print("Loading data...")
-    fund_df = load_fund_data(FILE_PATH)
+    fund_df = load_fund_data(args.input)
     print(f"Fund Data: {len(fund_df)} records, from {fund_df['date'].min().date()} to {fund_df['date'].max().date()}")
     
     metrics = calculate_metrics(fund_df)
@@ -205,7 +223,7 @@ def main():
     bench_df = get_benchmark_data(fund_df['date'].min(), fund_df['date'].max())
     
     if bench_df is not None and not bench_df.empty:
-        plot_chart(fund_df, bench_df, metrics)
+        plot_chart(fund_df, bench_df, metrics, args.output)
         print("\nAnalysis Results:")
         print(f"Total Return: {metrics['total_ret']:.2%}")
         print(f"Annualized Return: {metrics['annual_ret']:.2%}")

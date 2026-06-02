@@ -1,4 +1,4 @@
-﻿# AgentMatrix Research Core 升级记录
+# AgentMatrix Research Core 升级记录
 
 **日期**: 2026-04-07  
 **范围**: `agentmatrix-research-core` 首次拆分落地与第二阶段结构重组  
@@ -266,7 +266,7 @@ python research_core\backtest_adapter\example_gm_plan.py gm_style_rotation
 
 ### 13.3 关于桌面 PDF
 
-已定位桌面文件：C:\Users\admin\Desktop\风格轮动.pdf。
+已定位一份本地风格轮动 PDF 样本。
 
 当前自动检测结果显示该 PDF 为单页报告，且文本层极弱，直接抽取文本基本为空，说明它更接近图片化导出报告。它可以作为后续对照样本，但若要做程序化解析，优先建议获取以下任一原始数据：
 
@@ -283,3 +283,38 @@ python research_core\backtest_adapter\example_gm_plan.py gm_style_rotation
 - contracts.attribution.AttributionReport
 
 并形成网站前端首版可展示字段。
+
+## 14. 掘金导出结果解析器首版
+
+本轮已新增首版掘金导出 ZIP 解析能力，可将净值、持仓、交易三类 CSV 映射为标准化回测结果与基础收益归因。
+
+### 14.1 新增模块
+
+- research_core/backtest_adapter/gm_export_parser.py
+- research_core/backtest_adapter/example_parse_gm_export.py
+
+### 14.2 当前能力
+
+- 自动识别 ZIP 中的净值数据、持仓数据、交易数据 CSV
+- 生成标准化 PerformanceMetrics
+- 生成标准化 EquityCurve、TradeRecord、HoldingSnapshot
+- 生成基础 AttributionReport
+- 可将解析结果写入 `data/gm_exports/<sample>_parsed_backtest.json`
+
+### 14.3 已完成的真实数据验证
+
+已使用一份本地 GM 导出包样本验证，导出包包含：
+
+- 持仓数据_20241231_20251231.csv
+- 净值数据_20241231_20251231.csv
+- 交易数据_20241231_20251231.csv
+
+这三份数据已足够支撑 BacktestResult V1 与 AttributionReport V1。
+
+### 14.4 后续重点
+
+下一步继续补足：
+
+- 更精确的收益归因方法
+- 网站前端展示字段映射
+- 多策略导出批量解析

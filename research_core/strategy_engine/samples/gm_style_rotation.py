@@ -1,4 +1,4 @@
-﻿# coding=utf-8
+# coding=utf-8
 from __future__ import print_function, absolute_import, unicode_literals
 from gm.api import *
 
@@ -141,7 +141,7 @@ def on_backtest_finished(context, indicator):
 
 if __name__ == '__main__':
     run(
-        strategy_id='a029067f-3270-11f1-895b-40b076d9f271',
+        strategy_id=os.getenv('GM_STYLE_ROTATION_STRATEGY_ID', 'demo-gm-style-rotation'),
         filename='gm_style_rotation.py',
         mode=MODE_BACKTEST,
         token=os.getenv('GM_TOKEN', ''),

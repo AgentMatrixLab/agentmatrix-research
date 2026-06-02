@@ -1,4 +1,4 @@
-﻿# coding=utf-8
+# coding=utf-8
 from __future__ import print_function, absolute_import, unicode_literals
 from gm.api import *
 
@@ -129,7 +129,7 @@ def on_backtest_finished(context, indicator):
 
 if __name__ == '__main__':
     run(
-        strategy_id='ce18b931-2383-11f1-9c1b-40b076d9f271',
+        strategy_id=os.getenv('GM_SMALL_CAP_STRATEGY_ID', 'demo-gm-small-cap-monthly'),
         filename='gm_small_cap_monthly.py',
         mode=MODE_BACKTEST,
         token=os.getenv('GM_TOKEN', ''),
