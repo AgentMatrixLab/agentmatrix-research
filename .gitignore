@@ -7,4 +7,10 @@
 .ruff_cache/
 backend_runtime/
 data/gm_exports/
+data/qlib/
+runtime/qlib/backtests/
+runtime/qlib/evaluations/
+runtime/qlib/factors/
+runtime/qlib/mlruns/
+runtime/qlib/workflow_runs/
 

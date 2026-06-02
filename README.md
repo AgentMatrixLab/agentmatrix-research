@@ -12,6 +12,7 @@
 - **Backtest Adapters** — Pluggable adapters for backtest engines (GM/掘金, RQAlpha, with more to come)
 - **Strategy Engine** — Base classes and agent-style strategy implementations
 - **Factor Library** — Factor definition, signal tracking, IC evaluation, and pseudo-backtest
+- **Qlib Lab** — Factor mining, factor reproduction, AI-assisted factor generation, and qlib-based validity backtests
 - **Data Loaders** — AkShare-based A-share market data fetching utilities
 - **Document Normalizer** — Research document processing via MinerU (DeerFlow copilot)
 
@@ -26,6 +27,7 @@ agentmatrix-research/
 │   └── attribution.py       #   AttributionReport, AttributionSummary
 ├── research_core/           # Core research modules
 │   ├── backtest_adapter/    #   GM adapter, RQAlpha adapter, result parsers
+│   ├── qlib_lab/            #   Qlib-based factor mining and backtest workflow
 │   ├── strategy_engine/     #   Strategy base classes & agent engines
 │   │   └── samples/         #     Runnable sample strategies
 │   ├── attribution_engine/  #   Return attribution framework
@@ -47,6 +49,7 @@ agentmatrix-research/
 
 - Python 3.10+
 - [AkShare](https://github.com/akfamily/akshare) for market data
+- [Qlib](https://github.com/microsoft/qlib) for factor research workflow
 - [掘金量化](https://www.myquant.cn/) (optional, for GM backtest adapter)
 
 ### Install
@@ -56,6 +59,21 @@ git clone https://github.com/AgentMatrixLab/agentmatrix-research.git
 cd agentmatrix-research
 pip install -r scripts/requirements.txt
 ```
+
+### Qlib Factor Workflow
+
+```bash
+python -m research_core.qlib_lab.cli init-data
+python -m research_core.qlib_lab.cli mine-factor --name short_term_reversal --expression "Ref($close, 5) / $close - 1" --description "5-day reversal factor" --start 2021-01-01 --end 2024-12-31
+python -m research_core.qlib_lab.cli auto-mine --theme "mid-cap momentum with turnover confirmation" --start 2021-01-01 --end 2024-12-31
+python -m research_core.qlib_lab.cli backtest --factor-expression "($close / Ref($close, 20) - 1) * Log($volume / Ref($volume, 20))" --start 2021-01-01 --end 2024-12-31
+python -m research_core.qlib_lab.cli alpha158-template
+python -m research_core.qlib_lab.cli alpha158-starter --market csi300 --benchmark SH000300
+```
+
+See [QLIB_FACTOR_WORKFLOW.md](docs/QLIB_FACTOR_WORKFLOW.md) for the full intern workflow.
+See [ALPHA158_STARTER.md](docs/ALPHA158_STARTER.md) for the baseline model workflow.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for PR, factor proposal, and experiment report conventions.
 
 ### Run a Sample Strategy
 
@@ -105,7 +123,7 @@ These contracts enable **engine-agnostic** strategy development: write once, bac
 |---------|--------|--------|
 | `GMBacktestAdapter` | ✅ Scaffold (execution plan generation) | [掘金量化](https://www.myquant.cn/) |
 | `RQAlphaAdapter` | ✅ Scaffold (pickle result parsing) | [RQAlpha](https://github.com/ricequant/rqalpha) |
-| `QlibAdapter` | 🔜 Planned | [Qlib](https://github.com/microsoft/qlib) |
+| `QlibBacktestAdapter` | ✅ Added for factor-expression backtests | [Qlib](https://github.com/microsoft/qlib) |
 
 ## Contributing
 
@@ -116,6 +134,12 @@ We welcome contributions! Please follow these guidelines:
 3. **Strategy samples** → Add to `research_core/strategy_engine/samples/`
 4. **Code style** → Follow PEP 8, use type hints
 5. **Sensitive data** → Never commit API keys, tokens, or real trading parameters. Use environment variables.
+
+Templates for contributors:
+
+- `docs/templates/factor_proposal.md`
+- `docs/templates/experiment_report.md`
+- `.github/PULL_REQUEST_TEMPLATE.md`
 
 ### Development Workflow
 

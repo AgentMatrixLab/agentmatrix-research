@@ -36,3 +36,5 @@ python-dotenv
 openai
 gunicorn
 yfinance
+pyqlib
+lightgbm
