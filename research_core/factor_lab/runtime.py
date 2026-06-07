@@ -27,6 +27,7 @@ class FactorLabWorkspaceConfig:
             "jobs_dir": self.runtime_root / "jobs",
             "frames_dir": self.runtime_root / "frames",
             "samples_dir": self.runtime_root / "samples",
+            "truth_dir": self.runtime_root / "truth",
         }
         for path in paths.values():
             path.mkdir(parents=True, exist_ok=True)
@@ -49,6 +50,9 @@ class FactorLabWorkspaceConfig:
 
     def sample_path(self, library: str, factor_name: str, suffix: str = ".json") -> Path:
         return self.runtime_root / "samples" / f"{library.lower()}_{factor_name.lower()}_samples{suffix}"
+
+    def truth_path(self, library: str, factor_name: str, suffix: str = ".json") -> Path:
+        return self.runtime_root / "truth" / f"{library.lower()}_{factor_name.lower()}_truth_compare{suffix}"
 
     def job_path(self, job_id: str) -> Path:
         return self.runtime_root / "jobs" / f"{job_id}.json"

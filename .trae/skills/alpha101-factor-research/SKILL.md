@@ -27,16 +27,36 @@ Do not use this skill to build UI pages. Front-end interaction belongs in the de
 3. Export or refresh the Alpha101 spec and catalog:
 
    ```bash
-   python -m research_core.factor_lab.cli export-alpha101 --proof-factor alpha1
+   python -m research_core.factor_lab.cli export-alpha101 --proof-factor alpha101
    ```
 
-4. Run deterministic research for implemented factors:
+4. Export a truth CSV template when an external truth process is needed:
 
    ```bash
-   python -m research_core.factor_lab.cli run-alpha101-demo --factors alpha1,alpha2,alpha3,alpha4,alpha5,alpha6,alpha7,alpha8,alpha9,alpha10 --n-dates 160 --n-codes 8 --seed 7
+   python -m research_core.factor_lab.cli export-alpha101-truth-template --n-dates 420 --n-codes 8 --seed 29
    ```
 
-5. Verify the generated artifacts:
+5. Validate the truth CSV before batch proof:
+
+   ```bash
+   python -m research_core.factor_lab.cli validate-alpha101-truth --truth-csv data/factor_lab/alpha101_truth_template_101f_420d_8c_s29.csv
+   ```
+
+6. Run deterministic research or batch proof:
+
+   Deterministic run:
+
+   ```bash
+   python -m research_core.factor_lab.cli run-alpha101-demo --n-dates 420 --n-codes 8 --seed 29
+   ```
+
+   Batch proof with aligned external truth:
+
+   ```bash
+   python -m research_core.factor_lab.cli run-alpha101-proof-batch --truth-csv data/factor_lab/alpha101_truth_template_101f_420d_8c_s29.csv --n-dates 420 --n-codes 8 --seed 29
+   ```
+
+7. Verify the generated artifacts:
 
    - `runtime/factor_lab/specs/alpha101_specs.json`
    - `runtime/factor_lab/catalogs/alpha101_catalog.json`
@@ -44,9 +64,10 @@ Do not use this skill to build UI pages. Front-end interaction belongs in the de
    - `runtime/factor_lab/reports/`
    - `runtime/factor_lab/proofs/`
    - `runtime/factor_lab/samples/`
+   - `runtime/factor_lab/truth/`
    - `runtime/factor_lab/jobs/`
 
-6. Run regression checks:
+8. Run regression checks:
 
    ```bash
    python -m unittest research_core.factor_lab.libraries.alpha101.test_factors
@@ -54,7 +75,7 @@ Do not use this skill to build UI pages. Front-end interaction belongs in the de
    python -m unittest research_core.factor_lab.test_service
    ```
 
-7. If the user needs front-end or agent integration, expose the Flask API:
+9. If the user needs front-end or agent integration, expose the Flask API:
 
    ```bash
    python backend/factor_lab_api.py
@@ -68,6 +89,8 @@ Always aim to leave behind:
 - passing tests
 - exported runtime artifacts
 - explicit proof status for each factor
+- truth comparison artifacts when an external reference is provided
+- batch proof summary with overall readiness and blocker factors
 - a clear statement of what is fully proven and what still requires external truth comparison
 
 ## Review Rule

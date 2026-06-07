@@ -18,6 +18,10 @@ def build_alpha101_demo_panel(
     for code_idx, code in enumerate(codes):
         base_price = 12 + code_idx * 2.5
         close = base_price
+        shares_outstanding = 80_000_000 + code_idx * 12_000_000
+        sector = f"sector_{(code_idx % 3) + 1}"
+        industry = f"industry_{(code_idx % 4) + 1}"
+        subindustry = f"subindustry_{(code_idx % 5) + 1}"
         for date in dates:
             market_trend = 0.0006 * (code_idx + 1)
             shock = rng.normal(market_trend, 0.015)
@@ -27,6 +31,7 @@ def build_alpha101_demo_panel(
             low = min(open_, close) * (1 - abs(rng.normal(0, 0.007)))
             volume = int(rng.integers(500_000, 5_000_000))
             amount = volume * (open_ + high + low + close) / 4
+            cap = close * shares_outstanding
             records.append(
                 {
                     "date": date,
@@ -37,6 +42,10 @@ def build_alpha101_demo_panel(
                     "close": close,
                     "volume": volume,
                     "amount": amount,
+                    "cap": cap,
+                    "sector": sector,
+                    "industry": industry,
+                    "subindustry": subindustry,
                 }
             )
 

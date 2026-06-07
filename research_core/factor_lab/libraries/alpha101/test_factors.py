@@ -7,8 +7,8 @@ from research_core.factor_lab.libraries.alpha101 import IMPLEMENTED_ALPHA101_FAC
 
 
 class Alpha101FactorsTest(unittest.TestCase):
-    def test_compute_first_10_alpha101_factors(self) -> None:
-        panel = build_alpha101_demo_panel(n_dates=100, n_codes=6, seed=7)
+    def test_compute_all_implemented_alpha101_factors(self) -> None:
+        panel = build_alpha101_demo_panel(n_dates=420, n_codes=6, seed=7)
         result = compute_alpha101_factors(panel)
         expected_cols = ["date", "code", *IMPLEMENTED_ALPHA101_FACTORS]
         self.assertEqual(result.columns.tolist(), expected_cols)
@@ -16,12 +16,15 @@ class Alpha101FactorsTest(unittest.TestCase):
         non_null_counts = result[list(IMPLEMENTED_ALPHA101_FACTORS)].notna().sum()
         self.assertTrue((non_null_counts > 0).all())
 
-    def test_specs_mark_first_10_as_implemented(self) -> None:
+    def test_specs_mark_implemented_subset_as_implemented(self) -> None:
         spec_map = {spec.factor_name: spec for spec in alpha101_specs()}
         for factor_name in IMPLEMENTED_ALPHA101_FACTORS:
             self.assertEqual(spec_map[factor_name].metadata["status"], "implemented")
             self.assertTrue(spec_map[factor_name].formula)
-        self.assertEqual(spec_map["alpha11"].metadata["status"], "planned")
+        self.assertEqual(spec_map["alpha11"].metadata["status"], "implemented")
+        self.assertEqual(spec_map["alpha12"].metadata["status"], "implemented")
+        self.assertEqual(spec_map["alpha29"].metadata["status"], "implemented")
+        self.assertEqual(spec_map["alpha101"].metadata["status"], "implemented")
 
 
 if __name__ == "__main__":

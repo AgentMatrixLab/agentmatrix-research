@@ -3,10 +3,17 @@ from __future__ import annotations
 import argparse
 import json
 
-from research_core.factor_lab.libraries.alpha101 import alpha101_specs
+from research_core.factor_lab.libraries.alpha101 import IMPLEMENTED_ALPHA101_FACTORS, alpha101_specs
 from research_core.factor_lab.registry import export_library_specs
 from research_core.factor_lab.runtime import FactorLabWorkspaceConfig
-from research_core.factor_lab.service import get_factor_lab_overview, list_alpha101_factors, run_alpha101_research_job
+from research_core.factor_lab.service import (
+    export_alpha101_truth_template,
+    get_factor_lab_overview,
+    list_alpha101_factors,
+    run_alpha101_research_job,
+    run_alpha101_truth_proof_batch,
+    validate_alpha101_truth_csv,
+)
 from research_core.factor_lab.validation import export_proof_template
 
 
@@ -21,15 +28,57 @@ def build_parser() -> argparse.ArgumentParser:
     catalog_parser = subparsers.add_parser("export-alpha101", help="Export Alpha101 catalog and spec payload")
     catalog_parser.add_argument("--proof-factor", default="alpha1", help="Also export one proof template for the selected factor")
 
+    truth_parser = subparsers.add_parser(
+        "export-alpha101-truth-template",
+        help="Export a schema-ready Alpha101 truth CSV template",
+    )
+    truth_parser.add_argument(
+        "--factors",
+        default=",".join(IMPLEMENTED_ALPHA101_FACTORS),
+        help="Comma separated factor names",
+    )
+    truth_parser.add_argument("--n-dates", type=int, default=160, help="Number of business dates in template panel")
+    truth_parser.add_argument("--n-codes", type=int, default=8, help="Number of securities in template panel")
+    truth_parser.add_argument("--seed", type=int, default=7, help="Random seed for deterministic template panel")
+    truth_parser.add_argument("--template-name", default="", help="Optional custom base name for the exported truth CSV")
+
+    validate_parser = subparsers.add_parser(
+        "validate-alpha101-truth",
+        help="Validate an Alpha101 truth CSV before running proof batch",
+    )
+    validate_parser.add_argument(
+        "--factors",
+        default=",".join(IMPLEMENTED_ALPHA101_FACTORS),
+        help="Comma separated factor names",
+    )
+    validate_parser.add_argument("--truth-csv", required=True, help="Truth CSV to validate")
+
+    batch_parser = subparsers.add_parser(
+        "run-alpha101-proof-batch",
+        help="Run Alpha101 full truth/proof batch with an external truth CSV",
+    )
+    batch_parser.add_argument(
+        "--factors",
+        default=",".join(IMPLEMENTED_ALPHA101_FACTORS),
+        help="Comma separated factor names",
+    )
+    batch_parser.add_argument("--truth-csv", required=True, help="External truth CSV aligned to the requested factors")
+    batch_parser.add_argument("--truth-tolerance", type=float, default=1e-12, help="Absolute tolerance for truth comparison")
+    batch_parser.add_argument("--n-dates", type=int, default=420, help="Number of business dates in demo panel")
+    batch_parser.add_argument("--n-codes", type=int, default=8, help="Number of securities in demo panel")
+    batch_parser.add_argument("--seed", type=int, default=29, help="Random seed for deterministic demo panel")
+
     run_parser = subparsers.add_parser("run-alpha101-demo", help="Run deterministic Alpha101 research demo")
     run_parser.add_argument(
         "--factors",
-        default=",".join([f"alpha{i}" for i in range(1, 11)]),
+        default=",".join(IMPLEMENTED_ALPHA101_FACTORS),
         help="Comma separated factor names",
     )
     run_parser.add_argument("--n-dates", type=int, default=160, help="Number of business dates in demo panel")
     run_parser.add_argument("--n-codes", type=int, default=8, help="Number of securities in demo panel")
     run_parser.add_argument("--seed", type=int, default=7, help="Random seed for deterministic demo panel")
+    run_parser.add_argument("--truth-csv", default="", help="Optional external truth CSV for factor-by-factor comparison")
+    run_parser.add_argument("--truth-tolerance", type=float, default=1e-12, help="Absolute tolerance for truth comparison")
 
     return parser
 
@@ -57,6 +106,50 @@ def main() -> None:
         print(json.dumps(get_factor_lab_overview(config), ensure_ascii=False, indent=2))
         return
 
+    if args.command == "export-alpha101-truth-template":
+        factor_names = [item.strip() for item in args.factors.split(",") if item.strip()]
+        payload = export_alpha101_truth_template(
+            {
+                "factor_names": factor_names,
+                "n_dates": args.n_dates,
+                "n_codes": args.n_codes,
+                "seed": args.seed,
+                "template_name": args.template_name,
+            },
+            config=config,
+        )
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return
+
+    if args.command == "validate-alpha101-truth":
+        factor_names = [item.strip() for item in args.factors.split(",") if item.strip()]
+        payload = validate_alpha101_truth_csv(
+            {
+                "factor_names": factor_names,
+                "truth_csv_path": args.truth_csv,
+            },
+            config=config,
+        )
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return
+
+    if args.command == "run-alpha101-proof-batch":
+        factor_names = [item.strip() for item in args.factors.split(",") if item.strip()]
+        payload = run_alpha101_truth_proof_batch(
+            {
+                "factor_names": factor_names,
+                "truth_csv_path": args.truth_csv,
+                "truth_tolerance": args.truth_tolerance,
+                "n_dates": args.n_dates,
+                "n_codes": args.n_codes,
+                "seed": args.seed,
+                "data_source": "demo",
+            },
+            config=config,
+        )
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return
+
     if args.command == "list-alpha101":
         print(json.dumps({"items": list_alpha101_factors(config)}, ensure_ascii=False, indent=2))
         return
@@ -70,6 +163,8 @@ def main() -> None:
                 "n_codes": args.n_codes,
                 "seed": args.seed,
                 "data_source": "demo",
+                "truth_csv_path": args.truth_csv,
+                "truth_tolerance": args.truth_tolerance,
             },
             config=config,
         )

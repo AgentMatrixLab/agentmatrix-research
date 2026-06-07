@@ -88,12 +88,25 @@ def build_validation_report(
     spec_path: str,
     evaluation_path: str,
     truth_path: str = "",
+    truth_metrics: dict[str, Any] | None = None,
     job_id: str = "",
 ) -> FactorValidationReport:
     has_formula = bool(spec.formula.strip())
     field_mapping_ok = set(spec.required_fields).issubset(set(available_columns))
     sample_count = int(factor_metrics.get("non_null_count", 0))
     cross_section_count = int(factor_metrics.get("cross_section_count", 0))
+
+    truth_metrics = truth_metrics or {}
+    truth_passed = bool(truth_path) and _truth_metrics_meet_thresholds(spec, truth_metrics)
+    truth_status = "pending_external_truth"
+    truth_description = "等待挂接外部真值序列做截面对照。"
+    if truth_path:
+        truth_status = "passed" if truth_passed else "failed"
+        truth_description = (
+            "外部真值对照已通过阈值校验。"
+            if truth_passed
+            else "已挂接外部真值，但对照结果未达到规格阈值。"
+        )
 
     checks = [
         {
@@ -115,10 +128,8 @@ def build_validation_report(
         },
         {
             "name": "cross_section_truth_compare",
-            "status": "pending_external_truth" if not truth_path else "passed",
-            "description": "等待挂接外部真值序列做截面对照。"
-            if not truth_path
-            else "已挂接外部真值截面对照结果。",
+            "status": truth_status,
+            "description": truth_description,
         },
         {
             "name": "evaluation_consistency",
@@ -129,12 +140,19 @@ def build_validation_report(
         },
     ]
 
-    status = "passed" if all(item["status"] == "passed" for item in checks) else "partial"
-    summary = (
-        "已完成公式、字段、样本点位和基础评估校验，但仍需挂接外部真值完成最终无偏差证明。"
-        if status == "partial"
-        else "已完成当前版本全部校验。"
-    )
+    if any(item["status"] == "failed" for item in checks):
+        status = "failed"
+    elif any(str(item["status"]).startswith("pending") for item in checks):
+        status = "partial"
+    else:
+        status = "passed"
+
+    if status == "passed":
+        summary = "已完成公式、字段、样本点位、外部真值与基础评估校验。"
+    elif truth_path:
+        summary = "已生成外部真值对照，但仍存在未通过阈值的校验项。"
+    else:
+        summary = "已完成公式、字段、样本点位和基础评估校验，但仍需挂接外部真值完成最终无偏差证明。"
     artifacts = [
         FactorValidationArtifact("spec", spec_path, "标准化 FactorSpec"),
         FactorValidationArtifact("sample_checks", sample_path, "抽样点位核验明细"),
@@ -149,6 +167,10 @@ def build_validation_report(
         "rank_ic_mean": factor_metrics.get("rank_ic_mean"),
         "rank_ic_ir": factor_metrics.get("rank_ic_ir"),
         "long_short_mean": factor_metrics.get("long_short_mean"),
+        "truth_compared_count": truth_metrics.get("compared_count"),
+        "truth_exact_match_ratio": truth_metrics.get("exact_match_ratio"),
+        "truth_max_abs_error": truth_metrics.get("max_abs_error"),
+        "truth_cross_section_spearman_mean": truth_metrics.get("cross_section_spearman_mean"),
     }
     return FactorValidationReport(
         factor_name=spec.factor_name,
@@ -206,6 +228,7 @@ def export_validation_report(
     evaluation_path: str,
     job_id: str = "",
     truth_path: str = "",
+    truth_metrics: dict[str, Any] | None = None,
 ) -> str:
     config.ensure_directories()
     sample_payload = build_sample_checks(factor_frame, factor_name=spec.factor_name)
@@ -218,6 +241,7 @@ def export_validation_report(
         spec_path=str(config.specs_path(spec.library)),
         evaluation_path=evaluation_path,
         truth_path=truth_path,
+        truth_metrics=truth_metrics,
         job_id=job_id,
     )
     payload = asdict(report)
@@ -237,3 +261,47 @@ def export_proof_template(
     path = config.proof_path(spec.library, spec.factor_name)
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     return str(path)
+
+
+def _threshold_passed(value: Any, *, operator: str, expected: float) -> bool:
+    if value is None:
+        return False
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return False
+    if pd.isna(value):
+        return False
+    if operator == ">=":
+        return value >= expected
+    if operator == "<=":
+        return value <= expected
+    if operator == ">":
+        return value > expected
+    if operator == "<":
+        return value < expected
+    if operator == "==":
+        return value == expected
+    raise ValueError(f"Unsupported threshold operator: {operator}")
+
+
+def _truth_metrics_meet_thresholds(spec: FactorResearchSpec, truth_metrics: dict[str, Any]) -> bool:
+    targets = {
+        "sample_point_error_ratio": truth_metrics.get("max_abs_error"),
+        "cross_section_spearman": truth_metrics.get("cross_section_spearman_mean"),
+    }
+    exact_match_ratio = truth_metrics.get("exact_match_ratio")
+    if exact_match_ratio is not None:
+        targets["sample_point_error_ratio"] = 1.0 - float(exact_match_ratio)
+
+    relevant_thresholds = [
+        threshold
+        for threshold in spec.validation_targets
+        if threshold.metric in {"sample_point_error_ratio", "cross_section_spearman"}
+    ]
+    if not relevant_thresholds:
+        return False
+    return all(
+        _threshold_passed(targets.get(threshold.metric), operator=threshold.operator, expected=threshold.value)
+        for threshold in relevant_thresholds
+    )

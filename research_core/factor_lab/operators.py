@@ -126,6 +126,34 @@ def ts_argmax(
     )
 
 
+def ts_argmin(
+    df: pd.DataFrame,
+    value_col: str,
+    window: int,
+    *,
+    code_col: str = "code",
+    min_periods: int | None = None,
+) -> pd.Series:
+    min_obs = window if min_periods is None else min_periods
+    return df.groupby(code_col)[value_col].transform(
+        lambda x: x.rolling(window, min_periods=min_obs).apply(np.argmin, raw=True)
+    )
+
+
+def ts_product(
+    df: pd.DataFrame,
+    value_col: str,
+    window: int,
+    *,
+    code_col: str = "code",
+    min_periods: int | None = None,
+) -> pd.Series:
+    min_obs = window if min_periods is None else min_periods
+    return df.groupby(code_col)[value_col].transform(
+        lambda x: x.rolling(window, min_periods=min_obs).apply(np.prod, raw=True)
+    )
+
+
 def rolling_corr(
     df: pd.DataFrame,
     left_col: str,
@@ -142,6 +170,73 @@ def rolling_corr(
         corr.index = group.index
         pieces.append(corr)
     return pd.concat(pieces).sort_index() if pieces else pd.Series(dtype=float)
+
+
+def rolling_cov(
+    df: pd.DataFrame,
+    left_col: str,
+    right_col: str,
+    window: int,
+    *,
+    code_col: str = "code",
+    min_periods: int | None = None,
+) -> pd.Series:
+    min_obs = window if min_periods is None else min_periods
+    pieces: list[pd.Series] = []
+    for _, group in df.groupby(code_col, sort=False):
+        cov = group[left_col].rolling(window, min_periods=min_obs).cov(group[right_col])
+        cov.index = group.index
+        pieces.append(cov)
+    return pd.concat(pieces).sort_index() if pieces else pd.Series(dtype=float)
+
+
+def ts_decay_linear(
+    df: pd.DataFrame,
+    value_col: str,
+    window: int,
+    *,
+    code_col: str = "code",
+    min_periods: int | None = None,
+) -> pd.Series:
+    min_obs = window if min_periods is None else min_periods
+
+    def _decay(values: np.ndarray) -> float:
+        mask = ~np.isnan(values)
+        if not mask.any():
+            return np.nan
+        valid_values = values[mask]
+        valid_weights = np.arange(1, len(values) + 1, dtype=float)[mask]
+        return float(np.dot(valid_values, valid_weights) / valid_weights.sum())
+
+    return df.groupby(code_col)[value_col].transform(
+        lambda x: x.rolling(window, min_periods=min_obs).apply(_decay, raw=True)
+    )
+
+
+def cross_sectional_scale(
+    df: pd.DataFrame,
+    value_col: str,
+    *,
+    date_col: str = "date",
+    scale: float = 1.0,
+) -> pd.Series:
+    def _scale(group: pd.Series) -> pd.Series:
+        denom = group.abs().sum()
+        if pd.isna(denom) or denom == 0:
+            return group * 0.0
+        return group / denom * scale
+
+    return df.groupby(date_col)[value_col].transform(_scale)
+
+
+def indneutralize(
+    df: pd.DataFrame,
+    value_col: str,
+    group_col: str,
+    *,
+    date_col: str = "date",
+) -> pd.Series:
+    return df[value_col] - df.groupby([date_col, group_col])[value_col].transform("mean")
 
 
 def compute_vwap(
