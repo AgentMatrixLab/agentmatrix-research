@@ -1,0 +1,4 @@
+numpy>=2.0
+pandas>=2.2
+Flask>=3.0
+flask-cors>=5.0

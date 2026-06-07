@@ -6,6 +6,7 @@ This repository is a public research workspace for:
 
 - factor mining
 - factor reproduction
+- unified factor specifications and proof packages
 - qlib-based workflow experiments
 - backtest adapters
 - strategy and dataset research
@@ -44,6 +45,17 @@ Avoid mixing:
 - large refactors
 - unrelated docs cleanup
 
+## Front-end Boundary
+
+Keep user-facing pages, interaction flows, and workbench UI in the dedicated front-end repository.
+
+Use `agentmatrix-research` for:
+
+- factor definitions and implementations
+- reproducibility and truth-aligned validation
+- catalog exports and runtime artifacts
+- APIs and agent skills that power the front-end
+
 ## Required For Research PRs
 
 If your PR changes factor logic, strategy logic, or qlib workflow behavior, include:
@@ -53,6 +65,12 @@ If your PR changes factor logic, strategy logic, or qlib workflow behavior, incl
 - evaluation output summary
 - backtest summary if applicable
 - key artifact paths or attached screenshots
+
+If your PR starts a new factor family such as Alpha101, Alpha191, Alpha158, Barra, or paper-derived factors, also include:
+
+- the `FactorResearchSpec` or spec export path
+- the validation proof template or proof artifact path
+- a statement describing whether the UI work lives in the front-end repository
 
 Use the templates under `docs/templates/`.
 
