@@ -12,6 +12,7 @@
 - **Backtest Adapters** — Pluggable adapters for backtest engines (GM/掘金, RQAlpha, with more to come)
 - **Strategy Engine** — Base classes and agent-style strategy implementations
 - **Factor Library** — Factor definition, signal tracking, IC evaluation, and pseudo-backtest
+- **Factor Lab** — Unified factor specification, catalog export, proof package, and multi-library roadmap
 - **Qlib Lab** — Factor mining, factor reproduction, AI-assisted factor generation, and qlib-based validity backtests
 - **Data Loaders** — AkShare-based A-share market data fetching utilities
 - **Document Normalizer** — Research document processing via MinerU (DeerFlow copilot)
@@ -27,6 +28,7 @@ agentmatrix-research/
 │   └── attribution.py       #   AttributionReport, AttributionSummary
 ├── research_core/           # Core research modules
 │   ├── backtest_adapter/    #   GM adapter, RQAlpha adapter, result parsers
+│   ├── factor_lab/          #   Unified factor specs, registry, and validation proof templates
 │   ├── qlib_lab/            #   Qlib-based factor mining and backtest workflow
 │   ├── strategy_engine/     #   Strategy base classes & agent engines
 │   │   └── samples/         #     Runnable sample strategies
@@ -58,6 +60,7 @@ agentmatrix-research/
 git clone https://github.com/AgentMatrixLab/agentmatrix-research.git
 cd agentmatrix-research
 pip install -r scripts/requirements.txt
+pip install -r requirements-factor-lab.txt
 ```
 
 ### Qlib Factor Workflow
@@ -73,7 +76,34 @@ python -m research_core.qlib_lab.cli alpha158-starter --market csi300 --benchmar
 
 See [QLIB_FACTOR_WORKFLOW.md](docs/QLIB_FACTOR_WORKFLOW.md) for the full intern workflow.
 See [ALPHA158_STARTER.md](docs/ALPHA158_STARTER.md) for the baseline model workflow.
+See [FACTOR_LAB_BACKEND_BOUNDARY.md](docs/FACTOR_LAB_BACKEND_BOUNDARY.md) for the back-end vs front-end ownership split.
+See [FACTOR_LAB_ALPHA101_WORKFLOW.md](docs/FACTOR_LAB_ALPHA101_WORKFLOW.md) for the unified Alpha101 back-end research workflow.
 See [CONTRIBUTING.md](CONTRIBUTING.md) for PR, factor proposal, and experiment report conventions.
+
+### Factor Lab Bootstrap
+
+```bash
+python -m research_core.factor_lab.cli init-workspace
+python -m research_core.factor_lab.cli overview
+python -m research_core.factor_lab.cli list-alpha101
+python -m research_core.factor_lab.cli export-alpha101 --proof-factor alpha1
+python -m research_core.factor_lab.cli run-alpha101-demo --factors alpha1,alpha2,alpha3,alpha4,alpha5,alpha6,alpha7,alpha8,alpha9,alpha10 --n-dates 160 --n-codes 8 --seed 7
+```
+
+### Factor Lab API
+
+```bash
+python backend/factor_lab_api.py
+```
+
+API endpoints for front-end and agent orchestration:
+
+- `GET /api/agents/factor-lab/overview`
+- `GET /api/agents/factor-lab/alpha101/factors`
+- `GET /api/agents/factor-lab/alpha101/factors/<factor_name>`
+- `GET /api/agents/factor-lab/jobs`
+- `POST /api/agents/factor-lab/jobs`
+- `GET /api/agents/factor-lab/jobs/<job_id>`
 
 ### Run a Sample Strategy
 
