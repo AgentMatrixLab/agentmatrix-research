@@ -13,8 +13,18 @@ from research_core.factor_lab.libraries.alpha101 import (
     alpha101_specs,
     compute_alpha101_factors,
 )
+from research_core.factor_lab.reporting import (
+    build_alpha101_research_report,
+    render_alpha101_research_report_markdown,
+)
 from research_core.factor_lab.registry import export_library_specs
 from research_core.factor_lab.runtime import FactorLabWorkspaceConfig, now_iso
+from research_core.factor_lab.truth import (
+    export_truth_comparison,
+    load_truth_frame,
+    summarize_truth_frame,
+    validate_truth_frame,
+)
 from research_core.factor_lab.validation import export_proof_template, export_validation_report
 
 
@@ -55,6 +65,91 @@ def _render_evaluation_markdown(report: dict[str, Any], *, factor_names: list[st
             f"{metrics['rank_ic_mean']:.6f} | {metrics['rank_ic_ir']:.6f} | {metrics['long_short_mean']:.6f} |"
         )
     return "\n".join(lines) + "\n"
+
+
+def export_alpha101_truth_template(
+    payload: dict[str, Any] | None = None,
+    config: FactorLabWorkspaceConfig | None = None,
+) -> dict[str, Any]:
+    request_payload = payload or {}
+    workspace = config or FactorLabWorkspaceConfig()
+    workspace.ensure_directories()
+
+    factor_names = _resolve_factor_names(request_payload.get("factor_names"))
+    n_dates = int(request_payload.get("n_dates", 160))
+    n_codes = int(request_payload.get("n_codes", 8))
+    seed = int(request_payload.get("seed", 7))
+    template_name = request_payload.get("template_name") or f"alpha101_truth_template_{len(factor_names)}f_{n_dates}d_{n_codes}c_s{seed}"
+    source_label = request_payload.get("source_label", "demo_reference_template")
+
+    panel = build_alpha101_demo_panel(n_dates=n_dates, n_codes=n_codes, seed=seed)
+    truth_frame = compute_alpha101_factors(panel, factor_names=factor_names).copy()
+    truth_summary = summarize_truth_frame(truth_frame, factor_names=factor_names)
+    truth_frame["date"] = truth_frame["date"].dt.strftime("%Y-%m-%d")
+
+    csv_path = workspace.data_root / f"{template_name}.csv"
+    csv_path.parent.mkdir(parents=True, exist_ok=True)
+    truth_frame.to_csv(csv_path, index=False, encoding="utf-8")
+
+    manifest = {
+        "library": "Alpha101",
+        "kind": "truth_csv_template",
+        "generated_at": now_iso(),
+        "source_label": source_label,
+        "template_name": template_name,
+        "schema": {
+            "layout": "wide",
+            "row_granularity": "date_code_panel",
+            "required_columns": ["date", "code", *factor_names],
+            "date_format": "YYYY-MM-DD",
+            "notes": [
+                "每一行对应一个 date-code 面板点位。",
+                "因子列名必须与 factor_lab 中的 factor_name 完全一致。",
+                "如需做外部真值证明，请用真实参考结果替换模板中的因子值，不要直接回填当前实现输出。",
+            ],
+        },
+        "summary": truth_summary,
+        "artifacts": {
+            "truth_csv": str(csv_path),
+        },
+    }
+    manifest_path = workspace.report_path(f"{template_name}_manifest", suffix=".json")
+    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+    return {
+        "library": "Alpha101",
+        "template_name": template_name,
+        "factor_count": len(factor_names),
+        "truth_csv_path": str(csv_path),
+        "manifest_path": str(manifest_path),
+        "dataset": {
+            "n_dates": n_dates,
+            "n_codes": n_codes,
+            "seed": seed,
+        },
+    }
+
+
+def validate_alpha101_truth_csv(
+    payload: dict[str, Any] | None = None,
+    config: FactorLabWorkspaceConfig | None = None,
+) -> dict[str, Any]:
+    request_payload = payload or {}
+    workspace = config or FactorLabWorkspaceConfig()
+    workspace.ensure_directories()
+
+    factor_names = _resolve_factor_names(request_payload.get("factor_names"))
+    truth_csv_path = str(request_payload.get("truth_csv_path", "")).strip()
+    if not truth_csv_path:
+        raise ValueError("Alpha101 truth validation requires truth_csv_path.")
+
+    truth_frame = load_truth_frame(truth_csv_path, factor_names=factor_names)
+    validation = validate_truth_frame(truth_frame, factor_names=factor_names)
+    return {
+        "library": "Alpha101",
+        "truth_csv_path": truth_csv_path,
+        "requested_factor_count": len(factor_names),
+        "validation": validation,
+    }
 
 
 def get_factor_lab_overview(config: FactorLabWorkspaceConfig | None = None) -> dict[str, Any]:
@@ -163,6 +258,8 @@ def run_alpha101_research_job(
     n_codes = int(request_payload.get("n_codes", 8))
     seed = int(request_payload.get("seed", 7))
     data_source = request_payload.get("data_source", "demo")
+    truth_csv_path = request_payload.get("truth_csv_path", "")
+    truth_tolerance = float(request_payload.get("truth_tolerance", 1e-12))
     if data_source != "demo":
         raise ValueError("Current factor_lab backend supports 'demo' data_source only for Alpha101 research jobs.")
 
@@ -173,6 +270,8 @@ def run_alpha101_research_job(
     panel = build_alpha101_demo_panel(n_dates=n_dates, n_codes=n_codes, seed=seed)
     factor_frame = compute_alpha101_factors(panel, factor_names=factor_names)
     evaluation_report = build_alpha101_evaluation_report(panel, factor_frame, factor_names=factor_names)
+    truth_frame = load_truth_frame(truth_csv_path, factor_names=factor_names) if truth_csv_path else None
+    truth_summary = summarize_truth_frame(truth_frame, factor_names=factor_names) if truth_frame is not None else {}
 
     frame_path = workspace.frame_path("alpha101", job_id)
     factor_frame.to_csv(frame_path, index=False, encoding="utf-8")
@@ -187,8 +286,23 @@ def run_alpha101_research_job(
 
     spec_map = _alpha101_spec_map()
     proof_paths: dict[str, str] = {}
+    proof_payloads: dict[str, dict[str, Any]] = {}
+    truth_paths: dict[str, str] = {}
+    truth_payloads: dict[str, dict[str, Any]] = {}
     for factor_name in factor_names:
         factor_only_frame = factor_frame[["date", "code", factor_name]].copy()
+        truth_path = ""
+        truth_metrics: dict[str, Any] | None = None
+        if truth_frame is not None:
+            truth_path, truth_metrics = export_truth_comparison(
+                config=workspace,
+                spec=spec_map[factor_name],
+                factor_frame=factor_only_frame,
+                truth_frame=truth_frame,
+                tolerance=truth_tolerance,
+            )
+            truth_paths[factor_name] = truth_path
+            truth_payloads[factor_name] = truth_metrics
         proof_paths[factor_name] = export_validation_report(
             config=workspace,
             spec=spec_map[factor_name],
@@ -197,17 +311,42 @@ def run_alpha101_research_job(
             available_columns=panel.columns.tolist(),
             evaluation_path=str(evaluation_json_path),
             job_id=job_id,
+            truth_path=truth_path,
+            truth_metrics=truth_metrics,
         )
+        proof_payloads[factor_name] = json.loads(Path(proof_paths[factor_name]).read_text(encoding="utf-8"))
 
     for spec in specs:
         if spec.factor_name not in proof_paths:
             export_proof_template(config=workspace, spec=spec)
+
+    research_report = build_alpha101_research_report(
+        job_id=job_id,
+        factor_names=factor_names,
+        evaluation_report=evaluation_report,
+        proof_payloads=proof_payloads,
+        truth_payloads=truth_payloads,
+        data_source=data_source,
+    )
+    research_report_json_path = workspace.report_path(f"{job_id}_proof_report", suffix=".json")
+    research_report_json_path.write_text(
+        json.dumps(research_report, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    research_report_md_path = workspace.report_path(f"{job_id}_proof_report", suffix=".md")
+    research_report_md_path.write_text(
+        render_alpha101_research_report_markdown(research_report),
+        encoding="utf-8",
+    )
 
     job = {
         "job_id": job_id,
         "library": "Alpha101",
         "status": "completed",
         "data_source": data_source,
+        "truth_csv_path": truth_csv_path,
+        "truth_enabled": bool(truth_csv_path),
+        "truth_summary": truth_summary,
         "generated_at": now_iso(),
         "requested_factors": factor_names,
         "dataset": {
@@ -219,10 +358,42 @@ def run_alpha101_research_job(
             "factor_frame": str(frame_path),
             "evaluation_json": str(evaluation_json_path),
             "evaluation_markdown": str(evaluation_md_path),
+            "research_report_json": str(research_report_json_path),
+            "research_report_markdown": str(research_report_md_path),
             "proofs": proof_paths,
+            "truth_compares": truth_paths,
             "catalog": str(workspace.catalog_path("alpha101")),
             "specs": str(workspace.specs_path("alpha101")),
         },
     }
     workspace.job_path(job_id).write_text(json.dumps(job, ensure_ascii=False, indent=2), encoding="utf-8")
     return job
+
+
+def run_alpha101_truth_proof_batch(
+    payload: dict[str, Any] | None = None,
+    config: FactorLabWorkspaceConfig | None = None,
+) -> dict[str, Any]:
+    request_payload = dict(payload or {})
+    truth_csv_path = str(request_payload.get("truth_csv_path", "")).strip()
+    if not truth_csv_path:
+        raise ValueError("Alpha101 truth proof batch requires truth_csv_path.")
+
+    request_payload.setdefault("factor_names", list(IMPLEMENTED_ALPHA101_FACTORS))
+    request_payload.setdefault("n_dates", 420)
+    request_payload.setdefault("n_codes", 8)
+    request_payload.setdefault("seed", 29)
+    request_payload.setdefault("data_source", "demo")
+
+    job = run_alpha101_research_job(request_payload, config=config)
+    report_path = Path(job["artifacts"]["research_report_json"])
+    report_payload = json.loads(report_path.read_text(encoding="utf-8"))
+    return {
+        "job_id": job["job_id"],
+        "library": job["library"],
+        "status": job["status"],
+        "truth_csv_path": truth_csv_path,
+        "requested_factor_count": len(job["requested_factors"]),
+        "proof_batch_summary": report_payload["summary"],
+        "artifacts": job["artifacts"],
+    }

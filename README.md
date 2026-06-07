@@ -86,8 +86,10 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for PR, factor proposal, and experiment r
 python -m research_core.factor_lab.cli init-workspace
 python -m research_core.factor_lab.cli overview
 python -m research_core.factor_lab.cli list-alpha101
-python -m research_core.factor_lab.cli export-alpha101 --proof-factor alpha1
-python -m research_core.factor_lab.cli run-alpha101-demo --factors alpha1,alpha2,alpha3,alpha4,alpha5,alpha6,alpha7,alpha8,alpha9,alpha10 --n-dates 160 --n-codes 8 --seed 7
+python -m research_core.factor_lab.cli export-alpha101 --proof-factor alpha101
+python -m research_core.factor_lab.cli export-alpha101-truth-template --n-dates 420 --n-codes 8 --seed 29
+python -m research_core.factor_lab.cli validate-alpha101-truth --truth-csv data/factor_lab/alpha101_truth_template_101f_420d_8c_s29.csv
+python -m research_core.factor_lab.cli run-alpha101-proof-batch --truth-csv data/factor_lab/alpha101_truth_template_101f_420d_8c_s29.csv --n-dates 420 --n-codes 8 --seed 29
 ```
 
 ### Factor Lab API

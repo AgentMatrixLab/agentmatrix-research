@@ -70,6 +70,8 @@ If your PR starts a new factor family such as Alpha101, Alpha191, Alpha158, Barr
 
 - the `FactorResearchSpec` or spec export path
 - the validation proof template or proof artifact path
+- the truth-source CSV path or an explicit note that only `partial proof` is currently available
+- the batch proof summary path when `factor_lab` truth validation is involved
 - a statement describing whether the UI work lives in the front-end repository
 
 Use the templates under `docs/templates/`.
