@@ -85,10 +85,12 @@ The SmartData reports use month-end factor values to predict next-month returns.
 
 ## Review Boundary
 
-This PR now contains three separate validation layers:
+This PR now contains five separate validation layers:
 
-1. `example_usage`: mock-data smoke test for importability and execution flow.
-2. `research_core.factor_library.test_validation`: regression test for the `forward_return` / `return` validation-column mismatch.
-3. This evidence digest: real SmartData full-market reproduction summary from the user's WQ101 and GTJA191 Word reports.
+1. `python -m research_core.factor_lab.cli run-factor-set-demo --factor-set wq101`: factor_lab mainline smoke path for WQ101 Alpha#1-#10.
+2. `python -m research_core.factor_lab.cli run-factor-set-demo --factor-set gtja191`: factor_lab mainline smoke path for GTJA191 Alpha#1-#10.
+3. `research_core.factor_lab.libraries.test_factor_sets`: regression tests for WQ101, GTJA191, dynamic column sets, non-empty coverage, fixed anchors, and WQ101-vs-Alpha101 mainline equality.
+4. `research_core.factor_library.test_validation`: compatibility regression tests for the `forward_return` / `return` validation-column mismatch and dynamic batch column prefixes.
+5. This evidence digest: real SmartData full-market reproduction summary from the user's WQ101 and GTJA191 Word reports.
 
 The PR should not claim that external full-market JoinQuant IC is complete. That remains a secondary validation item.

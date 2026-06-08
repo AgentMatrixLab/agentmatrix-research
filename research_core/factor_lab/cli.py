@@ -4,12 +4,16 @@ import argparse
 import json
 
 from research_core.factor_lab.libraries.alpha101 import IMPLEMENTED_ALPHA101_FACTORS, alpha101_specs
+from research_core.factor_lab.libraries.factor_sets import WQ101_ALPHA_1_10
+from research_core.factor_lab.libraries.gtja191 import IMPLEMENTED_GTJA191_FACTORS
 from research_core.factor_lab.registry import export_library_specs
 from research_core.factor_lab.runtime import FactorLabWorkspaceConfig
 from research_core.factor_lab.service import (
     export_alpha101_truth_template,
     get_factor_lab_overview,
     list_alpha101_factors,
+    list_factor_set_factors,
+    run_factor_set_research_job,
     run_alpha101_research_job,
     run_alpha101_truth_proof_batch,
     validate_alpha101_truth_csv,
@@ -24,6 +28,8 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser("init-workspace", help="Initialize factor_lab runtime directories")
     subparsers.add_parser("overview", help="Show factor_lab overview")
     subparsers.add_parser("list-alpha101", help="List Alpha101 factor specs and proof status")
+    list_factor_set_parser = subparsers.add_parser("list-factor-set", help="List WQ101 or GTJA191 factor specs and proof status")
+    list_factor_set_parser.add_argument("--factor-set", choices=["wq101", "gtja191"], required=True)
 
     catalog_parser = subparsers.add_parser("export-alpha101", help="Export Alpha101 catalog and spec payload")
     catalog_parser.add_argument("--proof-factor", default="alpha1", help="Also export one proof template for the selected factor")
@@ -79,6 +85,19 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--seed", type=int, default=7, help="Random seed for deterministic demo panel")
     run_parser.add_argument("--truth-csv", default="", help="Optional external truth CSV for factor-by-factor comparison")
     run_parser.add_argument("--truth-tolerance", type=float, default=1e-12, help="Absolute tolerance for truth comparison")
+
+    factor_set_parser = subparsers.add_parser("run-factor-set-demo", help="Run deterministic WQ101/GTJA191 factor_lab demo")
+    factor_set_parser.add_argument("--factor-set", choices=["wq101", "gtja191"], required=True)
+    factor_set_parser.add_argument(
+        "--factors",
+        default="",
+        help="Comma separated factor names. Defaults to WQ101 Alpha1-10 or GTJA191 Alpha1-10.",
+    )
+    factor_set_parser.add_argument("--n-dates", type=int, default=160, help="Number of business dates in demo panel")
+    factor_set_parser.add_argument("--n-codes", type=int, default=8, help="Number of securities in demo panel")
+    factor_set_parser.add_argument("--seed", type=int, default=7, help="Random seed for deterministic demo panel")
+    factor_set_parser.add_argument("--truth-csv", default="", help="Optional external truth CSV for factor-by-factor comparison")
+    factor_set_parser.add_argument("--truth-tolerance", type=float, default=1e-12, help="Absolute tolerance for truth comparison")
 
     return parser
 
@@ -154,10 +173,33 @@ def main() -> None:
         print(json.dumps({"items": list_alpha101_factors(config)}, ensure_ascii=False, indent=2))
         return
 
+    if args.command == "list-factor-set":
+        print(json.dumps({"items": list_factor_set_factors(args.factor_set, config)}, ensure_ascii=False, indent=2))
+        return
+
     if args.command == "run-alpha101-demo":
         factor_names = [item.strip() for item in args.factors.split(",") if item.strip()]
         payload = run_alpha101_research_job(
             {
+                "factor_names": factor_names,
+                "n_dates": args.n_dates,
+                "n_codes": args.n_codes,
+                "seed": args.seed,
+                "data_source": "demo",
+                "truth_csv_path": args.truth_csv,
+                "truth_tolerance": args.truth_tolerance,
+            },
+            config=config,
+        )
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return
+
+    if args.command == "run-factor-set-demo":
+        default_factors = WQ101_ALPHA_1_10 if args.factor_set == "wq101" else IMPLEMENTED_GTJA191_FACTORS
+        factor_names = [item.strip() for item in args.factors.split(",") if item.strip()] if args.factors else list(default_factors)
+        payload = run_factor_set_research_job(
+            {
+                "factor_set": args.factor_set,
                 "factor_names": factor_names,
                 "n_dates": args.n_dates,
                 "n_codes": args.n_codes,

@@ -4,7 +4,6 @@
 
 import numpy as np
 import pandas as pd
-from scipy.stats import rankdata
 
 
 def cross_sectional_rank(df: pd.DataFrame, date_col: str, value_col: str) -> pd.Series:
@@ -20,7 +19,7 @@ def rank_cross_section(df, col):
 def ts_rank(series: pd.Series, window: int) -> pd.Series:
     """Return rolling percentile rank of the last value in each window."""
     def _rank_last(x):
-        return rankdata(x)[-1] / len(x)
+        return pd.Series(x).rank(method="average", pct=True).iloc[-1]
     return series.rolling(window).apply(_rank_last, raw=True)
 
 

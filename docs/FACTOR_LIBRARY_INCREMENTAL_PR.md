@@ -4,13 +4,12 @@ This PR is an incremental follow-up to the closed factor reproduction PR.
 
 ## Scope
 
-- Add `research_core/factor_library/` as an experimental, standalone factor reproduction module focused on reusable operators, factor computation, batch compute, and validation.
-- Keep existing mainline modules untouched:
-  - `research_core/factor_lab/`
-  - `research_core/qlib_lab/`
-  - `docs/QLIB_FACTOR_WORKFLOW.md`
-  - `docs/ALPHA158_STARTER.md`
+- Move the new WQ101 Alpha#1-#10 and GTJA191 Alpha#1-#10 capability into the unified `research_core/factor_lab/` mainline.
+- Add `research_core/factor_lab/libraries/factor_sets.py` as the official compute entry for `wq101` and `gtja191`.
+- Add `research_core/factor_lab/libraries/gtja191/` specs and implementation so GTJA191 can use the same specs, registry, service, truth, proof, report, and CLI chain as Alpha101.
+- Keep `research_core/factor_library/` only as a compatibility layer for existing callers.
 - Fix the validation return-column mismatch found during review.
+- Fix `batch_compute_factors()` to rename the actual returned factor columns dynamically instead of hard-coding Alpha1-Alpha10.
 
 ## Review Feedback Addressed
 
@@ -24,12 +23,26 @@ This PR makes `compute_monthly_ic()` read `forward_return` by default and keeps 
 The regression test is:
 
 ```bash
-python -m unittest research_core.factor_library.test_validation
+python -m unittest \
+  research_core.factor_lab.libraries.test_factor_sets \
+  research_core.factor_lab.test_service \
+  research_core.factor_library.test_validation
 ```
+
+The factor-set regression coverage now includes:
+
+- `compute_wq101_alphas()`
+- `compute_gtja191_alphas()`
+- `compute_factor_set()`
+- column-set validation
+- non-empty coverage validation
+- fixed deterministic anchor values
+- WQ101 Alpha#1-#10 equality against the current `factor_lab` Alpha101 mainline implementation
+- GTJA191 service artifact export through specs, registry, proof, report, and CLI-compatible service paths
 
 ## Validation Boundary
 
-The bundled `example_usage` is a smoke test for package importability, factor calculation, and batch compute. It uses mock data and must not be treated as proof that Alpha101 or Alpha191 have been fully reproduced on real market data.
+The bundled `example_usage` is a compatibility smoke test for package importability, factor calculation, and batch compute. It uses mock data and must not be treated as proof that Alpha101 or Alpha191 have been fully reproduced on real market data.
 
 Real-data evidence is summarized in:
 
@@ -49,4 +62,4 @@ Real-data proof should include:
 - comparison against an external reference or accepted golden output,
 - explicit boundary notes for any secondary validation that remains incomplete.
 
-Current boundary: SmartData full-market local reproduction evidence is available for the first 10 WQ101 and GTJA191 factors; external full-market JoinQuant IC remains a secondary follow-up because of platform resource limits. Therefore this PR should be reviewed as reusable factor-library scaffolding plus validation plumbing with attached local real-data evidence, not as a final claim that every external platform result is fully proven.
+Current boundary: local full-market reproduction evidence is available for the first 10 WQ101 and GTJA191 factors; external full-market JoinQuant IC remains a secondary follow-up because of platform resource limits. Therefore this PR should be reviewed as factor_lab mainline integration plus validation plumbing with attached local real-data evidence, not as a final claim that every external platform result is fully proven.

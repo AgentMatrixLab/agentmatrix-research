@@ -34,7 +34,9 @@ def compute_ic(factor_values, returns):
     valid_idx = factor_values.notna() & returns.notna()
     if valid_idx.sum() < 2:
         return np.nan
-    return factor_values[valid_idx].corr(returns[valid_idx], method="spearman")
+    factor_rank = factor_values[valid_idx].rank(method="average")
+    return_rank = returns[valid_idx].rank(method="average")
+    return factor_rank.corr(return_rank)
 
 
 def compute_ic_series(
@@ -54,7 +56,7 @@ def compute_ic_series(
             rows.append({
                 date_col: date,
                 "factor": factor,
-                "ic": valid[factor].corr(valid[return_col], method="spearman") if len(valid) >= 2 else np.nan,
+                "ic": compute_ic(valid[factor], valid[return_col]) if len(valid) >= 2 else np.nan,
                 "n": len(valid),
             })
     return pd.DataFrame(rows)

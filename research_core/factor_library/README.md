@@ -1,6 +1,23 @@
-# Factor Library - 因子库
+# Factor Library Compatibility Layer - 因子库兼容层
 
-本模块包含复现的经典因子实现，用于量化研究。
+本模块保留旧调用路径，但新增因子能力的正式主线已经接入 `research_core/factor_lab/`。
+
+新代码应优先使用：
+
+```python
+from research_core.factor_lab.libraries.factor_sets import (
+    compute_factor_set,
+    compute_gtja191_alphas,
+    compute_wq101_alphas,
+)
+```
+
+CLI / proof / report 链路应优先使用：
+
+```bash
+python -m research_core.factor_lab.cli run-factor-set-demo --factor-set gtja191
+python -m research_core.factor_lab.cli run-factor-set-demo --factor-set wq101
+```
 
 ## 支持的因子
 
@@ -26,14 +43,16 @@
 
 ## 输出数据格式
 
-输出 DataFrame 包含：
+兼容层输出 DataFrame 包含：
 - `date`: 日期
 - `code`: 股票代码
 - `alpha1` - `alpha10`: 因子值
 
 ## 复现说明
 
-- 本模块提供可复用的因子计算、批量计算和轻量验证代码。
+- `research_core.factor_library` 仅作为兼容层，内部调用 `research_core.factor_lab` 的正式实现。
+- WQ101 Alpha#1-#10 直接调用 `factor_lab` 当前 Alpha101 主线实现，避免维护两套逻辑后分叉。
+- GTJA191 Alpha#1-#10 已有 `factor_lab` specs、registry、service、truth、proof、report、CLI 入口。
 - 本仓库内的 `example_usage` 只使用 mock data 做 smoke test，不能作为真实市场复现证明。
 - 真实数据验收摘要见 `docs/FACTOR_LIBRARY_REAL_DATA_EVIDENCE.md`。
 - 平台对照使用 JoinQuant alpha101/alpha191，但全市场 IC 对照仍属于二级待补验证。
@@ -42,8 +61,11 @@
 ## 使用示例
 
 ```python
-from research_core.factor_library import compute_wq101_alphas, compute_gtja191_alphas
-from research_core.factor_library.batch_compute import compute_factor_set
+from research_core.factor_lab.libraries.factor_sets import (
+    compute_factor_set,
+    compute_gtja191_alphas,
+    compute_wq101_alphas,
+)
 
 # 计算 WQ101 因子
 wq101_result = compute_wq101_alphas(df)
@@ -52,17 +74,19 @@ wq101_result = compute_wq101_alphas(df)
 gtja191_result = compute_gtja191_alphas(df)
 
 # 统一批量入口
-subset = compute_factor_set(df, "wq101", factors=["alpha1", "alpha3", "alpha6"])
+subset = compute_factor_set(df, "wq101", factor_names=["alpha1", "alpha3", "alpha6"])
 ```
 
 ## 批量计算入口
 
-`compute_factor_set(df, factor_set, factors=None)` 支持：
+正式主线 `compute_factor_set(df, factor_set, factor_names=None)` 支持：
 
 - `factor_set="wq101"`
 - `factor_set="gtja191"`
 
-`factors` 可选，例如 `["alpha1", "alpha3"]`。如果不传，则返回该因子集的前 10 个因子。
+`factor_names` 可选，例如 `["alpha1", "alpha3"]`。如果不传，则返回该因子集的前 10 个因子。
+
+兼容层 `research_core.factor_library.batch_compute.compute_factor_set(df, factor_set, factors=None)` 仍可使用；`batch_compute_factors()` 会按实际返回列动态加前缀，例如 `wq101_alpha1`、`gtja191_alpha10`。
 
 ## 轻量有效性检验
 

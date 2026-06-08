@@ -7,7 +7,12 @@ from typing import Any
 from uuid import uuid4
 
 from research_core.factor_lab.demo_data import build_alpha101_demo_panel
-from research_core.factor_lab.evaluation import build_alpha101_evaluation_report
+from research_core.factor_lab.evaluation import build_alpha101_evaluation_report, build_factor_evaluation_report
+from research_core.factor_lab.libraries.factor_sets import (
+    compute_factor_set,
+    factor_set_library_name,
+    factor_set_specs,
+)
 from research_core.factor_lab.libraries.alpha101 import (
     IMPLEMENTED_ALPHA101_FACTORS,
     alpha101_specs,
@@ -15,7 +20,9 @@ from research_core.factor_lab.libraries.alpha101 import (
 )
 from research_core.factor_lab.reporting import (
     build_alpha101_research_report,
+    build_factor_research_report,
     render_alpha101_research_report_markdown,
+    render_factor_research_report_markdown,
 )
 from research_core.factor_lab.registry import export_library_specs
 from research_core.factor_lab.runtime import FactorLabWorkspaceConfig, now_iso
@@ -38,6 +45,10 @@ def _alpha101_spec_map() -> dict[str, Any]:
     return {spec.factor_name: spec for spec in alpha101_specs()}
 
 
+def _spec_map(specs: list[Any]) -> dict[str, Any]:
+    return {spec.factor_name: spec for spec in specs}
+
+
 def _resolve_factor_names(factor_names: list[str] | None) -> list[str]:
     requested = factor_names or list(IMPLEMENTED_ALPHA101_FACTORS)
     invalid = [name for name in requested if name not in IMPLEMENTED_ALPHA101_FACTORS]
@@ -46,9 +57,19 @@ def _resolve_factor_names(factor_names: list[str] | None) -> list[str]:
     return requested
 
 
+def _resolve_factor_set_names(factor_set: str, factor_names: list[str] | None) -> list[str]:
+    specs = factor_set_specs(factor_set)
+    available = [spec.factor_name for spec in specs]
+    requested = factor_names or available
+    invalid = [name for name in requested if name not in available]
+    if invalid:
+        raise ValueError(f"Unsupported {factor_set} research factors: {invalid}")
+    return requested
+
+
 def _render_evaluation_markdown(report: dict[str, Any], *, factor_names: list[str]) -> str:
     lines = [
-        "# Alpha101 Evaluation Report",
+        f"# {report.get('library', 'Alpha101')} Evaluation Report",
         "",
         f"- Generated at: {now_iso()}",
         f"- Dataset rows: {report['dataset']['rows']}",
@@ -172,8 +193,12 @@ def get_factor_lab_overview(config: FactorLabWorkspaceConfig | None = None) -> d
             {
                 "library": "Alpha191",
                 "catalog_name": "alpha191",
-                "status": "planned-migration",
-                "notes": "当前 GTJA191 原型待并入统一 factor_lab。",
+                "spec_count": len(factor_set_specs("gtja191")),
+                "implemented_count": len(factor_set_specs("gtja191")),
+                "planned_count": 0,
+                "runtime_root": str(workspace.runtime_root),
+                "status": "active-incremental",
+                "notes": "GTJA191 Alpha#1-#10 已接入统一 factor_lab specs/registry/service/truth/proof/report/CLI。",
             },
             {
                 "library": "Alpha158",
@@ -202,6 +227,28 @@ def list_alpha101_factors(config: FactorLabWorkspaceConfig | None = None) -> lis
                 "factor_name": spec.factor_name,
                 "display_name": spec.display_name,
                 "factor_id": spec.factor_id,
+                "status": spec.metadata.get("status", "unknown"),
+                "implementation_stage": spec.metadata.get("implementation_stage", "unknown"),
+                "required_fields": spec.required_fields,
+                "has_formula": bool(spec.formula),
+                "proof_status": proof.get("status") if proof else "missing",
+            }
+        )
+    return items
+
+
+def list_factor_set_factors(factor_set: str, config: FactorLabWorkspaceConfig | None = None) -> list[dict[str, Any]]:
+    workspace = config or FactorLabWorkspaceConfig()
+    workspace.ensure_directories()
+    items: list[dict[str, Any]] = []
+    for spec in factor_set_specs(factor_set):
+        proof = _read_json_if_exists(workspace.proof_path(spec.library, spec.factor_name))
+        items.append(
+            {
+                "factor_name": spec.factor_name,
+                "display_name": spec.display_name,
+                "factor_id": spec.factor_id,
+                "library": spec.library,
                 "status": spec.metadata.get("status", "unknown"),
                 "implementation_stage": spec.metadata.get("implementation_stage", "unknown"),
                 "required_fields": spec.required_fields,
@@ -364,6 +411,127 @@ def run_alpha101_research_job(
             "truth_compares": truth_paths,
             "catalog": str(workspace.catalog_path("alpha101")),
             "specs": str(workspace.specs_path("alpha101")),
+        },
+    }
+    workspace.job_path(job_id).write_text(json.dumps(job, ensure_ascii=False, indent=2), encoding="utf-8")
+    return job
+
+
+def run_factor_set_research_job(
+    payload: dict[str, Any] | None = None,
+    config: FactorLabWorkspaceConfig | None = None,
+) -> dict[str, Any]:
+    request_payload = payload or {}
+    workspace = config or FactorLabWorkspaceConfig()
+    workspace.ensure_directories()
+
+    factor_set = str(request_payload.get("factor_set", "wq101")).lower()
+    factor_names = _resolve_factor_set_names(factor_set, request_payload.get("factor_names"))
+    n_dates = int(request_payload.get("n_dates", 160))
+    n_codes = int(request_payload.get("n_codes", 8))
+    seed = int(request_payload.get("seed", 7))
+    data_source = request_payload.get("data_source", "demo")
+    truth_csv_path = request_payload.get("truth_csv_path", "")
+    truth_tolerance = float(request_payload.get("truth_tolerance", 1e-12))
+    if data_source != "demo":
+        raise ValueError("Current factor_lab backend supports 'demo' data_source only for factor-set research jobs.")
+
+    specs = factor_set_specs(factor_set)
+    library = factor_set_library_name(factor_set)
+    catalog_key = factor_set
+    export_library_specs(config=workspace, library=catalog_key, specs=specs)
+
+    job_id = request_payload.get("job_id") or f"{factor_set}-{uuid4().hex[:12]}"
+    panel = build_alpha101_demo_panel(n_dates=n_dates, n_codes=n_codes, seed=seed)
+    factor_frame = compute_factor_set(panel, factor_set, factor_names=factor_names)
+    evaluation_report = build_factor_evaluation_report(panel, factor_frame, factor_names=factor_names, library=library)
+    truth_frame = load_truth_frame(truth_csv_path, factor_names=factor_names) if truth_csv_path else None
+    truth_summary = summarize_truth_frame(truth_frame, factor_names=factor_names) if truth_frame is not None else {}
+
+    frame_path = workspace.frame_path(catalog_key, job_id)
+    factor_frame.to_csv(frame_path, index=False, encoding="utf-8")
+
+    evaluation_json_path = workspace.report_path(f"{job_id}_evaluation", suffix=".json")
+    evaluation_json_path.write_text(json.dumps(evaluation_report, ensure_ascii=False, indent=2), encoding="utf-8")
+    evaluation_md_path = workspace.report_path(f"{job_id}_evaluation", suffix=".md")
+    evaluation_md_path.write_text(_render_evaluation_markdown(evaluation_report, factor_names=factor_names), encoding="utf-8")
+
+    specs_by_name = _spec_map(specs)
+    proof_paths: dict[str, str] = {}
+    proof_payloads: dict[str, dict[str, Any]] = {}
+    truth_paths: dict[str, str] = {}
+    truth_payloads: dict[str, dict[str, Any]] = {}
+    for factor_name in factor_names:
+        factor_only_frame = factor_frame[["date", "code", factor_name]].copy()
+        truth_path = ""
+        truth_metrics: dict[str, Any] | None = None
+        if truth_frame is not None:
+            truth_path, truth_metrics = export_truth_comparison(
+                config=workspace,
+                spec=specs_by_name[factor_name],
+                factor_frame=factor_only_frame,
+                truth_frame=truth_frame,
+                tolerance=truth_tolerance,
+            )
+            truth_paths[factor_name] = truth_path
+            truth_payloads[factor_name] = truth_metrics
+        proof_paths[factor_name] = export_validation_report(
+            config=workspace,
+            spec=specs_by_name[factor_name],
+            factor_frame=factor_only_frame,
+            evaluation_report=evaluation_report,
+            available_columns=panel.columns.tolist(),
+            evaluation_path=str(evaluation_json_path),
+            job_id=job_id,
+            truth_path=truth_path,
+            truth_metrics=truth_metrics,
+        )
+        proof_payloads[factor_name] = json.loads(Path(proof_paths[factor_name]).read_text(encoding="utf-8"))
+
+    for spec in specs:
+        if spec.factor_name not in proof_paths:
+            export_proof_template(config=workspace, spec=spec)
+
+    research_report = build_factor_research_report(
+        job_id=job_id,
+        library=library,
+        factor_names=factor_names,
+        evaluation_report=evaluation_report,
+        proof_payloads=proof_payloads,
+        truth_payloads=truth_payloads,
+        data_source=data_source,
+    )
+    research_report_json_path = workspace.report_path(f"{job_id}_proof_report", suffix=".json")
+    research_report_json_path.write_text(json.dumps(research_report, ensure_ascii=False, indent=2), encoding="utf-8")
+    research_report_md_path = workspace.report_path(f"{job_id}_proof_report", suffix=".md")
+    research_report_md_path.write_text(render_factor_research_report_markdown(research_report), encoding="utf-8")
+
+    job = {
+        "job_id": job_id,
+        "library": library,
+        "factor_set": factor_set,
+        "status": "completed",
+        "data_source": data_source,
+        "truth_csv_path": truth_csv_path,
+        "truth_enabled": bool(truth_csv_path),
+        "truth_summary": truth_summary,
+        "generated_at": now_iso(),
+        "requested_factors": factor_names,
+        "dataset": {
+            "n_dates": n_dates,
+            "n_codes": n_codes,
+            "seed": seed,
+        },
+        "artifacts": {
+            "factor_frame": str(frame_path),
+            "evaluation_json": str(evaluation_json_path),
+            "evaluation_markdown": str(evaluation_md_path),
+            "research_report_json": str(research_report_json_path),
+            "research_report_markdown": str(research_report_md_path),
+            "proofs": proof_paths,
+            "truth_compares": truth_paths,
+            "catalog": str(workspace.catalog_path(catalog_key)),
+            "specs": str(workspace.specs_path(catalog_key)),
         },
     }
     workspace.job_path(job_id).write_text(json.dumps(job, ensure_ascii=False, indent=2), encoding="utf-8")

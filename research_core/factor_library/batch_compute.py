@@ -3,8 +3,8 @@
 # ============================================================
 
 import pandas as pd
-from .wq101_alpha_1_10 import compute_all_alphas as compute_wq101
-from .gtja191_alpha_1_10 import compute_all_alphas as compute_gtja191
+
+from research_core.factor_lab.libraries.factor_sets import compute_factor_set as compute_factor_lab_set
 
 
 def compute_factor_set(df: pd.DataFrame, factor_set: str, factors: list[str] | None = None) -> pd.DataFrame:
@@ -19,21 +19,9 @@ def compute_factor_set(df: pd.DataFrame, factor_set: str, factors: list[str] | N
     factors:
         Optional list such as ``["alpha1", "alpha3"]``.
     """
-    normalized = factor_set.lower()
-    if normalized == 'wq101':
-        result = compute_wq101(df.copy())
-    elif normalized == 'gtja191':
-        result = compute_gtja191(df.copy())
-    else:
-        raise ValueError(f"Unsupported factor_set: {factor_set}")
+    result = compute_factor_lab_set(df.copy(), factor_set, factor_names=factors)
 
-    if factors is None:
-        return result
-
-    missing = [factor for factor in factors if factor not in result.columns]
-    if missing:
-        raise ValueError(f"Unknown factors for {factor_set}: {missing}")
-    return result[['date', 'code'] + factors].copy()
+    return result
 
 
 def batch_compute_factors(df, factor_sets=None):
@@ -52,21 +40,17 @@ def batch_compute_factors(df, factor_sets=None):
 
     results = []
 
-    if 'wq101' in factor_sets:
-        wq101_result = compute_factor_set(df, 'wq101')
-        wq101_result.columns = ['date', 'code'] + [f'wq101_alpha{i}' for i in range(1, 11)]
-        results.append(wq101_result)
+    for factor_set in factor_sets:
+        result = compute_factor_set(df, factor_set)
+        factor_columns = [column for column in result.columns if column not in {"date", "code"}]
+        renamed = result.rename(columns={column: f"{factor_set}_{column}" for column in factor_columns})
+        results.append(renamed)
 
-    if 'gtja191' in factor_sets:
-        gtja191_result = compute_factor_set(df, 'gtja191')
-        gtja191_result.columns = ['date', 'code'] + [f'gtja191_alpha{i}' for i in range(1, 11)]
-        results.append(gtja191_result)
-
-    # 合并结果
+    if not results:
+        return df[["date", "code"]].copy()
     if len(results) == 1:
         return results[0]
-    else:
-        merged = results[0]
-        for result in results[1:]:
-            merged = pd.merge(merged, result, on=['date', 'code'], how='outer')
-        return merged
+    merged = results[0]
+    for result in results[1:]:
+        merged = pd.merge(merged, result, on=["date", "code"], how="outer")
+    return merged

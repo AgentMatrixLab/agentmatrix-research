@@ -13,6 +13,8 @@ from research_core.factor_lab.service import (
     get_factor_lab_job,
     get_factor_lab_overview,
     list_alpha101_factors,
+    list_factor_set_factors,
+    run_factor_set_research_job,
     run_alpha101_research_job,
     run_alpha101_truth_proof_batch,
     validate_alpha101_truth_csv,
@@ -197,6 +199,38 @@ class FactorLabServiceTest(unittest.TestCase):
         self.assertFalse(validation["valid"])
         self.assertEqual(validation["duplicate_key_count"], 2)
         self.assertEqual(validation["empty_factors"], [])
+
+    def test_run_gtja191_factor_set_job_exports_formal_chain_artifacts(self) -> None:
+        workspace = self._workspace()
+        job = run_factor_set_research_job(
+            {
+                "factor_set": "gtja191",
+                "factor_names": ["alpha1", "alpha2"],
+                "n_dates": 80,
+                "n_codes": 6,
+                "seed": 43,
+                "data_source": "demo",
+            },
+            workspace,
+        )
+
+        self.assertEqual(job["status"], "completed")
+        self.assertEqual(job["library"], "GTJA191")
+        self.assertTrue(Path(job["artifacts"]["specs"]).exists())
+        self.assertTrue(Path(job["artifacts"]["catalog"]).exists())
+        self.assertTrue(Path(job["artifacts"]["factor_frame"]).exists())
+        self.assertTrue(Path(job["artifacts"]["evaluation_json"]).exists())
+        self.assertTrue(Path(job["artifacts"]["research_report_json"]).exists())
+        self.assertTrue(Path(job["artifacts"]["research_report_markdown"]).exists())
+        self.assertTrue(Path(job["artifacts"]["proofs"]["alpha1"]).exists())
+
+        catalog = json.loads(Path(job["artifacts"]["catalog"]).read_text(encoding="utf-8"))
+        self.assertEqual(catalog["count"], 10)
+        self.assertEqual(catalog["items"][0]["library"], "GTJA191")
+
+        items = list_factor_set_factors("gtja191", workspace)
+        self.assertEqual(len(items), 10)
+        self.assertEqual(items[0]["proof_status"], "partial")
 
 
 if __name__ == "__main__":
