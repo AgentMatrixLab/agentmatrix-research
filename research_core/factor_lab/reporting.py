@@ -82,9 +82,31 @@ def build_alpha101_research_report(
     }
 
 
+def build_factor_research_report(
+    *,
+    job_id: str,
+    library: str,
+    factor_names: list[str],
+    evaluation_report: dict[str, Any],
+    proof_payloads: dict[str, dict[str, Any]],
+    truth_payloads: dict[str, dict[str, Any]],
+    data_source: str,
+) -> dict[str, Any]:
+    report = build_alpha101_research_report(
+        job_id=job_id,
+        factor_names=factor_names,
+        evaluation_report=evaluation_report,
+        proof_payloads=proof_payloads,
+        truth_payloads=truth_payloads,
+        data_source=data_source,
+    )
+    report["library"] = library
+    return report
+
+
 def render_alpha101_research_report_markdown(report: dict[str, Any]) -> str:
     lines = [
-        "# Alpha101 Research Proof Report",
+        f"# {report.get('library', 'Alpha101')} Research Proof Report",
         "",
         f"- Job ID: {report['job_id']}",
         f"- Generated at: {report['generated_at']}",
@@ -113,6 +135,10 @@ def render_alpha101_research_report_markdown(report: dict[str, Any]) -> str:
             f"{_format_optional_float(truth_match)} | {_format_optional_float(max_abs_error)} |"
         )
     return "\n".join(lines) + "\n"
+
+
+def render_factor_research_report_markdown(report: dict[str, Any]) -> str:
+    return render_alpha101_research_report_markdown(report)
 
 
 def _format_optional_float(value: Any) -> str:

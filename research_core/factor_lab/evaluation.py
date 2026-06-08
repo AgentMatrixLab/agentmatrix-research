@@ -133,3 +133,27 @@ def build_alpha101_evaluation_report(
         },
         "summary": summary,
     }
+
+
+def build_factor_evaluation_report(
+    panel: pd.DataFrame,
+    factor_frame: pd.DataFrame,
+    *,
+    factor_names: list[str],
+    library: str,
+) -> dict[str, Any]:
+    enriched = factor_frame.merge(panel[["date", "code", "close"]], on=["date", "code"], how="left")
+    enriched["forward_return_1d"] = compute_forward_returns(
+        panel[["date", "code", "close"]].sort_values(["code", "date"]).reset_index(drop=True),
+        price_col="close",
+    )
+    summary = summarize_factor_frame(enriched, factor_names=factor_names)
+    return {
+        "library": library,
+        "dataset": {
+            "rows": int(len(panel)),
+            "codes": int(panel["code"].nunique()),
+            "dates": int(panel["date"].nunique()),
+        },
+        "summary": summary,
+    }
