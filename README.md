@@ -196,8 +196,6 @@ python -m py_compile research_core/my_module.py
 
 The `backend/` and `scripts/` directories are **legacy transition layers** from the original monorepo. New development should target `research_core/` and `contracts/` exclusively.
 
-See [VERSION_UPDATE_2026-04-07.md](VERSION_UPDATE_2026-04-07.md) for the full migration history.
-
 ## License
 
 This project is licensed under the [Apache License 2.0](LICENSE).
