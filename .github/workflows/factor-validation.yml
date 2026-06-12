@@ -1,0 +1,89 @@
+name: Factor Validation
+
+on:
+  pull_request:
+    paths:
+      - 'research_core/factor_lab/**'
+      - 'submissions/**'
+      - 'contracts/factor_research.py'
+  workflow_dispatch:
+    inputs:
+      factors:
+        description: 'Factor names (for manual run on alpha101)'
+        required: false
+        default: ''
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install numpy pandas pytest -q
+
+      - name: Detect changed factors
+        id: detect
+        run: |
+          git diff --name-only origin/${{ github.base_ref }}...HEAD
+          python scripts/ci_detect_changes.py \
+            --base-ref "origin/${{ github.base_ref }}" \
+            --output-json /tmp/changed_factors.json
+          cat /tmp/changed_factors.json
+        continue-on-error: true
+
+      - name: "Run unit tests [Layer 1: Formula]"
+        run: |
+          python -m pytest research_core/factor_lab/ -v --tb=short 2>&1 | tee /tmp/unit_test_output.txt
+        continue-on-error: true
+
+      - name: "Run submission tests [Layer 1: Formula]"
+        run: |
+          if [ -f /tmp/changed_submissions.txt ] && [ -s /tmp/changed_submissions.txt ]; then
+            while IFS= read -r sub_dir; do
+              if [ -f "$sub_dir/test_factor.py" ]; then
+                echo "Testing: $sub_dir"
+                python -m pytest "$sub_dir/test_factor.py" -v --tb=short 2>&1 || true
+              fi
+            done < /tmp/changed_submissions.txt
+          else
+            echo "No submission changes detected"
+          fi
+        continue-on-error: true
+
+      - name: "Run factor_lab validation [Layer 1+2+3]"
+        run: |
+          python scripts/ci_factor_validate.py \
+            --changed-json /tmp/changed_factors.json \
+            --output-dir /tmp/validation_output \
+            2>&1 | tee /tmp/validation_run.txt
+        continue-on-error: true
+
+      - name: Generate PR comment
+        id: comment
+        run: |
+          python scripts/ci_generate_pr_comment.py \
+            --unit-test-log /tmp/unit_test_output.txt \
+            --validation-dir /tmp/validation_output \
+            --changed-json /tmp/changed_factors.json \
+            --output /tmp/pr_comment.md
+
+      - name: Post PR comment
+        uses: thollander/actions-comment-pull-request@v3
+        with:
+          file-path: /tmp/pr_comment.md
+          comment-tag: factor-validation
+          mode: recreate
+          create-if-not-exists: true

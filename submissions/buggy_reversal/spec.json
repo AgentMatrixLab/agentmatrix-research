@@ -1,0 +1,13 @@
+{
+  "factor_name": "buggy_reversal",
+  "library": "custom",
+  "version": "1.0.0",
+  "display_name": "有bug的5日反转",
+  "source_document": "N/A",
+  "formula": "-(P_t/P_{t-5} - 1)",
+  "description": "5日反转因子 — 但公式写错了方向",
+  "frequency": "day",
+  "required_fields": ["close"],
+  "parameters": {"window": 5},
+  "tags": ["reversal", "bug"]
+}
