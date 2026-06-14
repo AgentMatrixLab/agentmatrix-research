@@ -7,8 +7,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
-import sys
 from pathlib import Path
 
 
@@ -27,7 +27,7 @@ def run_git_diff(base_ref: str) -> list[str]:
     return [line.strip() for line in result.stdout.splitlines() if line.strip()]
 
 
-def detect_factor_lab_changes(files: list[str]) -> list[str]:
+def detect_factor_lab_changes(files: list[str], base_ref: str) -> list[str]:
     """Detect which alpha101 factors were added/modified.
 
     Heuristic: if factor_lab/libraries/alpha101/factors.py or specs.py changed,
@@ -50,7 +50,7 @@ def detect_factor_lab_changes(files: list[str]) -> list[str]:
         # Try to detect specific factor function changes
         try:
             result = subprocess.run(
-                ["git", "diff", "HEAD~1...HEAD", "--",
+                ["git", "diff", f"{base_ref}...HEAD", "--",
                  "research_core/factor_lab/libraries/alpha101/factors.py",
                  "research_core/factor_lab/libraries/alpha101/specs.py"],
                 capture_output=True, text=True,
@@ -58,15 +58,12 @@ def detect_factor_lab_changes(files: list[str]) -> list[str]:
             diff_text = result.stdout
             factors = set()
             for line in diff_text.splitlines():
-                if line.startswith('+def compute_alpha'):
-                    # Extract alphaN from compute_alphaN
-                    name = line.split('def compute_')[1].split('(')[0]
-                    factors.add(name)
-                elif line.startswith('+') and 'alpha' in line.lower():
-                    # Check for alpha references in specs
-                    import re
-                    found = re.findall(r'alpha\d+', line)
-                    factors.update(found)
+                if not line.startswith('+') or line.startswith('+++'):
+                    continue
+                for match in re.findall(r'_alpha(\d+)|alpha(\d+)', line.lower()):
+                    factor_num = next((item for item in match if item), "")
+                    if factor_num:
+                        factors.add(f"alpha{int(factor_num)}")
             if factors:
                 return sorted(factors)
         except Exception:
@@ -100,7 +97,7 @@ def main():
 
     files = run_git_diff(args.base_ref)
 
-    factor_changes = detect_factor_lab_changes(files)
+    factor_changes = detect_factor_lab_changes(files, args.base_ref)
     submission_changes = detect_submission_changes(files)
 
     output = {
@@ -111,12 +108,12 @@ def main():
         "changed_submissions": submission_changes,
     }
 
-    Path(args.output_json).write_text(json.dumps(output, indent=2))
+    Path(args.output_json).write_text(json.dumps(output, indent=2), encoding="utf-8")
     print(json.dumps(output, indent=2))
 
     # Write submissions list to a separate file for shell usage
     if submission_changes:
-        Path('/tmp/changed_submissions.txt').write_text('\n'.join(submission_changes))
+        Path('/tmp/changed_submissions.txt').write_text('\n'.join(submission_changes), encoding="utf-8")
 
 
 if __name__ == '__main__':

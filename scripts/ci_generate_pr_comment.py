@@ -15,6 +15,16 @@ from pathlib import Path
 from typing import Any
 
 
+def _read_text(path: str | Path) -> str:
+    target = Path(path)
+    for encoding in ("utf-8", "utf-16", "utf-16-le", "utf-16-be", "gbk"):
+        try:
+            return target.read_text(encoding=encoding)
+        except Exception:
+            continue
+    return target.read_text()
+
+
 def _fmt_float(value: Any, precision: int = 6) -> str:
     """Format float for display, handle NaN/None."""
     if value is None:
@@ -46,18 +56,26 @@ def _status_emoji(status: str) -> str:
 def parse_unit_test_log(log_path: str) -> dict[str, Any]:
     """Parse pytest output to extract pass/fail summary."""
     try:
-        text = Path(log_path).read_text()
+        text = _read_text(log_path)
     except Exception:
         return {"summary": "No unit test log found"}
 
     # Parse pytest summary line
-    summary_match = re.search(r'=+ (.*?) =+', text)
-    summary = summary_match.group(1) if summary_match else "Could not parse summary"
+    summary_matches = re.findall(r'=+ (.*?) =+', text)
+    summary = summary_matches[-1] if summary_matches else "Could not parse summary"
 
     # Count passes and failures
     passed = len(re.findall(r' PASSED ', text))
     failed = len(re.findall(r' FAILED ', text))
     errors = len(re.findall(r' ERROR ', text))
+    if passed == 0 and failed == 0 and errors == 0:
+        summary_lower = summary.lower()
+        passed_match = re.search(r'(\d+)\s+passed', summary_lower)
+        failed_match = re.search(r'(\d+)\s+failed', summary_lower)
+        error_match = re.search(r'(\d+)\s+error', summary_lower)
+        passed = int(passed_match.group(1)) if passed_match else 0
+        failed = int(failed_match.group(1)) if failed_match else 0
+        errors = int(error_match.group(1)) if error_match else 0
 
     return {
         "summary": summary,
@@ -70,6 +88,7 @@ def parse_unit_test_log(log_path: str) -> dict[str, Any]:
 
 def generate_comment(
     unit_test: dict,
+    submission_test: dict,
     validation: dict,
     changes: dict,
 ) -> str:
@@ -88,6 +107,8 @@ def generate_comment(
     # === Summary Bar ===
     test_total = unit_test.get("passed", 0) + unit_test.get("failed", 0) + unit_test.get("errors", 0)
     test_status = "✅ 全部通过" if unit_test.get("failed", 0) == 0 and unit_test.get("errors", 0) == 0 else "❌ 存在失败"
+    submission_test_total = submission_test.get("passed", 0) + submission_test.get("failed", 0) + submission_test.get("errors", 0)
+    submission_test_status = "✅ 全部通过" if submission_test.get("failed", 0) == 0 and submission_test.get("errors", 0) == 0 else "❌ 存在失败"
 
     lines.extend([
         "### 📊 概览",
@@ -95,6 +116,7 @@ def generate_comment(
         f"| 检查项 | 结果 |",
         f"|---|---|",
         f"| 单元测试 (Layer 1: 公式正确性) | {test_status} ({test_total} tests) |",
+        f"| 提交测试 (Layer 1: submissions) | {submission_test_status} ({submission_test_total} tests) |",
     ])
 
     # Alpha101 validation
@@ -126,6 +148,16 @@ def generate_comment(
             "```",
         ])
 
+    if submission_test.get("failed", 0) > 0 or submission_test.get("errors", 0) > 0:
+        lines.extend([
+            "",
+            "### 🔴 提交测试失败详情",
+            "",
+            "```text",
+            submission_test.get("raw", "No details available")[:2000],
+            "```",
+        ])
+
     # === Alpha101 Factor Results ===
     if alpha and "requested_factors" in alpha and alpha.get("requested_factors"):
         lines.extend([
@@ -140,7 +172,7 @@ def generate_comment(
 
         if report_path and Path(report_path).exists():
             # Embed the generated report
-            report_content = Path(report_path).read_text()
+            report_content = _read_text(report_path)
             lines.append(report_content)
         else:
             # Build summary from eval data
@@ -157,7 +189,7 @@ def generate_comment(
             ])
             for fname, proof_path in sorted(proofs.items()):
                 if Path(proof_path).exists():
-                    proof = json.loads(Path(proof_path).read_text())
+                    proof = json.loads(_read_text(proof_path))
                     status = proof.get("status", "unknown")
                     checks = proof.get("checks", [])
                     diag = proof.get("diagnostics", {})
@@ -195,6 +227,9 @@ def generate_comment(
 
             lines.append(f"**{name}** ({sub_dir}) — {_status_emoji(status)} {status}")
             lines.append("")
+
+            if result.get("error"):
+                lines.append(f"- ❌ **error**: {result['error']}")
 
             for check in checks:
                 c_status = check["status"]
@@ -239,26 +274,28 @@ def main():
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('--unit-test-log', default='/tmp/unit_test_output.txt')
+    parser.add_argument('--submission-test-log', default='/tmp/submission_test_output.txt')
     parser.add_argument('--validation-dir', default='/tmp/validation_output')
     parser.add_argument('--changed-json', default='/tmp/changed_factors.json')
     parser.add_argument('--output', default='/tmp/pr_comment.md')
     args = parser.parse_args()
 
     unit_test = parse_unit_test_log(args.unit_test_log)
+    submission_test = parse_unit_test_log(args.submission_test_log)
 
     validation = {}
     results_path = Path(args.validation_dir) / "results.json"
     if results_path.exists():
-        validation = json.loads(results_path.read_text())
+        validation = json.loads(_read_text(results_path))
 
     changes = {}
     changes_path = Path(args.changed_json)
     if changes_path.exists():
-        changes = json.loads(changes_path.read_text())
+        changes = json.loads(_read_text(changes_path))
 
-    comment = generate_comment(unit_test, validation, changes)
+    comment = generate_comment(unit_test, submission_test, validation, changes)
 
-    Path(args.output).write_text(comment)
+    Path(args.output).write_text(comment, encoding="utf-8")
     print(f"PR comment written to {args.output}")
     print(f"Comment length: {len(comment)} chars")
 

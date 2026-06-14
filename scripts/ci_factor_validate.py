@@ -10,12 +10,23 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
-import traceback
 from pathlib import Path
 from typing import Any
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+
+
+def failed_result(message: str, *, factor_name: str | None = None) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "status": "failed",
+        "error": message,
+        "checks": [],
+        "evaluation": {},
+    }
+    if factor_name is not None:
+        payload["factor_name"] = factor_name
+    return payload
 
 
 def run_cli_command(cmd: list[str], timeout: int = 300) -> dict[str, Any]:
@@ -70,14 +81,14 @@ def validate_submission(sub_dir: str) -> dict[str, Any]:
     factor_path = sub_path / "factor.py"
 
     if not spec_path.exists():
-        return {"error": f"Missing spec.json in {sub_dir}"}
+        return failed_result(f"Missing spec.json in {sub_dir}")
     if not factor_path.exists():
-        return {"error": f"Missing factor.py in {sub_dir}"}
+        return failed_result(f"Missing factor.py in {sub_dir}")
 
     try:
-        spec = json.loads(spec_path.read_text())
+        spec = json.loads(spec_path.read_text(encoding="utf-8"))
     except Exception as e:
-        return {"error": f"Invalid spec.json: {e}"}
+        return failed_result(f"Invalid spec.json: {e}")
 
     factor_name = spec.get("factor_name", "unknown")
     required_fields = spec.get("required_fields", [])
@@ -135,15 +146,17 @@ def validate_submission(sub_dir: str) -> dict[str, Any]:
         spec_obj.loader.exec_module(module)
 
         if not hasattr(module, 'compute'):
-            return {"factor_name": factor_name, "status": "failed",
-                    "checks": [{"name": "formula_match", "status": "failed",
-                                "description": "factor.py 缺少 compute(panel) 函数"}]}
+            return {
+                **failed_result("factor.py 缺少 compute(panel) 函数", factor_name=factor_name),
+                "checks": [{"name": "formula_match", "status": "failed", "description": "factor.py 缺少 compute(panel) 函数"}],
+            }
 
         factor_series = module.compute(panel)
     except Exception as e:
-        return {"factor_name": factor_name, "status": "failed",
-                "checks": [{"name": "formula_match", "status": "failed",
-                            "description": f"因子计算失败: {e}"}]}
+        return {
+            **failed_result(f"因子计算失败: {e}", factor_name=factor_name),
+            "checks": [{"name": "formula_match", "status": "failed", "description": f"因子计算失败: {e}"}],
+        }
 
     # Build factor frame
     factor_frame = panel[["date", "code"]].copy()
@@ -228,7 +241,10 @@ def main():
         results["submissions"][sub_dir] = result
 
     # Write results
-    (output_dir / "results.json").write_text(json.dumps(results, indent=2, ensure_ascii=False))
+    (output_dir / "results.json").write_text(
+        json.dumps(results, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
 
     # Summary
     print("\n=== Validation Summary ===")
@@ -237,10 +253,10 @@ def main():
     # Exit code
     has_failures = False
     if isinstance(results["alpha101"], dict):
-        if results["alpha101"].get("status") == "failed":
+        if results["alpha101"].get("status") == "failed" or results["alpha101"].get("error"):
             has_failures = True
     for sub_result in results["submissions"].values():
-        if sub_result.get("status") == "failed":
+        if sub_result.get("status") == "failed" or sub_result.get("error"):
             has_failures = True
 
     if has_failures:
