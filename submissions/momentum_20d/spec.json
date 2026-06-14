@@ -1,0 +1,16 @@
+{
+  "factor_name": "momentum_20d",
+  "library": "custom",
+  "version": "1.0.0",
+  "display_name": "20日动量",
+  "source_document": "经典动量因子 — Jegadeesh & Titman (1993) 变体",
+  "formula": "(close_t - close_{t-20}) / close_{t-20}",
+  "description": "过去20个交易日的价格收益率，反映中期动量效应。预期IC为正。",
+  "frequency": "day",
+  "sample_scope": "全市场A股（剔除ST、新股、北交所）",
+  "required_fields": ["close"],
+  "parameters": {"window": 20},
+  "preprocessing": ["前复权价格"],
+  "neutralization": [],
+  "tags": ["momentum", "price", "medium-term"]
+}
