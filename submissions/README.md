@@ -14,6 +14,8 @@ submissions/
     └── test_factor.py   # 单元测试（必须）
 ```
 
+故意失败的负例样本不要放在 `submissions/` 下，应放到 `examples/negative_submissions/` 一类的非提交流程目录，避免 CI 将其当作真实提交因子执行。
+
 ### 1. factor.py
 
 必须包含 `compute(panel)` 函数，接收一个 pandas DataFrame，返回一个 pandas Series。

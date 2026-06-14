@@ -85,7 +85,10 @@ def detect_submission_changes(files: list[str]) -> list[str]:
         if f.startswith('submissions/') and f != 'submissions/README.md':
             parts = Path(f).parts
             if len(parts) >= 2:
-                submissions.add(str(Path('submissions') / parts[1]))
+                candidate = Path('submissions') / parts[1]
+                # Ignore deleted or moved-away submissions so CI only validates active entries.
+                if candidate.exists():
+                    submissions.add(str(candidate))
     return sorted(submissions)
 
 
