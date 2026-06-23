@@ -33,6 +33,8 @@ from research_core.factor_lab.truth import (
     validate_truth_frame,
 )
 from research_core.factor_lab.validation import export_proof_template, export_validation_report
+from research_core.factor_lab.diagnostics import MismatchDiagnostician
+from research_core.factor_lab.nc_classifier import NCClassifier
 
 
 def _read_json_if_exists(path: Path) -> dict[str, Any] | None:
@@ -733,6 +735,42 @@ def run_jq_gm_research_job(
         if spec.factor_name not in proof_paths:
             export_proof_template(config=workspace, spec=spec)
 
+    # ── NC classification + diagnostics (W3-4) ──
+    nc_result = None
+    diagnosis_results = {}
+    nc_report_path = workspace.report_path(f"{job_id}_nc", suffix=".md")
+    diag_report_path = workspace.report_path(f"{job_id}_diagnosis", suffix=".json")
+    if truth_frame is not None and truth_payloads:
+        import pandas as _pd
+        rows = []
+        for fn in factor_names:
+            tp = truth_payloads.get(fn, {})
+            for mm in tp.get("mismatches", []):
+                rows.append({
+                    "factor_key": fn,
+                    "symbol": mm.get("code", mm.get("symbol", "")),
+                    "gm_value": mm.get("computed_value", float("nan")),
+                    "jq_value": mm.get("truth_value", float("nan")),
+                    "diff_pct": mm.get("abs_error", 0.0),
+                    "status": "MISMATCH",
+                })
+        if rows:
+            cmp_df = _pd.DataFrame(rows)
+            reg = {s.factor_name: {
+                "gm_field": s.metadata.get("gm_field", ""),
+                "display_name": s.display_name,
+                "ttm": s.metadata.get("ttm", False),
+            } for s in specs}
+            cls = NCClassifier(factor_registry=reg)
+            nc_result = cls.batch_classify(cmp_df)
+            diag = MismatchDiagnostician()
+            diagnosis_results = {k: v.to_dict() for k, v in
+                                 diag.diagnose_all(cmp_df, reg).items()}
+            nc_report_path.write_text(cls.generate_report(nc_result), encoding="utf-8")
+            import json as _json
+            diag_report_path.write_text(_json.dumps(
+                diagnosis_results, ensure_ascii=False, indent=2), encoding="utf-8")
+
     research_report = build_factor_research_report(
         job_id=job_id,
         library="jq_gm",
@@ -766,6 +804,11 @@ def run_jq_gm_research_job(
         "truth_csv_path": truth_csv_path,
         "truth_enabled": bool(truth_csv_path),
         "truth_summary": truth_summary,
+        "nc_classification": {
+            "stats": nc_result.stats if nc_result else {},
+            "factor_nc": nc_result.factor_nc if nc_result else {},
+        },
+        "diagnostics": diagnosis_results,
         "generated_at": now_iso(),
         "requested_factors": factor_names,
         "dataset": {"n_dates": n_dates, "n_codes": n_codes, "seed": seed},
@@ -779,6 +822,8 @@ def run_jq_gm_research_job(
             "truth_compares": truth_paths,
             "catalog": str(workspace.catalog_path("jq_gm")),
             "specs": str(workspace.specs_path("jq_gm")),
+            "nc_report_md": str(nc_report_path) if nc_result else "",
+            "diagnosis_report_json": str(diag_report_path) if diagnosis_results else "",
         },
     }
     workspace.job_path(job_id).write_text(

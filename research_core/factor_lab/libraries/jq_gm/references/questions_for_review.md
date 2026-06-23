@@ -32,7 +32,7 @@
 ### Q5: 215 个因子中只有 31 个有真值，其余如何处理
 **现状**: 31 个因子有 GM vs JQ 交叉验证结果（MISMATCH=0），可提供真值 CSV。其余 184 个只有 GM 端计算结果，没有对照数据。
 **待确认**: CI proof-batch 时，无真值的因子 proof 状态应标 `pending_external_truth` 还是 `not_applicable`？
-**标记**: [P1] 直接影响 CI 结果展示，需在 Week 5 前明确。
+**标记**: 暂标 Pending，已通过 PR 描述向导师确认
 
 ## 来源声明
 
