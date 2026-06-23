@@ -862,3 +862,47 @@ def run_jq_gm_truth_proof_batch(
         "proof_batch_summary": report_payload["summary"],
         "artifacts": job["artifacts"],
     }
+
+
+def verify_candidates(
+    expressions: list[str],
+    *,
+    n_dates: int = 3,
+    n_codes: int = 20,
+    seed: int = 42,
+) -> dict[str, Any]:
+    """Verify AI-generated candidate factor expressions via mining bridge."""
+    from research_core.factor_lab.mining_bridge import (
+        batch_verify, feedback_to_miner,
+    )
+    import pandas as pd, numpy as np
+
+    rng = np.random.default_rng(seed)
+    dates = pd.date_range("2025-01-01", periods=n_dates, freq="B")
+    codes = [f"C{{i:04d}}" for i in range(n_codes)]
+    idx = pd.MultiIndex.from_product([dates, codes], names=["date", "code"])
+    panel = pd.DataFrame({
+        "open": rng.uniform(10, 100, len(idx)),
+        "high": rng.uniform(10, 100, len(idx)),
+        "low": rng.uniform(10, 100, len(idx)),
+        "close": rng.uniform(10, 100, len(idx)),
+        "volume": rng.uniform(1e4, 1e7, len(idx)),
+        "vwap": rng.uniform(10, 100, len(idx)),
+    }, index=idx).reset_index()
+
+    results = batch_verify(expressions, panel)
+    feedback = feedback_to_miner(results)
+
+    return {
+        "expressions": len(expressions),
+        "results": [
+            {
+                "expression": r.expression,
+                "status": r.status,
+                "parsed_type": r.parsed.expr_type.name if r.parsed else None,
+                "finite_ratio": r.finite_ratio,
+            }
+            for r in results
+        ],
+        "feedback": feedback,
+    }
