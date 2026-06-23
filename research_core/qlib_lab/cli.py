@@ -4,6 +4,7 @@ import argparse
 import json
 import uuid
 from dataclasses import asdict, is_dataclass
+from pathlib import Path
 
 from common.paths import data_path
 from research_core.qlib_lab.auto_factor_miner import AIFactorMiner
@@ -51,6 +52,7 @@ def build_parser() -> argparse.ArgumentParser:
     auto_parser.add_argument("--horizon", type=int, default=5)
     auto_parser.add_argument("--count", type=int, default=5)
     auto_parser.add_argument("--author", default="ai")
+    auto_parser.add_argument("--feedback", default="", help="Structured feedback from previous iteration (JSON file path or inline text)")
 
     backtest_parser = subparsers.add_parser("backtest", help="Run factor backtest via qlib data engine")
     backtest_parser.add_argument("--start", required=True)
@@ -124,6 +126,9 @@ def main() -> None:
 
     if args.command == "auto-mine":
         miner = AIFactorMiner(lab)
+        feedback_text = args.feedback
+        if feedback_text and Path(feedback_text).is_file():
+            feedback_text = Path(feedback_text).read_text(encoding="utf-8")
         payload = miner.auto_mine(
             theme=args.theme,
             start_time=args.start,
@@ -131,6 +136,7 @@ def main() -> None:
             horizon=args.horizon,
             count=args.count,
             author=args.author,
+            feedback=feedback_text,
         )
         print(json.dumps(payload, ensure_ascii=False, indent=2, default=_json_default))
         return

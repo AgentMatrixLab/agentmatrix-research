@@ -47,17 +47,41 @@ class ParsedExpression:
     params: dict[str, Any] = field(default_factory=dict)
 
 
+@dataclass
+class SubExpression:
+    expr_type: ExprType
+    params: dict[str, Any] = field(default_factory=dict)
+
+
 _PATTERNS: list[tuple[str, ExprType, str]] = [
-    (r'^Ref\(\$(\w+),\s*(\d+)\)\s*/\s*\$(\1)\s*-\s*1$',  ExprType.MOMENTUM, "momentum"),
-    (r'^\$(\w+)\s*/\s*Ref\(\$(\1),\s*(\d+)\)\s*-\s*1$',  ExprType.MOMENTUM, "momentum-alt"),
+    # Momentum: Ref($close, N) / $close - 1
+    (r'^Ref\(\$(close),\s*(\d+)\)\s*/\s*\$\1\s*-\s*1$',  ExprType.MOMENTUM, "momentum"),
+    (r'^\$(close)\s*/\s*Ref\(\$\1,\s*(\d+)\)\s*-\s*1$',  ExprType.MOMENTUM, "momentum-alt"),
+    # Volume ratio
     (r'^\$volume\s*/\s*Mean\(\$volume,\s*(\d+)\)$',      ExprType.VOLUME_RATIO, "volume"),
-    (r'^Std\(\$(\w+),\s*(\d+)\)$',                       ExprType.VOLATILITY, "volatility"),
-    (r'^Std\(.*Ref.*\$\w+.*,\s*(\d+)\)$',                ExprType.VOLATILITY, "vol-returns"),
-    (r'^Mean\(\$(\w+),\s*(\d+)\)$',                       ExprType.MOVING_AVERAGE, "ma"),
-    (r'^\$(\w+)\s*/\s*\$(\w+)$',                          ExprType.PRICE_RATIO, "ratio"),
-    (r'^Corr\(\$(\w+),\s*\$(\w+),\s*(\d+)\)$',            ExprType.CORRELATION, "corr"),
-    (r'^\$(\w+)\s*-\s*Ref\(\$(\1),\s*(\d+)\)$',           ExprType.DELTA, "delta"),
-    (r'Rank\(|IndNeutralize\(|Group\(',                   ExprType.CROSS_SECTIONAL, "cs"),
+    # Volatility
+    (r'^Std\(\$(close),\s*(\d+)\)$',                     ExprType.VOLATILITY, "volatility"),
+    (r'^Std\(.*Ref.*\$close.*,\s*(\d+)\)$',              ExprType.VOLATILITY, "vol-returns"),
+    # Moving average
+    (r'^Mean\(\$(close),\s*(\d+)\)$',                     ExprType.MOVING_AVERAGE, "ma"),
+    # Price ratio
+    (r'^\$(high)\s*/\s*\$low$',                          ExprType.PRICE_RATIO, "ratio-hl"),
+    (r'^\$(open)\s*/\s*\$close$',                        ExprType.PRICE_RATIO, "ratio-oc"),
+    # Correlation
+    (r'^Corr\(\$(\w+),\s*\$(\w+),\s*(\d+)\)$',           ExprType.CORRELATION, "corr"),
+    # Delta
+    (r'^\$(close)\s*-\s*Ref\(\$\1,\s*(\d+)\)$',           ExprType.DELTA, "delta"),
+    # Cross-sectional ops — always unmappable
+    (r'Rank\(|IndNeutralize\(|Group\(',                  ExprType.CROSS_SECTIONAL, "cs"),
+    # ── Compound expressions ──
+    # Momentum * log(volume_ratio): ($close / Ref($close, N) - 1) * Log(...)
+    (r'^\(\$(close)\s*/\s*Ref\(\$\1,\s*(\d+)\)\s*-\s*1\)\s*\*\s*Log\(.*\)$',
+     ExprType.MOMENTUM, "compound-momentum-vol"),
+    # Amplitude * momentum: (($high-$low)/$close) * ($close/Ref($close,N)-1)
+    (r'^\(\(\$(high)\s*-\s*\$(low)\)\s*/\s*\$(close)\)\s*\*\s*\(.*Ref.*\)$',
+     ExprType.MOMENTUM, "compound-amplitude-momentum"),
+    # Simple arithmetic with Ref: $(X) * Ref($(Y), N) etc
+    (r'^.*Ref\(\$(\w+),\s*(\d+)\).*$',                   ExprType.MOMENTUM, "has-ref"),
 ]
 
 
@@ -191,7 +215,7 @@ def _compute_directly(panel: pd.DataFrame, parsed: ParsedExpression) -> pd.Serie
             close = p.groupby("code")["close"]
             return close.pct_change(w)
 
-        elif parsed.expr_type == ExprType.VOLUME_RATIO:
+        elif parsed.expr_type in (ExprType.VOLUME_RATIO,):
             vol = p.groupby("code")["volume"]
             return vol.transform(lambda x: x / x.rolling(w, min_periods=w).mean())
 
@@ -206,7 +230,7 @@ def _compute_directly(panel: pd.DataFrame, parsed: ParsedExpression) -> pd.Serie
 
         elif parsed.expr_type == ExprType.DELTA:
             close = p.groupby("code")["close"]
-            return close - close.transform(lambda x: x.shift(w))
+            return close.transform(lambda x: x.diff(w))
 
         elif parsed.expr_type == ExprType.PRICE_RATIO:
             f1, f2 = "high", "low"
@@ -215,9 +239,12 @@ def _compute_directly(panel: pd.DataFrame, parsed: ParsedExpression) -> pd.Serie
             return p["high"] / p["low"]
 
         elif parsed.expr_type == ExprType.CORRELATION:
-            c = p.groupby("code")["close"]
-            v = p.groupby("code")["volume"]
-            return c.transform(lambda x: x.rolling(w).corr(v))
+            # rolling.corr(other) returns a Series per group
+            def _rolling_corr(grp: pd.DataFrame, w: int):
+                return grp["high"].rolling(w).corr(grp["low"])
+            return p.groupby("code", group_keys=False).apply(
+                lambda g: _rolling_corr(g, w)
+            )
 
         elif parsed.expr_type == ExprType.CROSS_SECTIONAL:
             return None  # Needs full market cross-section
@@ -335,3 +362,49 @@ def feedback_to_miner(results: list[VerificationResult]) -> dict[str, Any]:
             "require cross-sectional data unavailable in single-stock GM mode."
         ),
     }
+
+
+def feedback_to_prompt(results: list[VerificationResult]) -> str:
+    """Convert verification results to natural-language feedback for auto-mine.
+
+    Returns a compact prompt fragment that can be injected into the LLM's
+    system prompt for the next iteration.  Only includes actionable
+    information — patterns to avoid and patterns that work.
+    """
+    feedback = feedback_to_miner(results)
+    stats = feedback["batch_summary"]
+    lines: list[str] = []
+
+    # Round summary
+    lines.append(
+        f"Previous round: {stats['total']} candidates → "
+        + f"{stats['passed']} PASS, {stats['failed']} FAIL, "
+        + f"{stats['pending_jq']} JQ-only, {stats['nc']} unparseable."
+    )
+
+    # Successful patterns to encourage
+    if feedback["successful_patterns"]:
+        lines.append(
+            "Patterns that passed verification: "
+            + ", ".join(set(feedback["successful_patterns"])) + "."
+        )
+
+    # Patterns to avoid
+    if feedback["avoid_patterns"]:
+        lines.append("DO NOT generate these — they failed verification:")
+        for p in feedback["avoid_patterns"][:8]:
+            lines.append(f"  - {p}")
+
+    # Cross-sectional — label as JQ-required, not useless
+    if feedback["pending_jq"]:
+        lines.append(
+            "These need cross-sectional data (JQ engine, not GM single-stock):"
+        )
+        for p in feedback["pending_jq"][:5]:
+            lines.append(f"  - {p}")
+        lines.append("You may still generate these if JQ engine is available.")
+
+    # Core guidance
+    lines.append(feedback["suggestion"])
+
+    return "\n".join(lines)

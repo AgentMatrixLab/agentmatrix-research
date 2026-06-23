@@ -1,0 +1,200 @@
+{
+  "experiment": "中盘股动量 + 换手率确认",
+  "panel_shape": {
+    "dates": 100,
+    "codes": 30
+  },
+  "round1": {
+    "candidates": [
+      [
+        "short_momentum_5",
+        "Ref($close, 5) / $close - 1"
+      ],
+      [
+        "med_momentum_20",
+        "Ref($close, 20) / $close - 1"
+      ],
+      [
+        "vol_shock",
+        "$volume / Mean($volume, 20)"
+      ],
+      [
+        "amplitude_mom",
+        "(($high - $low) / $close) * ($close / Ref($close, 10) - 1)"
+      ],
+      [
+        "ranked_mom",
+        "Rank($close / Ref($close, 20) - 1)"
+      ],
+      [
+        "vol_10d",
+        "Std(Ref($close, 1) / $close, 10)"
+      ],
+      [
+        "mean_rev_5",
+        "Mean($close, 5)"
+      ],
+      [
+        "price_hl_ratio",
+        "$high / $low"
+      ],
+      [
+        "corr_price_vol",
+        "Corr($close, $volume, 20)"
+      ],
+      [
+        "bad_custom_func",
+        "CustomMomentumEstimator($close, 30, 0.05)"
+      ]
+    ],
+    "summary": {
+      "total": 10,
+      "passed": 7,
+      "failed": 1,
+      "pending_jq": 1,
+      "pending_gm": 0,
+      "nc": 1,
+      "unknown": 0
+    },
+    "results": [
+      {
+        "name": "short_momentum_5",
+        "expr": "Ref($close, 5) / $close - 1",
+        "status": "PASS"
+      },
+      {
+        "name": "med_momentum_20",
+        "expr": "Ref($close, 20) / $close - 1",
+        "status": "PASS"
+      },
+      {
+        "name": "vol_shock",
+        "expr": "$volume / Mean($volume, 20)",
+        "status": "PASS"
+      },
+      {
+        "name": "amplitude_mom",
+        "expr": "(($high - $low) / $close) * ($close / Ref($close, 10) - 1)",
+        "status": "FAIL"
+      },
+      {
+        "name": "ranked_mom",
+        "expr": "Rank($close / Ref($close, 20) - 1)",
+        "status": "PENDING_JQ"
+      },
+      {
+        "name": "vol_10d",
+        "expr": "Std(Ref($close, 1) / $close, 10)",
+        "status": "PASS"
+      },
+      {
+        "name": "mean_rev_5",
+        "expr": "Mean($close, 5)",
+        "status": "PASS"
+      },
+      {
+        "name": "price_hl_ratio",
+        "expr": "$high / $low",
+        "status": "PASS"
+      },
+      {
+        "name": "corr_price_vol",
+        "expr": "Corr($close, $volume, 20)",
+        "status": "PASS"
+      },
+      {
+        "name": "bad_custom_func",
+        "expr": "CustomMomentumEstimator($close, 30, 0.05)",
+        "status": "NC"
+      }
+    ]
+  },
+  "round2": {
+    "candidates": [
+      [
+        "mom_20d",
+        "Ref($close, 20) / $close - 1"
+      ],
+      [
+        "mom_60d",
+        "Ref($close, 60) / $close - 1"
+      ],
+      [
+        "vol_ratio_10",
+        "$volume / Mean($volume, 10)"
+      ],
+      [
+        "std_returns_20",
+        "Std(Ref($close, 1) / $close, 20)"
+      ],
+      [
+        "ma_20d",
+        "Mean($close, 20)"
+      ],
+      [
+        "delta_10d",
+        "$close - Ref($close, 10)"
+      ],
+      [
+        "high_low_spread",
+        "$high / $low"
+      ],
+      [
+        "corr_hl_vol",
+        "Corr($high, $low, 10)"
+      ]
+    ],
+    "summary": {
+      "total": 8,
+      "passed": 8,
+      "failed": 0,
+      "pending_jq": 0,
+      "pending_gm": 0,
+      "nc": 0,
+      "unknown": 0
+    },
+    "results": [
+      {
+        "name": "mom_20d",
+        "expr": "Ref($close, 20) / $close - 1",
+        "status": "PASS"
+      },
+      {
+        "name": "mom_60d",
+        "expr": "Ref($close, 60) / $close - 1",
+        "status": "PASS"
+      },
+      {
+        "name": "vol_ratio_10",
+        "expr": "$volume / Mean($volume, 10)",
+        "status": "PASS"
+      },
+      {
+        "name": "std_returns_20",
+        "expr": "Std(Ref($close, 1) / $close, 20)",
+        "status": "PASS"
+      },
+      {
+        "name": "ma_20d",
+        "expr": "Mean($close, 20)",
+        "status": "PASS"
+      },
+      {
+        "name": "delta_10d",
+        "expr": "$close - Ref($close, 10)",
+        "status": "PASS"
+      },
+      {
+        "name": "high_low_spread",
+        "expr": "$high / $low",
+        "status": "PASS"
+      },
+      {
+        "name": "corr_hl_vol",
+        "expr": "Corr($high, $low, 10)",
+        "status": "PASS"
+      }
+    ]
+  },
+  "feedback_text": "Previous round: 10 candidates → 7 PASS, 1 FAIL, 1 JQ-only, 1 unparseable.\nPatterns that passed verification: VOLATILITY, VOLUME_RATIO, PRICE_RATIO, MOVING_AVERAGE, CORRELATION, MOMENTUM.\nDO NOT generate these — they failed verification:\n  - CustomMomentumEstimator($close, 30, 0.05): 无法解析\nThese need cross-sectional data (JQ engine, not GM single-stock):\n  - Rank($close / Ref($close, 20) - 1): Cross-sectional rank — requires full-market cross-section. GM per-stock cannot replicate.\nYou may still generate these if JQ engine is available.\nFocus on time-series momentum, volume, and volatility patterns. Avoid Rank, IndNeutralize, Cut, and Group operations — these require cross-sectional data unavailable in single-stock GM mode."
+}

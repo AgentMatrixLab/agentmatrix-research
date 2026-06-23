@@ -38,16 +38,21 @@ class AIFactorMiner:
     def __init__(self, factor_lab: QlibFactorLab):
         self.factor_lab = factor_lab
 
-    def _build_prompt(self, theme: str, count: int) -> str:
-        return (
+    def _build_prompt(self, theme: str, count: int, feedback: str = "") -> str:
+        prompt = (
             "You are generating testable qlib factor expressions for A-share research.\n"
             "Return strict JSON as a list. Each element must include keys: "
             "name, expression, description, rationale, tags.\n"
             "Use qlib expression syntax and keep each expression concise.\n"
-            f"Research theme: {theme}\n"
-            f"Number of candidates: {count}\n"
-            "Avoid duplicate factors and avoid unsupported custom functions."
+            "Avoid unsupported custom functions.\n"
+            "Prefer time-series patterns: Ref, Mean, Std, Corr.\n"
+            "Avoid cross-sectional ops: Rank, IndNeutralize, Group, Cut — they "
+            "require market-wide data and fail per-stock verification.\n"
         )
+        if feedback:
+            prompt += f"\n=== Feedback from previous iteration ===\n{feedback}\n=== End feedback ===\n"
+        prompt += f"\nResearch theme: {theme}\nNumber of candidates: {count}"
+        return prompt
 
     def _parse_candidates(self, payload: str) -> list[FactorMiningCandidate]:
         try:
@@ -80,7 +85,7 @@ class AIFactorMiner:
             )
         return candidates or DEFAULT_EXPRESSIONS
 
-    def propose_candidates(self, theme: str, count: int = 5) -> list[FactorMiningCandidate]:
+    def propose_candidates(self, theme: str, count: int = 5, feedback: str = "") -> list[FactorMiningCandidate]:
         api_key = os.getenv("OPENAI_API_KEY")
         if not api_key:
             return DEFAULT_EXPRESSIONS[:count]
@@ -94,7 +99,7 @@ class AIFactorMiner:
         client = OpenAI(api_key=api_key)
         response = client.responses.create(
             model=model,
-            input=self._build_prompt(theme, count),
+            input=self._build_prompt(theme, count, feedback=feedback),
         )
         text = getattr(response, "output_text", "") or ""
         return self._parse_candidates(text)[:count]
@@ -108,8 +113,9 @@ class AIFactorMiner:
         horizon: int = 5,
         count: int = 5,
         author: str = "ai",
+        feedback: str = "",
     ) -> dict[str, Any]:
-        proposals = self.propose_candidates(theme=theme, count=count)
+        proposals = self.propose_candidates(theme=theme, count=count, feedback=feedback)
         results: list[dict[str, Any]] = []
         for candidate in proposals:
             result = self.factor_lab.mine_expression(
