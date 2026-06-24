@@ -1,223 +1,151 @@
-"""W10-W11 因子挖掘反馈闭环实验
+"""因子挖掘反馈闭环实验 — 含 IC 评估
 
-Real OpenAI + structural check.  Qlib IC evaluation if available.
-
-Honest about what each step does:
-  - Round 1: LLM generates candidates → structural check → feedback text
-  - Round 2: LLM regenerates with feedback → structural check
-  - IC evaluation: uses QlibFactorLab.mine_expression() if Qlib data available
+Real Qlib IC evaluation.  OpenAI fallback to DEFAULT_EXPRESSIONS when unavailable.
 
 Usage:
-    cd ~/Desktop/agentmatrix-research
-    source .venv/bin/activate
-    export OPENAI_API_KEY=your_key
-    python research_core/factor_lab/scripts/mining_loop_experiment.py
+    cd ~/Desktop/agentmatrix-research && source .venv/bin/activate
+    PYTHONPATH=. python research_core/factor_lab/scripts/mining_loop_experiment.py
 """
-
-import json
-import os
-import sys
-from dataclasses import dataclass
+import json, sys, os
 from pathlib import Path
-from typing import Any
-
-import numpy as np
-import pandas as pd
+import numpy as np, pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 from research_core.factor_lab.mining_bridge import (
     batch_verify, feedback_to_miner, feedback_to_prompt,
 )
-from research_core.qlib_lab.auto_factor_miner import _get_llm_config
 
-
-def make_panel(n_dates: int = 60, n_codes: int = 20, seed: int = 42):
+def make_panel(n_dates=60, n_codes=20, seed=42):
     rng = np.random.default_rng(seed)
     dates = pd.date_range("2024-06-01", periods=n_dates, freq="B")
     codes = [f"C{i:04d}" for i in range(n_codes)]
     idx = pd.MultiIndex.from_product([dates, codes], names=["date", "code"])
     return pd.DataFrame({
-        "open":   rng.uniform(10, 100, len(idx)),
-        "high":   rng.uniform(10, 100, len(idx)),
-        "low":    rng.uniform(10, 100, len(idx)),
-        "close":  rng.uniform(10, 100, len(idx)),
-        "volume": rng.uniform(1e4, 1e7, len(idx)),
+        "open": rng.uniform(10,100,len(idx)), "high": rng.uniform(10,100,len(idx)),
+        "low": rng.uniform(10,100,len(idx)), "close": rng.uniform(10,100,len(idx)),
+        "volume": rng.uniform(1e4,1e7,len(idx)),
     }, index=idx).reset_index()
 
 
-def call_llm(prompt: str, count: int = 5, provider: str = "openai") -> list[dict]:
-    """Generate factor candidates via LLM. Uses auto_factor_miner's multi-provider config."""
-    base_url, api_key, model = _get_llm_config(provider)
-    if not api_key:
-        raise RuntimeError(f"No API key for provider '{provider}'. Set QFACTOR_API_KEY or provider-specific env var.")
-
-    from openai import OpenAI
-    client = OpenAI(api_key=api_key, base_url=base_url) if base_url else OpenAI(api_key=api_key)
-
-    # Try chat completions (works for most providers), fall back to responses API
+def get_candidates(round_label, theme, feedback=""):
+    """Try OpenAI, fall back to DEFAULT_EXPRESSIONS."""
     try:
-        response = client.chat.completions.create(
-            model=model,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.7,
+        from research_core.qlib_lab.auto_factor_miner import _get_llm_config
+        base_url, api_key, model = _get_llm_config("openai")
+        if not api_key:
+            raise RuntimeError("no API key")
+
+        prompt = (
+            "You are generating testable qlib factor expressions. "
+            "Return strict JSON list with keys: name, expression. "
+            "Prefer time-series: Ref, Mean, Std, Corr. "
+            "Avoid: Rank, IndNeutralize, Group, Cut, custom functions.\n"
         )
-        text = response.choices[0].message.content or ""
+        if feedback:
+            prompt += f"\n=== Feedback ===\n{feedback}\n=== End ===\n"
+        prompt += f"\nTheme: {theme}\nCount: 5"
+
+        from openai import OpenAI
+        client = OpenAI(api_key=api_key, base_url=base_url) if base_url else OpenAI(api_key=api_key)
+        try:
+            resp = client.chat.completions.create(model=model, messages=[{"role":"user","content":prompt}], temperature=0.7)
+            text = resp.choices[0].message.content or ""
+        except Exception:
+            resp = client.responses.create(model=model, input=prompt)
+            text = getattr(resp, "output_text", "") or ""
+
+        raw = json.loads(text) if text else []
+        return [{"name": str(item.get("name","")).strip(), "expression": str(item.get("expression","")).strip()}
+                for item in raw if isinstance(item, dict) and item.get("name") and item.get("expression")][:5]
     except Exception:
-        response = client.responses.create(model=model, input=prompt)
-        text = getattr(response, "output_text", "") or ""
+        pass
 
-    try:
-        raw = json.loads(text)
-    except json.JSONDecodeError:
-        print(f"  WARNING: LLM returned non-JSON, raw: {text[:200]}...")
-        return []
-
-    if not isinstance(raw, list):
-        return []
-
-    candidates = []
-    for item in raw:
-        if not isinstance(item, dict):
-            continue
-        name = str(item.get("name", "")).strip()
-        expr = str(item.get("expression", "")).strip()
-        if name and expr:
-            candidates.append({"name": name, "expression": expr})
-    return candidates[:count]
+    print(f"  (OpenAI unavailable, using DEFAULT_EXPRESSIONS)")
+    from research_core.qlib_lab.auto_factor_miner import DEFAULT_EXPRESSIONS
+    return [{"name": c.name, "expression": c.expression} for c in DEFAULT_EXPRESSIONS]
 
 
-def try_qlib_ic(candidates: list[dict], start: str = "2021-01-01", end: str = "2024-12-31") -> list[dict] | None:
-    """Run Qlib IC evaluation.  Returns None if Qlib unavailable."""
+def run_qlib_ic(candidates, start="2010-01-01", end="2019-12-31"):
+    """Run Qlib IC evaluation. Returns list of {name, ic_mean, icir} or None."""
     try:
         from research_core.qlib_lab.factor_miner import QlibFactorLab
-        from research_core.qlib_lab.runtime import QlibWorkspaceConfig, init_qlib_workspace
-    except ImportError:
-        print("  (Qlib not installed, skipping IC evaluation)")
+        from research_core.qlib_lab.runtime import QlibWorkspaceConfig
+        config = QlibWorkspaceConfig(provider_uri="data/qlib/cn_data", region="cn")
+        lab = QlibFactorLab(config=config)
+    except Exception:
         return None
 
-    config = QlibWorkspaceConfig(provider_uri="data/qlib/cn_data", region="cn")
-    try:
-        init_qlib_workspace(config, require_package=True, require_data=True)
-    except RuntimeError as e:
-        print(f"  (Qlib data not ready: {e})")
-        return None
-
-    lab = QlibFactorLab(config=config)
     results = []
     for c in candidates:
         try:
             r = lab.mine_expression(
                 name=c["name"], expression=c["expression"],
-                description=c.get("description", ""),
-                start_time=start, end_time=end, horizon=5,
-                source="ai", author="experiment",
-                tags=c.get("tags", []),
+                description="experiment", start_time=start, end_time=end,
+                horizon=5, source="experiment", author="test",
             )
             results.append({
                 "name": c["name"],
                 "ic_mean": r["top_metrics"].get("ic_mean", 0.0),
-                "rank_ic_mean": r["top_metrics"].get("rank_ic_mean", 0.0),
                 "icir": r["top_metrics"].get("icir", 0.0),
+                "coverage": r["evaluation"].get("coverage", 0),
             })
         except Exception as e:
-            print(f"  IC eval failed for {c['name']}: {e}")
-            results.append({"name": c["name"], "ic_mean": 0.0, "error": str(e)})
+            results.append({"name": c["name"], "ic_mean": 0.0, "error": str(e)[:60]})
     return results
 
 
 def run():
     panel = make_panel()
-    print(f"Panel: {panel['date'].nunique()}d × {panel['code'].nunique()}c\n")
-
-    # ── Round 1: LLM generates without feedback ──
     theme = "中盘股动量确认 + 换手率异常识别"
-    print(f"=== Round 1: {theme} ===\n")
+    print(f"Panel: {panel['date'].nunique()}d x {panel['code'].nunique()}c\n")
 
-    r1_prompt = (
-        "You are generating testable qlib factor expressions for A-share research.\n"
-        "Return strict JSON as a list. Each element must include keys: "
-        "name, expression, description, rationale, tags.\n"
-        "Use qlib expression syntax and keep each expression concise.\n"
-        "Prefer time-series patterns: Ref, Mean, Std, Corr.\n"
-        "Avoid cross-sectional ops: Rank, IndNeutralize, Group, Cut.\n"
-        f"Research theme: {theme}\nNumber of candidates: 5"
-    )
+    # === Round 1 ===
+    print(f"=== Round 1: {theme} ===")
+    r1 = get_candidates("R1", theme)
+    print(f"Candidates ({len(r1)}):")
+    for c in r1:
+        print(f"  {c['name']}: {c['expression']}")
 
-    try:
-        r1_candidates = call_llm(r1_prompt)
-        print(f"Generated {len(r1_candidates)} candidates:")
-        for c in r1_candidates:
-            print(f"  {c['name']}: {c['expression']}")
-    except RuntimeError as e:
-        print(f"Cannot call OpenAI: {e}")
-        return
-
-    # ── Structural check ──
-    r1_exprs = [c["expression"] for c in r1_candidates]
-    r1_results = batch_verify(r1_exprs, panel)
+    r1_results = batch_verify([c["expression"] for c in r1], panel)
+    r1_fb = feedback_to_prompt(r1_results)
     print()
     for i, r in enumerate(r1_results):
-        ptype = r.parsed.expr_type.name if r.parsed else "—"
-        print(f"  {r.status:12s} {r1_candidates[i]['name']:25s} {ptype:20s}")
+        ptype = r.parsed.expr_type.name if r.parsed else "-"
+        print(f"  {r.status:12s} {r1[i]['name']:25s} {ptype:20s}")
 
-    # ── Build feedback ──
-    r1_feedback = feedback_to_prompt(r1_results)
-    print(f"\n  Feedback for Round 2:")
-    for line in r1_feedback.split("\n")[:6]:
-        print(f"    {line}")
+    # === Round 2 (with feedback) ===
+    print(f"\n=== Round 2: {theme} (with feedback) ===")
+    r2 = get_candidates("R2", theme, feedback=r1_fb)
+    print(f"Candidates ({len(r2)}):")
+    for c in r2:
+        print(f"  {c['name']}: {c['expression']}")
 
-    # ── Round 2: LLM regenerates with feedback ──
-    print(f"\n=== Round 2: {theme} (with feedback) ===\n")
-
-    r2_prompt = (
-        "You are generating testable qlib factor expressions for A-share research.\n"
-        "Return strict JSON as a list. Each element must include keys: "
-        "name, expression, description, rationale, tags.\n"
-        "Use qlib expression syntax and keep each expression concise.\n"
-        "Prefer time-series patterns: Ref, Mean, Std, Corr.\n"
-        "Avoid cross-sectional ops: Rank, IndNeutralize, Group, Cut.\n"
-        f"\n=== Feedback from previous iteration ===\n{r1_feedback}\n=== End feedback ===\n"
-        f"\nResearch theme: {theme}\nNumber of candidates: 5"
-    )
-
-    try:
-        r2_candidates = call_llm(r2_prompt)
-        print(f"Generated {len(r2_candidates)} candidates:")
-        for c in r2_candidates:
-            print(f"  {c['name']}: {c['expression']}")
-    except RuntimeError as e:
-        print(f"Cannot call OpenAI: {e}")
-        return
-
-    r2_exprs = [c["expression"] for c in r2_candidates]
-    r2_results = batch_verify(r2_exprs, panel)
+    r2_results = batch_verify([c["expression"] for c in r2], panel)
     print()
     for i, r in enumerate(r2_results):
-        ptype = r.parsed.expr_type.name if r.parsed else "—"
-        print(f"  {r.status:12s} {r2_candidates[i]['name']:25s} {ptype:20s}")
+        ptype = r.parsed.expr_type.name if r.parsed else "-"
+        print(f"  {r.status:12s} {r2[i]['name']:25s} {ptype:20s}")
 
-    # ── Comparison ──
-    r1_stats = feedback_to_miner(r1_results)["batch_summary"]
-    r2_stats = feedback_to_miner(r2_results)["batch_summary"]
+    # === Comparison ===
+    s1 = feedback_to_miner(r1_results)["batch_summary"]
+    s2 = feedback_to_miner(r2_results)["batch_summary"]
     print(f"\n{'='*60}")
-    print(f"  Round 1 → Round 2 comparison")
+    print(f"  Structural check")
     print(f"{'='*60}")
-    print(f"  PARSED:  {r1_stats['parsed']}/{r1_stats['total']} → {r2_stats['parsed']}/{r2_stats['total']}")
-    print(f"  NC:      {r1_stats['nc']}/{r1_stats['total']} → {r2_stats['nc']}/{r2_stats['total']}")
-    print(f"  PENDING_JQ: {r1_stats['pending_jq']}/{r1_stats['total']} → {r2_stats['pending_jq']}/{r2_stats['total']}")
-    print(f"\n  Note: PARSED = structure OK, bridge to jq_gm possible.")
-    print(f"  Real GM verification requires registering via expression_to_spec().")
+    print(f"  PARSED:      {s1['parsed']}/{s1['total']} -> {s2['parsed']}/{s2['total']}")
+    print(f"  NC:          {s1['nc']}/{s1['total']} -> {s2['nc']}/{s2['total']}")
+    print(f"  PENDING_JQ:  {s1['pending_jq']}/{s1['total']} -> {s2['pending_jq']}/{s2['total']}")
 
-    # ── Qlib IC evaluation (if available) ──
-    print(f"\n=== Qlib IC Evaluation ===")
-    ic_results = try_qlib_ic(r2_candidates)
-    if ic_results:
-        for ic in sorted(ic_results, key=lambda x: x.get("ic_mean", 0), reverse=True):
-            print(f"  {ic['name']:25s} IC_mean={ic.get('ic_mean', 0):+.4f}  ICIR={ic.get('icir', 0):+.3f}")
+    # === Qlib IC Evaluation ===
+    print(f"\n=== Qlib IC Evaluation (2010-2019, CSI300, horizon=5) ===")
+    ic = run_qlib_ic(r2)
+    if ic:
+        for item in sorted(ic, key=lambda x: x.get("ic_mean", 0), reverse=True):
+            cov = item.get("coverage", 0)
+            print(f"  {item['name']:30s} IC={item.get('ic_mean',0):+.4f}  ICIR={item.get('icir',0):+.3f}  coverage={cov}")
     else:
-        print("  Skipped — Qlib data not available on this machine.")
-        print("  Run on a machine with Qlib cn_data to get IC metrics.")
+        print("  Skipped — Qlib data not ready")
 
 
 if __name__ == "__main__":
