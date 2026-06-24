@@ -79,6 +79,17 @@ def parse_expression(expr: str) -> ParsedExpression | None:
     return None
 
 
+_QLIB_OPERATORS = re.compile(
+    r'\$(?:close|open|high|low|volume|vwap)|'
+    r'\b(?:close|open|high|low|volume|vwap)\b|'
+    r'\b(?:Ref|Mean|Std|Corr|Log|Sum|Delta|Delay|Rank|IndNeutralize|Group|Cut)\s*\('
+)
+
+
+def _has_qlib_operators(expr: str) -> bool:
+    return bool(_QLIB_OPERATORS.search(expr))
+
+
 @dataclass
 class FactorMapping:
     route: str
@@ -253,12 +264,16 @@ def batch_verify(
         # ── Parse check ──
         parsed = parse_expression(expr)
         if parsed is None:
-            results.append(VerificationResult(
-                expression=expr, parsed=None,
-                mappable=True, unmappable_reason=("无法解析", PendingReason.UNKNOWN),
-                status="NC",
-            ))
-            continue
+            # Unknown pattern — but is it recognisable Qlib or garbage?
+            if _has_qlib_operators(expr):
+                parsed = ParsedExpression(raw=expr, expr_type=ExprType.UNKNOWN, params={"note": "qlib-pass-through"})
+            else:
+                results.append(VerificationResult(
+                    expression=expr, parsed=None,
+                    mappable=True, unmappable_reason=("无法解析", PendingReason.UNKNOWN),
+                    status="NC",
+                ))
+                continue
 
         # ── Mapping check ──
         mapping = _MAPPING_TABLE.get(parsed.expr_type)
@@ -277,6 +292,9 @@ def batch_verify(
                 pass
 
             status = "BROKEN" if (computed_count > 0 and finite_count == 0) else "PARSED"
+        elif parsed.expr_type == ExprType.UNKNOWN:
+            # Unrecognised but has Qlib operators — pass through, let Qlib handle it
+            status = "PARSED"
         else:
             status = "NC"
 
