@@ -1,0 +1,17 @@
+[
+  {
+    "factor_id": "6ddb4397ebd2c68a",
+    "name": "test_reversal_5",
+    "expression": "Ref($close, 5) / $close - 1",
+    "description": "5-day reversal test",
+    "source": "test",
+    "author": "test",
+    "tags": [],
+    "parameters": {},
+    "metadata": {
+      "registered_at": "2026-06-24T02:41:44Z"
+    },
+    "created_at": "2026-06-24T02:41:28Z",
+    "updated_at": "2026-06-24T02:41:44Z"
+  }
+]

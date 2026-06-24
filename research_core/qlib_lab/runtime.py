@@ -120,10 +120,14 @@ def init_qlib_workspace(
     qlib.init(
         provider_uri=config.resolved_provider_uri(),
         region=region,
+        auto_mount=False,
         exp_manager={
+            "class": "MLflowExpManager",
+            "module_path": "qlib.workflow.expm",
             "kwargs": {
                 "uri": f"file:{runtime_path('qlib', 'mlruns')}",
-            }
+                "default_exp_name": "agentmatrix_qlib_lab",
+            },
         },
     )
 
