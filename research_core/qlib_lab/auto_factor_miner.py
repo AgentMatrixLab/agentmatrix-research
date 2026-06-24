@@ -33,6 +33,41 @@ DEFAULT_EXPRESSIONS = [
     ),
 ]
 
+# Provider presets: name -> (base_url, env_key_for_api_key, default_model)
+_PROVIDER_PRESETS: dict[str, tuple[str, str, str]] = {
+    "openai":    ("https://api.openai.com/v1",       "OPENAI_API_KEY",      "gpt-4.1-mini"),
+    "deepseek":  ("https://api.deepseek.com",        "DEEPSEEK_API_KEY",    "deepseek-chat"),
+    "qwen":      ("https://dashscope.aliyuncs.com/compatible-mode/v1", "QWEN_API_KEY", "qwen-plus"),
+    "zhipu":     ("https://open.bigmodel.cn/api/paas/v4", "ZHIPU_API_KEY",  "glm-4"),
+    "moonshot":  ("https://api.moonshot.cn/v1",       "MOONSHOT_API_KEY",    "moonshot-v1-8k"),
+    "custom":    ("",                                  "QFACTOR_API_KEY",     "gpt-4.1-mini"),
+}
+
+
+def _get_llm_config(provider: str) -> tuple[str, str, str]:
+    """Resolve (base_url, api_key, model) for a provider.
+
+    Resolution order:
+      1. Provider preset from _PROVIDER_PRESETS
+      2. Env var overrides: QFACTOR_BASE_URL, QFACTOR_API_KEY, QFACTOR_MODEL
+      3. Fallback: OPENAI_API_KEY for backward compatibility
+    """
+    preset = _PROVIDER_PRESETS.get(provider)
+    if preset is None:
+        # Treat provider as a raw base_url
+        base_url = provider
+        api_key_env = "QFACTOR_API_KEY"
+        default_model = "gpt-4.1-mini"
+    else:
+        base_url, api_key_env, default_model = preset
+
+    # Env var overrides
+    base_url = os.getenv("QFACTOR_BASE_URL", base_url)
+    model = os.getenv("QFACTOR_MODEL", default_model)
+    api_key = os.getenv("QFACTOR_API_KEY") or os.getenv(api_key_env) or os.getenv("OPENAI_API_KEY", "")
+
+    return base_url, api_key, model
+
 
 class AIFactorMiner:
     def __init__(self, factor_lab: QlibFactorLab):
@@ -85,8 +120,10 @@ class AIFactorMiner:
             )
         return candidates or DEFAULT_EXPRESSIONS
 
-    def propose_candidates(self, theme: str, count: int = 5, feedback: str = "") -> list[FactorMiningCandidate]:
-        api_key = os.getenv("OPENAI_API_KEY")
+    def propose_candidates(
+        self, theme: str, count: int = 5, feedback: str = "", provider: str = "openai",
+    ) -> list[FactorMiningCandidate]:
+        base_url, api_key, model = _get_llm_config(provider)
         if not api_key:
             return DEFAULT_EXPRESSIONS[:count]
 
@@ -95,13 +132,25 @@ class AIFactorMiner:
         except ImportError:
             return DEFAULT_EXPRESSIONS[:count]
 
-        model = os.getenv("QFACTOR_OPENAI_MODEL", "gpt-4.1-mini")
-        client = OpenAI(api_key=api_key)
-        response = client.responses.create(
-            model=model,
-            input=self._build_prompt(theme, count, feedback=feedback),
-        )
-        text = getattr(response, "output_text", "") or ""
+        client = OpenAI(api_key=api_key, base_url=base_url) if base_url else OpenAI(api_key=api_key)
+        prompt = self._build_prompt(theme, count, feedback=feedback)
+
+        # Try chat completions first (works for DeepSeek, Qwen, Zhipu, etc.)
+        # Fall back to responses API (OpenAI-specific)
+        try:
+            response = client.chat.completions.create(
+                model=model,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.7,
+            )
+            text = response.choices[0].message.content or ""
+        except Exception:
+            try:
+                response = client.responses.create(model=model, input=prompt)
+                text = getattr(response, "output_text", "") or ""
+            except Exception:
+                return DEFAULT_EXPRESSIONS[:count]
+
         return self._parse_candidates(text)[:count]
 
     def auto_mine(
@@ -114,8 +163,11 @@ class AIFactorMiner:
         count: int = 5,
         author: str = "ai",
         feedback: str = "",
+        provider: str = "openai",
     ) -> dict[str, Any]:
-        proposals = self.propose_candidates(theme=theme, count=count, feedback=feedback)
+        proposals = self.propose_candidates(
+            theme=theme, count=count, feedback=feedback, provider=provider,
+        )
         results: list[dict[str, Any]] = []
         for candidate in proposals:
             result = self.factor_lab.mine_expression(

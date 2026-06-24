@@ -53,6 +53,7 @@ def build_parser() -> argparse.ArgumentParser:
     auto_parser.add_argument("--count", type=int, default=5)
     auto_parser.add_argument("--author", default="ai")
     auto_parser.add_argument("--feedback", default="", help="Structured feedback from previous iteration (JSON file path or inline text)")
+    auto_parser.add_argument("--provider", default="openai", help="LLM provider: openai, deepseek, qwen, zhipu, moonshot, custom, or a base URL")
 
     backtest_parser = subparsers.add_parser("backtest", help="Run factor backtest via qlib data engine")
     backtest_parser.add_argument("--start", required=True)
@@ -137,6 +138,7 @@ def main() -> None:
             count=args.count,
             author=args.author,
             feedback=feedback_text,
+            provider=args.provider,
         )
         print(json.dumps(payload, ensure_ascii=False, indent=2, default=_json_default))
         return

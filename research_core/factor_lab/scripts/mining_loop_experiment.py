@@ -29,6 +29,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 from research_core.factor_lab.mining_bridge import (
     batch_verify, feedback_to_miner, feedback_to_prompt,
 )
+from research_core.qlib_lab.auto_factor_miner import (
+    AIFactorMiner, _get_llm_config,
+)
 
 
 def make_panel(n_dates: int = 60, n_codes: int = 20, seed: int = 42):
@@ -45,22 +48,38 @@ def make_panel(n_dates: int = 60, n_codes: int = 20, seed: int = 42):
     }, index=idx).reset_index()
 
 
-def call_openai(prompt: str, count: int = 5, model: str = "gpt-4.1-mini") -> list[dict]:
-    """Generate factor candidates via OpenAI.  Returns list of {name, expression, ...}."""
-    api_key = os.getenv("OPENAI_API_KEY")
+def call_llm(prompt: str, count: int = 5, provider: str = "openai") -> list[dict]:
+    """Generate factor candidates via LLM. Uses auto_factor_miner's multi-provider support."""
+    from research_core.qlib_lab.factor_miner import QlibFactorLab
+    miner = AIFactorMiner(QlibFactorLab())
+    candidates = miner.propose_candidates(
+        theme="", count=count, feedback="", provider=provider,
+    )
+    # propose_candidates builds its own prompt from theme+count. We need the raw prompt.
+    # Fallback: direct call using resolved config.
+    base_url, api_key, model = _get_llm_config(provider)
     if not api_key:
-        raise RuntimeError("OPENAI_API_KEY not set")
+        raise RuntimeError(f"No API key for provider '{provider}'. Set QFACTOR_API_KEY or provider-specific env var.")
 
     from openai import OpenAI
-    client = OpenAI(api_key=api_key)
+    client = OpenAI(api_key=api_key, base_url=base_url) if base_url else OpenAI(api_key=api_key)
 
-    response = client.responses.create(model=model, input=prompt)
-    text = getattr(response, "output_text", "") or ""
+    # Try chat completions (works for most providers), fall back to responses API
+    try:
+        response = client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.7,
+        )
+        text = response.choices[0].message.content or ""
+    except Exception:
+        response = client.responses.create(model=model, input=prompt)
+        text = getattr(response, "output_text", "") or ""
 
     try:
         raw = json.loads(text)
     except json.JSONDecodeError:
-        print(f"  WARNING: OpenAI returned non-JSON, raw: {text[:200]}...")
+        print(f"  WARNING: LLM returned non-JSON, raw: {text[:200]}...")
         return []
 
     if not isinstance(raw, list):
@@ -135,7 +154,7 @@ def run():
     )
 
     try:
-        r1_candidates = call_openai(r1_prompt)
+        r1_candidates = call_llm(r1_prompt)
         print(f"Generated {len(r1_candidates)} candidates:")
         for c in r1_candidates:
             print(f"  {c['name']}: {c['expression']}")
@@ -172,7 +191,7 @@ def run():
     )
 
     try:
-        r2_candidates = call_openai(r2_prompt)
+        r2_candidates = call_llm(r2_prompt)
         print(f"Generated {len(r2_candidates)} candidates:")
         for c in r2_candidates:
             print(f"  {c['name']}: {c['expression']}")
