@@ -1,5 +1,6 @@
 numpy>=2.0
 pandas>=2.2
+py-alpha-lib>=0.2.5
 scipy>=1.14
 Flask>=3.0
 flask-cors>=5.0

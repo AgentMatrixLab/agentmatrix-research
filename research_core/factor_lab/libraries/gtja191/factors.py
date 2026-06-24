@@ -1,154 +1,138 @@
 from __future__ import annotations
 
+import importlib
 import numpy as np
 import pandas as pd
-
-from research_core.factor_lab.operators import (
-    compute_vwap,
-    cross_sectional_rank,
-    rolling_corr,
-    safe_div,
-    sort_panel,
-    ts_delay,
-    ts_delta,
-    ts_max,
-    ts_mean,
-    ts_min,
-    ts_rank,
-)
+from alpha.context import ExecContext
 
 
-IMPLEMENTED_GTJA191_FACTORS = tuple(f"alpha{i}" for i in range(1, 11))
+IMPLEMENTED_GTJA191_FACTORS = tuple(f"alpha{i}" for i in range(1, 192))
 
 
-def _sma_gtja(series: pd.Series, n: int, m: int) -> pd.Series:
-    values = series.to_numpy(dtype=float)
-    result = np.full(len(values), np.nan)
-    start_idx = None
-    for idx, value in enumerate(values):
-        if not np.isnan(value):
-            result[idx] = value
-            start_idx = idx
-            break
-    if start_idx is None:
-        return pd.Series(result, index=series.index)
-    for idx in range(start_idx + 1, len(values)):
-        result[idx] = result[idx - 1] if np.isnan(values[idx]) else (values[idx] * m + result[idx - 1] * (n - m)) / n
-    return pd.Series(result, index=series.index)
+def _alpha_number(name: str) -> int:
+    if not name.startswith("alpha"):
+        raise ValueError(f"Invalid GTJA191 factor name: {name}")
+    number = int(name[5:])
+    if number < 1 or number > 191:
+        raise ValueError(f"Invalid GTJA191 factor name: {name}")
+    return number
 
 
-def _cs_rank(df: pd.DataFrame, series: pd.Series, name: str) -> pd.Series:
-    return cross_sectional_rank(df.assign(**{name: series}), name)
+def _prepare_frame(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str], list[pd.Timestamp]]:
+    data = df.copy()
+    data["date"] = pd.to_datetime(data["date"])
+    required = ["date", "code", "open", "high", "low", "close", "volume"]
+    missing = [col for col in required if col not in data.columns]
+    if missing:
+        raise ValueError(f"GTJA191 input missing columns: {missing}")
+    if "amount" not in data.columns:
+        data["amount"] = data["close"] * data["volume"]
+    if "vwap" not in data.columns:
+        data["vwap"] = data["amount"] / data["volume"].replace(0, np.nan)
+    codes = sorted(data["code"].dropna().astype(str).unique().tolist())
+    dates = sorted(pd.to_datetime(data["date"].dropna().unique()).tolist())
+    idx = pd.MultiIndex.from_product([codes, dates], names=["code", "date"])
+    data = data.assign(code=data["code"].astype(str)).set_index(["code", "date"]).sort_index().reindex(idx)
+    frame = pd.DataFrame({
+        "securityid": idx.get_level_values("code"),
+        "tradetime": idx.get_level_values("date"),
+        "open": data["open"].to_numpy(dtype=float),
+        "high": data["high"].to_numpy(dtype=float),
+        "low": data["low"].to_numpy(dtype=float),
+        "close": data["close"].to_numpy(dtype=float),
+        "vol": data["volume"].to_numpy(dtype=float),
+        "vwap": data["vwap"].to_numpy(dtype=float),
+        "cap": data.get("cap", data["amount"]).to_numpy(dtype=float),
+    })
+    return frame, codes, dates
 
 
-def _alpha1(df: pd.DataFrame) -> pd.Series:
-    log_vol = np.log(df["volume"].replace(0, np.nan))
-    delta_log_vol = ts_delta(df.assign(log_vol=log_vol), "log_vol", 1)
-    rank_delta_log_vol = _cs_rank(df, delta_log_vol, "delta_log_vol")
-    intraday_ret = safe_div(df["close"] - df["open"], df["open"].replace(0, np.nan))
-    rank_intraday_ret = _cs_rank(df, intraday_ret, "intraday_ret")
-    corr = rolling_corr(
-        df.assign(rank_delta_log_vol=rank_delta_log_vol, rank_intraday_ret=rank_intraday_ret),
-        "rank_delta_log_vol",
-        "rank_intraday_ret",
-        6,
-    )
-    return -corr
+def _gtja_sma_flat(values: np.ndarray, n: int, m: int, codes: list[str], dates: list[pd.Timestamp]) -> np.ndarray:
+    arr = np.asarray(values, dtype=float).reshape((len(codes), len(dates)))
+    out = np.full_like(arr, np.nan, dtype=float)
+    for row_idx in range(arr.shape[0]):
+        prev = np.nan
+        started = False
+        for col_idx, value in enumerate(arr[row_idx]):
+            if np.isfinite(value):
+                prev = value if not started or not np.isfinite(prev) else (value * m + prev * (n - m)) / n
+                started = True
+                out[row_idx, col_idx] = prev
+            elif started:
+                out[row_idx, col_idx] = prev
+    return out.ravel()
 
 
-def _alpha2(df: pd.DataFrame) -> pd.Series:
-    price_power = safe_div((df["close"] - df["low"]) - (df["high"] - df["close"]), (df["high"] - df["low"]).replace(0, np.nan))
-    return -ts_delta(df.assign(price_power=price_power), "price_power", 1)
+def _gtja_ma_flat(values: np.ndarray, n: int, codes: list[str], dates: list[pd.Timestamp]) -> np.ndarray:
+    arr = np.asarray(values, dtype=float).reshape((len(codes), len(dates)))
+    out = np.full_like(arr, np.nan, dtype=float)
+    for row_idx in range(arr.shape[0]):
+        series = pd.Series(arr[row_idx])
+        out[row_idx] = series.rolling(n, min_periods=n).mean().to_numpy(dtype=float)
+    return out.ravel()
 
 
-def _alpha3(df: pd.DataFrame) -> pd.Series:
-    prev_close = ts_delay(df, "close", 1)
-    rising = df["close"] > prev_close
-    falling = df["close"] < prev_close
-    eff_move = pd.Series(0.0, index=df.index)
-    eff_move = eff_move.where(~rising, df["close"] - np.minimum(df["low"], prev_close))
-    eff_move = eff_move.where(~falling, df["close"] - np.maximum(df["high"], prev_close))
-    return df.assign(eff_move=eff_move).groupby("code")["eff_move"].transform(lambda x: x.rolling(6, min_periods=6).sum())
+def _gtja_filtered_regbeta_flat(y: np.ndarray, x: np.ndarray, cond: np.ndarray, window: int, codes: list[str], dates: list[pd.Timestamp]) -> np.ndarray:
+    y_arr = np.asarray(y, dtype=float).reshape((len(codes), len(dates)))
+    x_arr = np.asarray(x, dtype=float).reshape((len(codes), len(dates)))
+    cond_arr = np.asarray(cond, dtype=bool).reshape((len(codes), len(dates)))
+    out = np.full_like(y_arr, np.nan, dtype=float)
+    effective_window = min(int(window), y_arr.shape[1])
+    min_valid = max(30, int(effective_window * 0.3))
+    for row_idx in range(y_arr.shape[0]):
+        for col_idx in range(effective_window - 1, y_arr.shape[1]):
+            sl = slice(col_idx - effective_window + 1, col_idx + 1)
+            mask = cond_arr[row_idx, sl] & np.isfinite(y_arr[row_idx, sl]) & np.isfinite(x_arr[row_idx, sl])
+            if mask.sum() < min_valid:
+                continue
+            yy = y_arr[row_idx, sl][mask]
+            xx = x_arr[row_idx, sl][mask]
+            var = np.var(xx)
+            if var <= 0 or not np.isfinite(var):
+                continue
+            out[row_idx, col_idx] = np.cov(xx, yy, ddof=0)[0, 1] / var
+    return out.ravel()
 
 
-def _alpha4(df: pd.DataFrame) -> pd.Series:
-    ma8 = ts_mean(df, "close", 8)
-    std8 = df.groupby("code")["close"].transform(lambda x: x.rolling(8, min_periods=8).std())
-    ma2 = ts_mean(df, "close", 2)
-    ma20_vol = ts_mean(df, "volume", 20)
-    vol_ratio = safe_div(df["volume"], ma20_vol.replace(0, np.nan))
-    cond1 = (ma8 + std8) < ma2
-    cond2 = ma2 < (ma8 - std8)
-    cond3 = vol_ratio >= 1
-    return pd.Series(np.where(cond1, -1.0, np.where(cond2, 1.0, np.where(cond3, 1.0, -1.0))), index=df.index)
+def _make_context(frame: pd.DataFrame) -> ExecContext:
+    ctx = ExecContext(frame)
+    close = frame["close"].to_numpy(dtype=float)
+    grouped = frame.groupby("tradetime", sort=False)
+    ctx.BANCHMARKINDEXCLOSE = grouped["close"].transform("mean").to_numpy(dtype=float)
+    ctx.BENCHMARKINDEXCLOSE = ctx.BANCHMARKINDEXCLOSE
+    ctx.BANCHMARKINDEXOPEN = grouped["open"].transform("mean").to_numpy(dtype=float)
+    ctx.BENCHMARKINDEXOPEN = ctx.BANCHMARKINDEXOPEN
+    with np.errstate(divide="ignore", invalid="ignore"):
+        ctx.MKT = ctx.BANCHMARKINDEXCLOSE / ctx.DELAY(ctx.BANCHMARKINDEXCLOSE, 1) - 1
+    ctx.SMB = np.zeros_like(close, dtype=float)
+    ctx.HML = np.zeros_like(close, dtype=float)
+    return ctx
 
 
-def _alpha5(df: pd.DataFrame) -> pd.Series:
-    tsrank_vol = ts_rank(df, "volume", 5)
-    tsrank_high = ts_rank(df, "high", 5)
-    corr = rolling_corr(df.assign(tsrank_vol=tsrank_vol, tsrank_high=tsrank_high), "tsrank_vol", "tsrank_high", 5)
-    return -ts_max(df.assign(corr_vh=corr), "corr_vh", 3)
-
-
-def _alpha6(df: pd.DataFrame) -> pd.Series:
-    weighted_price = df["open"] * 0.85 + df["high"] * 0.15
-    sign_delta = np.sign(ts_delta(df.assign(weighted_price=weighted_price), "weighted_price", 4))
-    return -_cs_rank(df, sign_delta, "sign_delta")
-
-
-def _alpha7(df: pd.DataFrame) -> pd.Series:
-    vwap = compute_vwap(df)
-    vwap_close = vwap - df["close"]
-    tsmax_vc = ts_max(df.assign(vwap_close=vwap_close), "vwap_close", 3)
-    tsmin_vc = ts_min(df.assign(vwap_close=vwap_close), "vwap_close", 3)
-    delta_vol = ts_delta(df, "volume", 3)
-    return (_cs_rank(df, tsmax_vc, "tsmax_vc") + _cs_rank(df, tsmin_vc, "tsmin_vc")) * _cs_rank(df, delta_vol, "delta_vol")
-
-
-def _alpha8(df: pd.DataFrame) -> pd.Series:
-    vwap = compute_vwap(df)
-    weighted_price = ((df["high"] + df["low"]) / 2.0) * 0.2 + vwap * 0.8
-    neg_delta = -ts_delta(df.assign(weighted_price=weighted_price), "weighted_price", 4)
-    return _cs_rank(df, neg_delta, "neg_delta")
-
-
-def _alpha9(df: pd.DataFrame) -> pd.Series:
-    avg_price = (df["high"] + df["low"]) / 2.0
-    prev_avg_price = (ts_delay(df, "high", 1) + ts_delay(df, "low", 1)) / 2.0
-    raw_value = safe_div((avg_price - prev_avg_price) * (df["high"] - df["low"]), df["volume"].replace(0, np.nan))
-    return df.assign(raw9=raw_value).groupby("code")["raw9"].transform(lambda x: _sma_gtja(x, 7, 2))
-
-
-def _alpha10(df: pd.DataFrame) -> pd.Series:
-    returns = df.groupby("code")["close"].pct_change()
-    std_ret_20 = df.assign(returns=returns).groupby("code")["returns"].transform(lambda x: x.rolling(20, min_periods=20).std())
-    selected = np.where(returns < 0, std_ret_20, df["close"])
-    tsmax_sq = ts_max(df.assign(squared=pd.Series(selected, index=df.index) ** 2), "squared", 5)
-    return _cs_rank(df, tsmax_sq, "tsmax_sq")
-
-
-_FACTOR_FUNCTIONS = {
-    "alpha1": _alpha1,
-    "alpha2": _alpha2,
-    "alpha3": _alpha3,
-    "alpha4": _alpha4,
-    "alpha5": _alpha5,
-    "alpha6": _alpha6,
-    "alpha7": _alpha7,
-    "alpha8": _alpha8,
-    "alpha9": _alpha9,
-    "alpha10": _alpha10,
-}
+def _result_frame(values: np.ndarray, codes: list[str], dates: list[pd.Timestamp], factor_name: str) -> pd.DataFrame:
+    arr = np.asarray(values, dtype=float).reshape((len(codes), len(dates)))
+    return pd.DataFrame({
+        "date": np.tile(dates, len(codes)),
+        "code": np.repeat(codes, len(dates)),
+        factor_name: arr.ravel(),
+    })[["date", "code", factor_name]]
 
 
 def compute_gtja191_alphas(df: pd.DataFrame, factor_names: list[str] | None = None) -> pd.DataFrame:
-    data = sort_panel(df)
     requested = list(factor_names or IMPLEMENTED_GTJA191_FACTORS)
-    invalid = [name for name in requested if name not in _FACTOR_FUNCTIONS]
+    invalid = [name for name in requested if name not in IMPLEMENTED_GTJA191_FACTORS]
     if invalid:
         raise ValueError(f"Unsupported GTJA191 factors: {invalid}")
-
-    result = data[["date", "code"]].copy()
+    frame, codes, dates = _prepare_frame(df)
+    ctx = _make_context(frame)
+    ctx.SMA = lambda values, n, m=None: _gtja_sma_flat(values, int(n), int(m), codes, dates) if m is not None else _gtja_ma_flat(values, int(n), codes, dates)
+    ctx.GTJA_FILTERED_REGBETA = lambda y, x, cond, window: _gtja_filtered_regbeta_flat(y, x, cond, int(window), codes, dates)
+    alpha_mod = importlib.import_module("research_core.factor_lab.libraries.gtja191.vendor.alpha_lib_gtja191.alpha191")
+    result = pd.DataFrame({"date": np.tile(dates, len(codes)), "code": np.repeat(codes, len(dates))})
     for factor_name in requested:
-        result[factor_name] = _FACTOR_FUNCTIONS[factor_name](data).replace([np.inf, -np.inf], np.nan)
+        fn = getattr(alpha_mod, f"alpha_{_alpha_number(factor_name):03d}")
+        factor_frame = _result_frame(fn(ctx), codes, dates, factor_name)
+        result = result.merge(factor_frame, on=["date", "code"], how="left")
+    for factor_name in requested:
+        result[factor_name] = result[factor_name].replace([np.inf, -np.inf], np.nan)
     return result

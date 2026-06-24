@@ -225,11 +225,11 @@ class FactorLabServiceTest(unittest.TestCase):
         self.assertTrue(Path(job["artifacts"]["proofs"]["alpha1"]).exists())
 
         catalog = json.loads(Path(job["artifacts"]["catalog"]).read_text(encoding="utf-8"))
-        self.assertEqual(catalog["count"], 10)
+        self.assertEqual(catalog["count"], 191)
         self.assertEqual(catalog["items"][0]["library"], "GTJA191")
 
         items = list_factor_set_factors("gtja191", workspace)
-        self.assertEqual(len(items), 10)
+        self.assertEqual(len(items), 191)
         self.assertEqual(items[0]["proof_status"], "partial")
 
 
