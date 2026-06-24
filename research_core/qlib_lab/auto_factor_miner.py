@@ -79,10 +79,10 @@ class AIFactorMiner:
             "Return strict JSON as a list. Each element must include keys: "
             "name, expression, description, rationale, tags.\n"
             "Use qlib expression syntax and keep each expression concise.\n"
-            "Avoid unsupported custom functions.\n"
+            "IMPORTANT: Use $close $open $high $low $volume $vwap (with $ prefix).\n"
+            "Use Ref($close, 20) with positive lookback.  No negative offsets.\n"
             "Prefer time-series patterns: Ref, Mean, Std, Corr.\n"
-            "Avoid cross-sectional ops: Rank, IndNeutralize, Group, Cut — they "
-            "require market-wide data and fail per-stock verification.\n"
+            "Avoid: Rank, IndNeutralize, Group, Cut, custom functions.\n"
         )
         if feedback:
             prompt += f"\n=== Feedback from previous iteration ===\n{feedback}\n=== End feedback ===\n"

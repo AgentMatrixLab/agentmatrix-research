@@ -72,10 +72,20 @@ def parse_expression(expr: str) -> ParsedExpression | None:
         if m:
             params: dict[str, Any] = {"note": note}
             for g in m.groups():
-                if g is not None and g.isdigit():
-                    params["window"] = int(g)
-                    break
+                if g is not None:
+                    try:
+                        w = int(g)
+                        if w < 0:
+                            w = -w  # DeepSeek uses Ref($close, -20) — normalize
+                        params["window"] = w
+                        break
+                    except ValueError:
+                        pass
             return ParsedExpression(raw=expr, expr_type=etype, params=params)
+    # DeepSeek generates Ref($close, -N) — strip negatives and retry
+    normalized = re.sub(r'Ref\(\$(\w+),\s*-\s*(\d+)\)', r'Ref($\1, \2)', expr.strip())
+    if normalized != expr.strip():
+        return parse_expression(normalized)
     return None
 
 
@@ -324,7 +334,7 @@ def expression_to_spec(
     w = parsed.params.get("window", 20)
     return {
         "factor_name": name,
-        "library": "jq_gm",
+        "library": "ai_factors",
         "version": "v2026.06",
         "display_name": f"AI_{name}",
         "formula": mapping.formula_template.format(
@@ -336,10 +346,9 @@ def expression_to_spec(
             ExprType.VOLUME_RATIO, ExprType.CORRELATION) else ["close"],
         "tags": ["ai-generated", parsed.expr_type.name.lower()],
         "metadata": {
-            "gm_field": mapping.route,
-            "gm_fields": mapping.base_factor.format(window=w),
             "source_expression": parsed.raw,
-            "bridge_mapping": mapping.base_factor,
+            "expr_type": parsed.expr_type.name,
+            "library": "ai_factors",
         },
     }
 

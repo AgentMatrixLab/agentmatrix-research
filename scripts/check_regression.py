@@ -114,22 +114,24 @@ def _gen_demo_panel() -> pd.DataFrame:
 
 
 def _path_a_compute() -> dict:
-    from research_core.factor_lab.mining_bridge import batch_verify
-    exprs = _path_a_generate_expressions()
+    from research_core.factor_lab.libraries.ai_factors.factors import compute_expressions
     panel = _gen_demo_panel()
-    results = batch_verify(exprs, panel)
-    return {
-        r.expression: {
-            "status": r.status,
-            "finite_count": r.finite_count,
-            "finite_ratio": round(r.finite_ratio, 6),
-        }
-        for r in results
-    }
+    exprs = _path_a_generate_expressions()
+    result = compute_expressions(panel, exprs)
+    flat = {}
+    for col in result.columns:
+        if col in ("date", "code"):
+            continue
+        vals = result[col].dropna()
+        if len(vals) > 0:
+            flat[col] = {
+                "count": int(len(vals)),
+                "mean": float(vals.mean()),
+            }
+    return flat
 
 
 def _path_a_check(baseline: dict, current: dict) -> int:
-    """Check + detect new/missing expressions."""
     failures = 0
     for expr, bl in baseline.items():
         cur = current.get(expr)
@@ -137,23 +139,16 @@ def _path_a_check(baseline: dict, current: dict) -> int:
             print(f"  MISSING: {expr}")
             failures += 1
             continue
-        if cur["status"] != bl["status"]:
-            print(f"  STATUS: {expr}: {bl['status']} -> {cur['status']}")
+        cc = abs(cur["count"] - bl["count"]) / max(bl["count"], 1)
+        if cc > REGRESSION_THRESHOLD:
+            print(f"  COUNT: {expr}: {bl['count']} -> {cur['count']} ({cc:.1%})")
             failures += 1
             continue
-        if bl["finite_count"] > 0:
-            c = abs(cur["finite_count"] - bl["finite_count"]) / bl["finite_count"]
-            if c > REGRESSION_THRESHOLD:
-                print(f"  COUNT: {expr}: {bl['finite_count']} -> {cur['finite_count']} ({c:.1%})")
-                failures += 1
-                continue
-        if bl["finite_ratio"] > 0:
-            c = abs(cur["finite_ratio"] - bl["finite_ratio"]) / bl["finite_ratio"]
-            if c > REGRESSION_THRESHOLD:
-                print(f"  RATIO: {expr}: {bl['finite_ratio']:.4f} -> {cur['finite_ratio']:.4f} ({c:.1%})")
-                failures += 1
-                continue
-    # Detect new expressions not in baseline
+        mc = abs(cur["mean"] - bl["mean"]) / max(abs(bl["mean"]), 1e-10)
+        if mc > REGRESSION_THRESHOLD:
+            print(f"  MEAN:  {expr}: {bl['mean']:.4f} -> {cur['mean']:.4f} ({mc:.1%})")
+            failures += 1
+            continue
     new = set(current.keys()) - set(baseline.keys())
     if new:
         print(f"  NEW expressions ({len(new)}): {sorted(new)[:5]}...")

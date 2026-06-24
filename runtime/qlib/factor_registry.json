@@ -58,5 +58,80 @@
     },
     "created_at": "2026-06-24T02:43:17Z",
     "updated_at": "2026-06-24T02:43:17Z"
+  },
+  {
+    "factor_id": "5e8e908cc8e4a6c7",
+    "name": "ts_mom_confirm_20d",
+    "expression": "Mean(Ref(Close, -1) / Ref(Close, -21) - 1, 5)",
+    "description": "experiment",
+    "source": "ai",
+    "author": "experiment",
+    "tags": [],
+    "parameters": {},
+    "metadata": {
+      "registered_at": "2026-06-24T03:09:40Z"
+    },
+    "created_at": "2026-06-24T03:09:40Z",
+    "updated_at": "2026-06-24T03:09:40Z"
+  },
+  {
+    "factor_id": "d46c0f898fbca9b1",
+    "name": "volume_turnover_anomaly",
+    "expression": "Volume / Mean(Volume, 20) - Mean(Volume, 60) / Mean(Volume, 20)",
+    "description": "experiment",
+    "source": "ai",
+    "author": "experiment",
+    "tags": [],
+    "parameters": {},
+    "metadata": {
+      "registered_at": "2026-06-24T03:09:48Z"
+    },
+    "created_at": "2026-06-24T03:09:48Z",
+    "updated_at": "2026-06-24T03:09:48Z"
+  },
+  {
+    "factor_id": "f7ac7728728c422d",
+    "name": "volatility_expansion_5d",
+    "expression": "Std(Returns, 5) / Std(Returns, 20)",
+    "description": "experiment",
+    "source": "ai",
+    "author": "experiment",
+    "tags": [],
+    "parameters": {},
+    "metadata": {
+      "registered_at": "2026-06-24T03:09:54Z"
+    },
+    "created_at": "2026-06-24T03:09:54Z",
+    "updated_at": "2026-06-24T03:09:54Z"
+  },
+  {
+    "factor_id": "7a08dfddd9e09959",
+    "name": "price_volume_divergence_3d",
+    "expression": "Corr(Close, Volume, 3)",
+    "description": "experiment",
+    "source": "ai",
+    "author": "experiment",
+    "tags": [],
+    "parameters": {},
+    "metadata": {
+      "registered_at": "2026-06-24T03:10:00Z"
+    },
+    "created_at": "2026-06-24T03:10:00Z",
+    "updated_at": "2026-06-24T03:10:00Z"
+  },
+  {
+    "factor_id": "edbea34727cdafa8",
+    "name": "turnover_std_ratio_20d",
+    "expression": "Std(Turnover, 20) / Mean(Turnover, 20)",
+    "description": "experiment",
+    "source": "ai",
+    "author": "experiment",
+    "tags": [],
+    "parameters": {},
+    "metadata": {
+      "registered_at": "2026-06-24T03:10:07Z"
+    },
+    "created_at": "2026-06-24T03:10:07Z",
+    "updated_at": "2026-06-24T03:10:07Z"
   }
 ]
