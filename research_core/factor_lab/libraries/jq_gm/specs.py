@@ -2786,10 +2786,21 @@ def jq_gm_specs() -> list[FactorResearchSpec]:
         JQ_GM_SPEC_sharpe_ratio,
         JQ_GM_SPEC_growth,
         JQ_GM_SPEC_momentum,
-    ]
+    ] + _dynamic_specs
 
 
 # ── Convenience set for CLI / service lookups ────────────────────
+
+# Runtime registry for dynamically-added specs (e.g. from AI mining bridge)
+_dynamic_specs: list[FactorResearchSpec] = []
+
+
+def register_spec(spec: FactorResearchSpec) -> None:
+    """Register a new factor spec at runtime (e.g. from AI mining bridge)."""
+    existing = {s.factor_name for s in jq_gm_specs()}
+    if spec.factor_name not in existing:
+        _dynamic_specs.append(spec)
+
 
 JQ_GM_IMPLEMENTED_FACTORS = [
     spec.factor_name for spec in jq_gm_specs()

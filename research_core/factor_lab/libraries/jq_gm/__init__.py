@@ -35,6 +35,7 @@ from research_core.factor_lab.libraries.jq_gm.specs import (
     JQ_GM_LIBRARY,
     JQ_GM_VERSION,
     jq_gm_specs,
+    register_spec,
 )
 
 # compute_jq_gm_factors imported lazily — see factors.py for rationale.

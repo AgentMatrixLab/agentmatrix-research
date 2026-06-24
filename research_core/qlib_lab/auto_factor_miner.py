@@ -8,6 +8,15 @@ from typing import Any
 from contracts.factor import FactorMiningCandidate
 from research_core.qlib_lab.factor_miner import QlibFactorLab
 
+# ── Lazy bridge imports (available after PR #23 merge) ──
+try:
+    from research_core.factor_lab.mining_bridge import (
+        batch_verify, feedback_to_prompt, parse_expression, expression_to_spec,
+    )
+    _BRIDGE_READY = True
+except ImportError:
+    _BRIDGE_READY = False
+
 
 DEFAULT_EXPRESSIONS = [
     FactorMiningCandidate(
@@ -72,6 +81,7 @@ def _get_llm_config(provider: str) -> tuple[str, str, str]:
 class AIFactorMiner:
     def __init__(self, factor_lab: QlibFactorLab):
         self.factor_lab = factor_lab
+        self.last_feedback: str = ""  # accumulated bridge feedback for next round
 
     def _build_prompt(self, theme: str, count: int, feedback: str = "") -> str:
         prompt = (
@@ -167,7 +177,39 @@ class AIFactorMiner:
             except Exception:
                 return DEFAULT_EXPRESSIONS[:count]
 
-        return self._parse_candidates(text)[:count]
+        candidates = self._parse_candidates(text)[:count]
+
+        # ── Bridge verification (structural check) ──
+        if _BRIDGE_READY and candidates:
+            import pandas as pd
+            import numpy as np
+            # Generate a demo panel for structural verification
+            rng = np.random.default_rng(42)
+            dates = pd.date_range("2024-01-01", periods=60, freq="B")
+            codes = [f"C{i:04d}" for i in range(20)]
+            idx = pd.MultiIndex.from_product([dates, codes], names=["date", "code"])
+            panel = pd.DataFrame({
+                "open": rng.uniform(10, 100, len(idx)),
+                "high": rng.uniform(10, 100, len(idx)),
+                "low": rng.uniform(10, 100, len(idx)),
+                "close": rng.uniform(10, 100, len(idx)),
+                "volume": rng.uniform(1e4, 1e7, len(idx)),
+            }, index=idx).reset_index()
+
+            verify_results = batch_verify(
+                [c.expression for c in candidates], panel,
+            )
+            # Filter out NC/BROKEN candidates
+            verified: list[FactorMiningCandidate] = []
+            for c, vr in zip(candidates, verify_results):
+                if vr.status in ("PARSED",):
+                    verified.append(c)
+            if verified:
+                candidates = verified
+            # Store feedback for next round
+            self.last_feedback = feedback_to_prompt(verify_results)
+
+        return candidates
 
     def auto_mine(
         self,
@@ -182,7 +224,7 @@ class AIFactorMiner:
         provider: str = "openai",
     ) -> dict[str, Any]:
         proposals = self.propose_candidates(
-            theme=theme, count=count, feedback=feedback, provider=provider,
+            theme=theme, count=count, feedback=feedback or self.last_feedback, provider=provider,
         )
         results: list[dict[str, Any]] = []
         for candidate in proposals:
@@ -208,8 +250,32 @@ class AIFactorMiner:
             ),
             reverse=True,
         )
+
+        # ── Register passing factors ──
+        passed: list[str] = []
+        if _BRIDGE_READY:
+            for candidate in proposals:
+                parsed = parse_expression(candidate.expression)
+                if parsed is None:
+                    continue
+                spec_dict = expression_to_spec(parsed, candidate.name)
+                if spec_dict is None:
+                    continue
+                try:
+                    from contracts.factor_research import FactorResearchSpec
+                    spec = FactorResearchSpec(**spec_dict)
+                    lib_mod = __import__(
+                        f"research_core.factor_lab.libraries.{spec.library}",
+                        fromlist=["register_spec"],
+                    )
+                    lib_mod.register_spec(spec)
+                    passed.append(f"{candidate.name} ({spec.library})")
+                except Exception:
+                    pass
+
         return {
             "theme": theme,
             "generated_count": len(results),
             "results": ranked,
+            "passed": passed,
         }
