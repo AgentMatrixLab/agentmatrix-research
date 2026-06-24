@@ -149,6 +149,9 @@ def main():
     token = sys.argv[1]
 
     # ── GM SDK 初始化 ──
+    _gm_path = str(Path.home() / ".goldminer3" / "projects")
+    if _gm_path not in sys.path:
+        sys.path.insert(0, _gm_path)
     from gm.api import set_token
     set_token(token)
     from gm_factor_lib import calc_factors as gm_calc, GM_AVAILABLE
