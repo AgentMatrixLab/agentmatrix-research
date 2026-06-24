@@ -29,9 +29,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 from research_core.factor_lab.mining_bridge import (
     batch_verify, feedback_to_miner, feedback_to_prompt,
 )
-from research_core.qlib_lab.auto_factor_miner import (
-    AIFactorMiner, _get_llm_config,
-)
+from research_core.qlib_lab.auto_factor_miner import _get_llm_config
 
 
 def make_panel(n_dates: int = 60, n_codes: int = 20, seed: int = 42):
@@ -49,14 +47,7 @@ def make_panel(n_dates: int = 60, n_codes: int = 20, seed: int = 42):
 
 
 def call_llm(prompt: str, count: int = 5, provider: str = "openai") -> list[dict]:
-    """Generate factor candidates via LLM. Uses auto_factor_miner's multi-provider support."""
-    from research_core.qlib_lab.factor_miner import QlibFactorLab
-    miner = AIFactorMiner(QlibFactorLab())
-    candidates = miner.propose_candidates(
-        theme="", count=count, feedback="", provider=provider,
-    )
-    # propose_candidates builds its own prompt from theme+count. We need the raw prompt.
-    # Fallback: direct call using resolved config.
+    """Generate factor candidates via LLM. Uses auto_factor_miner's multi-provider config."""
     base_url, api_key, model = _get_llm_config(provider)
     if not api_key:
         raise RuntimeError(f"No API key for provider '{provider}'. Set QFACTOR_API_KEY or provider-specific env var.")

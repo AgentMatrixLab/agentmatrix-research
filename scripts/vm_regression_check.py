@@ -1,19 +1,16 @@
-"""VM-side regression check: GM SDK factor computation.
+"""VM-side regression check — DEPRECATED, merged into check_regression.py Path B.
 
-Generates a deterministic baseline from real GM SDK calls, then compares
-future runs against it.  Detects code or API behaviour changes > 5%.
+This file is kept for reference.  Use check_regression.py instead:
+  python scripts/check_regression.py <GM_TOKEN>           # check
+  python scripts/check_regression.py <GM_TOKEN> --generate  # regenerate
 
-Usage:
-  python vm_regression_check.py <GM_TOKEN> [--generate]
-    --generate  : create/update baseline file
-    (no flag)   : compare current output against baseline
-
-Returns exit 0 if stable, exit 1 if regression detected.
+check_regression.py auto-detects GM SDK availability and routes to
+Path B (real GM) or Path A (stub) automatically.
 """
 import sys, os, json, csv
 from pathlib import Path
 
-TOKEN = sys.argv[1] if len(sys.argv) > 1 else ""
+TOKEN = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("GM_TOKEN", "")
 if not TOKEN:
     print("ERROR: pass token as first argument")
     sys.exit(2)
