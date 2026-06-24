@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-from pathlib import Path
 
 
 def _get_lab():
@@ -209,16 +208,15 @@ def factor_cluster(
         for i, fi in enumerate(corr_matrix.index):
             if i in assigned:
                 continue
-            group = [fi]
             assigned.add(i)
+            labels[i] = cluster_id
             for j, fj in enumerate(corr_matrix.index):
                 if j in assigned:
                     continue
                 if abs(corr_matrix.iloc[i, j]) > 0.5:
-                    group.append(fj)
                     assigned.add(j)
-            if len(group) > 1:
-                cluster_id += 1
+                    labels[j] = cluster_id
+            cluster_id += 1
 
     clusters = {}
     for i, fid in enumerate(corr_matrix.index):
