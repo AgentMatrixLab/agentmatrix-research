@@ -1,58 +1,60 @@
 # Summary
 
-- What does this PR change?
-- Why is this change needed?
+<!-- 
+🔴 REQUIRED: Delete the placeholder text and write your own answers.
+PRs with unfilled sections will be automatically flagged by CI.
+-->
+
+- **What problem does this PR solve?** (one sentence)
+- **What changed?** (file list + one-line per file)
+- **Why is this change correct?** (evidence, not opinion)
 
 # Change Type
 
 - [ ] factor mining
-- [ ] factor reproduction
+- [ ] factor reproduction  
 - [ ] qlib workflow
 - [ ] backtest adapter
 - [ ] strategy engine
 - [ ] documentation
 - [ ] repository hygiene
 
-# Research Context
+# Verification (🔴 REQUIRED — CI blocks PRs without this)
 
-- Hypothesis:
-- Universe / market:
-- Time range:
-- Main command(s) run:
+- [ ] I ran the following command(s) and they passed:
+- [ ] I checked for secrets, API keys, and private paths: **no issues**
+- [ ] I reviewed all generated files and they are intentional
 
-# Validation
-
-- [ ] I ran targeted validation locally
-- [ ] I checked for secrets and private data
-- [ ] I reviewed generated paths and artifact locations
-
-Validation details:
+**Verification output** (paste the actual terminal output):
 
 ```text
-Paste commands, outputs, or a short summary here.
+<!-- Paste your `pytest`/`python`/script output here. Empty = CI fails. -->
 ```
 
-# Key Metrics
+# Key Metrics (for research PRs)
 
-- IC / Rank IC / ICIR:
-- Backtest return / Sharpe / Max DD:
-- Baseline comparison:
+| Metric | Value |
+|--------|-------|
+| IC / Rank IC / ICIR | |
+| Backtest return / Sharpe / Max DD | |
+| Baseline comparison | |
 
 # Artifacts
 
-- Evaluation JSON:
-- Backtest JSON:
-- Workflow config:
-- Screenshot or chart links:
+- Evaluation JSON path:
+- Backtest JSON path:
+- Proof artifact path:
 
-# Public Repo Check
+# Hygiene Check
 
 - [ ] No API keys, tokens, or `.env` files
-- [ ] No local absolute paths or personal machine references
-- [ ] No downloaded qlib data or large runtime artifacts
-- [ ] No account-linked identifiers or private exports
+- [ ] No absolute paths (`/home/`, `C:\Users\`)
+- [ ] No downloaded data or large runtime artifacts
 
-# Notes For Reviewers
+# Self-Review
 
-- Risks:
-- Follow-up work:
+<!-- Answer honestly. These help reviewers understand context. -->
+
+- **What's the riskiest part of this change?**
+- **What did you test manually?**
+- **What should reviewers focus on?**
