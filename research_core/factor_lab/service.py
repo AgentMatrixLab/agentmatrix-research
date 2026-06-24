@@ -879,7 +879,7 @@ def verify_candidates(
 
     rng = np.random.default_rng(seed)
     dates = pd.date_range("2025-01-01", periods=n_dates, freq="B")
-    codes = [f"C{{i:04d}}" for i in range(n_codes)]
+    codes = [f"C{i:04d}" for i in range(n_codes)]
     idx = pd.MultiIndex.from_product([dates, codes], names=["date", "code"])
     panel = pd.DataFrame({
         "open": rng.uniform(10, 100, len(idx)),

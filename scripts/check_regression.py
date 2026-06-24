@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """CI regression gate for jq_gm factor library.
 
-Runs factor computation before and after a code change (stub mode),
-compares outputs, and fails if any factor value changes by >5%.
+Compares current code output against a deterministic baseline stored in the
+repository.  The baseline was generated in stub mode (no GM SDK) with fixed
+seed, so it detects CODE CHANGES but does NOT verify numerical correctness.
+
+Real verification requires GM SDK + JQ truth data on a VM.
 
 Usage:
     python scripts/check_regression.py
@@ -16,139 +19,97 @@ import json
 import sys
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
-from research_core.factor_lab.libraries.jq_gm.factors import compute_jq_gm_factors
+from research_core.factor_lab.mining_bridge import batch_verify
 
-# Configuration
-N_DATES = 3
+BASELINE_PATH = Path(__file__).resolve().parent / "jq_gm_regression_baseline.json"
+N_DATES = 60
 N_CODES = 20
 SEED = 42
 REGRESSION_THRESHOLD = 0.05  # 5%
 
 
-def _gen_demo_panel(n_dates: int, n_codes: int, seed: int) -> pd.DataFrame:
-    """Generate deterministic OHLCV panel matching the demo pipeline."""
-    import numpy as np
-    rng = np.random.default_rng(seed)
-
-    dates = pd.date_range("2025-01-01", periods=n_dates, freq="B")
-    codes = [f"DEMO_{i:04d}" for i in range(n_codes)]
-
+def _gen_demo_panel() -> pd.DataFrame:
+    rng = np.random.default_rng(SEED)
+    dates = pd.date_range("2025-01-01", periods=N_DATES, freq="B")
+    codes = [f"DEMO_{i:04d}" for i in range(N_CODES)]
     idx = pd.MultiIndex.from_product([dates, codes], names=["date", "code"])
-    df = pd.DataFrame(
+    return pd.DataFrame(
         {
             "open": rng.uniform(10, 100, len(idx)),
             "high": rng.uniform(10, 100, len(idx)),
             "low": rng.uniform(10, 100, len(idx)),
             "close": rng.uniform(10, 100, len(idx)),
             "volume": rng.uniform(1e4, 1e7, len(idx)),
-            "vwap": rng.uniform(10, 100, len(idx)),
         },
         index=idx,
-    )
-    # compute_jq_gm_factors expects 'date' and 'code' as regular columns, not index
-    return df.reset_index()
-
-
-def compute_reference() -> dict[str, list[float]]:
-    """Compute baseline factor values in stub mode for a representative subset."""
-    panel = _gen_demo_panel(N_DATES, N_CODES, SEED)
-    # Use a representative subset to avoid factors.py stub bug with datetime columns
-    subset = [
-        "market_cap", "net_working_capital", "pe_ttm", "roe_ttm",
-        "net_profit_ttm", "operating_revenue_ttm", "bps", "current_ratio",
-    ]
-    result = compute_jq_gm_factors(panel, subset)
-    return _flatten(result)
-
-
-def _flatten(result_df: pd.DataFrame) -> dict[str, list[float]]:
-    """Extract factor values from DataFrame, skipping date/code columns."""
-    flat: dict[str, list[float]] = {}
-    for col in result_df.columns:
-        if col in ("date", "code"):
-            continue
-        vals = result_df[col].dropna().tolist()
-        if vals:
-            flat[col] = sorted(float(v) for v in vals)
-    return flat
-
-
-def check_regression(before: dict[str, list[float]],
-                     after: dict[str, list[float]]) -> tuple[bool, list[str]]:
-    """Compare two factor outputs.
-
-    Returns (passed, failures_list).
-    """
-    all_factors = set(before.keys()) | set(after.keys())
-    failures: list[str] = []
-
-    for fk in sorted(all_factors):
-        b_vals = before.get(fk, [])
-        a_vals = after.get(fk, [])
-        b_count = len(b_vals)
-        a_count = len(a_vals)
-
-        # Change in output count (>10%) → regression
-        if b_count > 0 and a_count > 0:
-            count_change = abs(a_count - b_count) / max(b_count, a_count)
-            if count_change > 0.10:
-                failures.append(
-                    f"{fk}: output count changed {b_count}→{a_count} "
-                    f"({count_change:.1%})"
-                )
-                continue
-
-        # Value change > threshold → regression
-        if b_count > 0 and a_count > 0:
-            n = min(b_count, a_count)
-            diffs = []
-            for i in range(n):
-                bv, av = b_vals[i], a_vals[i]
-                if abs(bv) < 1e-10:
-                    diffs.append(0.0 if abs(av) < 1e-10 else 1.0)
-                else:
-                    diffs.append(abs(av - bv) / abs(bv))
-            max_diff = max(diffs)
-            mean_diff = sum(diffs) / len(diffs)
-            if max_diff > REGRESSION_THRESHOLD:
-                failures.append(
-                    f"{fk}: max_diff={max_diff:.4f}, mean_diff={mean_diff:.4f}"
-                )
-
-    return (len(failures) == 0, failures)
+    ).reset_index()
 
 
 def main() -> int:
-    """Run regression check and return exit code."""
     print("=== jq_gm Regression Check ===")
-    print(f"n_dates={N_DATES}, n_codes={N_CODES}, seed={SEED}")
 
-    try:
-        before = compute_reference()
-        after = compute_reference()
-    except Exception as e:
-        print(f"COMPUTATION ERROR: {e}")
-        print("Regression check failed — factor computation is broken")
+    if not BASELINE_PATH.exists():
+        print(f"ERROR: baseline not found at {BASELINE_PATH}")
+        print("Run once with GM SDK to generate, or check into repo.")
         return 1
 
-    passed, failures = check_regression(before, after)
+    baseline = json.loads(BASELINE_PATH.read_text(encoding="utf-8"))
+    meta = baseline.get("_meta", {})
+    print(f"Baseline: {meta.get('n_dates')}d x {meta.get('n_codes')}c, seed={meta.get('seed')}")
+    print(f"Note: {meta.get('note', '')}")
 
-    # In CI: compare current vs current → should always pass (sanity check)
-    # Real regression would compare baseline file vs current
-    baseline_path = Path("runtime/factor_lab/jq_gm_regression_baseline.json")
-    if baseline_path.exists():
-        baseline = json.loads(baseline_path.read_text(encoding="utf-8"))
-        passed, failures = check_regression(baseline, after)
+    expressions = list(baseline["factors"].keys())
+    panel = _gen_demo_panel()
 
-    if passed:
-        print(f"PASSED: all {len(before)} factors stable within {REGRESSION_THRESHOLD:.0%}")
+    try:
+        results = batch_verify(expressions, panel)
+    except Exception as e:
+        print(f"COMPUTATION ERROR: {e}")
+        return 1
+
+    current = {}
+    for r in results:
+        current[r.expression] = {
+            "status": r.status,
+            "finite_count": r.finite_count,
+            "finite_ratio": round(r.finite_ratio, 6),
+        }
+
+    failures = 0
+    for expr, bl in baseline["factors"].items():
+        cur = current.get(expr)
+        if cur is None:
+            print(f"  MISSING: {expr}")
+            failures += 1
+            continue
+
+        if cur["status"] != bl["status"]:
+            print(f"  STATUS CHANGE: {expr}: {bl['status']} → {cur['status']}")
+            failures += 1
+            continue
+
+        if bl["finite_count"] > 0:
+            count_change = abs(cur["finite_count"] - bl["finite_count"]) / bl["finite_count"]
+            if count_change > REGRESSION_THRESHOLD:
+                print(f"  COUNT: {expr}: {bl['finite_count']} → {cur['finite_count']} ({count_change:.1%})")
+                failures += 1
+                continue
+
+        if bl["finite_ratio"] > 0:
+            ratio_change = abs(cur["finite_ratio"] - bl["finite_ratio"]) / bl["finite_ratio"]
+            if ratio_change > REGRESSION_THRESHOLD:
+                print(f"  RATIO: {expr}: {bl['finite_ratio']:.4f} → {cur['finite_ratio']:.4f} ({ratio_change:.1%})")
+                failures += 1
+                continue
+
+    if failures == 0:
+        print(f"PASSED: {len(expressions)} expressions stable within {REGRESSION_THRESHOLD:.0%}")
         return 0
 
-    print(f"FAILED: {len(failures)} regression(s) detected:")
-    for f in failures:
-        print(f"  - {f}")
+    print(f"FAILED: {failures} regression(s) detected")
     return 1
 
 

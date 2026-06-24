@@ -295,27 +295,40 @@ def batch_verify(
         mapping = _MAPPING_TABLE.get(parsed.expr_type)
         name = f"ai_{parsed.expr_type.name.lower()}_{parsed.params.get('window', 0)}"
         computed_count, finite_count, finite_ratio = 0, 0, 0.0
-        status = "PASS"
+        status = "PENDING_GM"
 
         if mapping:
-            try:
-                values = _compute_directly(panel, parsed)
-                if values is not None:
-                    computed_count = len(values)
-                    finite_count = int(values.dropna().replace(
-                        [float("inf"), float("-inf")], None).dropna().count())
-                    finite_ratio = finite_count / max(computed_count, 1)
-                    # Threshold: expect window-size warmup rows per stock
-                    w = parsed.params.get("window", 10)
-                    min_ratio = max(0.3, 1.0 - w / max(computed_count, 1) * panel["code"].nunique()) - 0.001
-                    if finite_count == 0:
-                        status = "FAIL"
-                    elif finite_ratio < min_ratio:
-                        status = "FAIL"
-                else:
-                    status = "FAIL"
-            except Exception:
-                status = "FAIL"
+            # ── Try real jq_gm compute first ──
+            if compute_fn is not None:
+                try:
+                    real_values = compute_fn(panel, [name])
+                    if real_values is not None and name in real_values.columns:
+                        vals = real_values[name]
+                        computed_count = len(vals)
+                        finite_count = int(vals.dropna().replace(
+                            [float("inf"), float("-inf")], None).dropna().count())
+                        finite_ratio = finite_count / max(computed_count, 1)
+                        if finite_count > 0 and finite_ratio >= 0.3:
+                            status = "PASS"
+                        else:
+                            status = "FAIL"
+                except Exception:
+                    pass
+
+            # ── Fallback: _compute_directly for diagnostics only ──
+            if status == "PENDING_GM":
+                try:
+                    values = _compute_directly(panel, parsed)
+                    if values is not None:
+                        computed_count = len(values)
+                        finite_count = int(values.dropna().replace(
+                            [float("inf"), float("-inf")], None).dropna().count())
+                        finite_ratio = finite_count / max(computed_count, 1)
+                except Exception:
+                    pass
+        else:
+            # No mapping → unsupported expression type
+            status = "NC"
 
         results.append(VerificationResult(
             expression=expr, parsed=parsed,

@@ -1,0 +1,53 @@
+{
+  "_meta": {
+    "description": "Deterministic regression baseline. Detects code changes, NOT correctness.",
+    "note": "PENDING_GM means stub mode (no GM SDK). On VM with GM SDK, these should be PASS.",
+    "seed": 42,
+    "n_dates": 60,
+    "n_codes": 20
+  },
+  "factors": {
+    "Ref($close, 5) / $close - 1": {
+      "status": "FAIL",
+      "finite_count": 0,
+      "finite_ratio": 0.0,
+      "parsed_type": "MOMENTUM"
+    },
+    "Ref($close, 20) / $close - 1": {
+      "status": "FAIL",
+      "finite_count": 0,
+      "finite_ratio": 0.0,
+      "parsed_type": "MOMENTUM"
+    },
+    "$volume / Mean($volume, 10)": {
+      "status": "FAIL",
+      "finite_count": 0,
+      "finite_ratio": 0.0,
+      "parsed_type": "VOLUME_RATIO"
+    },
+    "Std(Ref($close, 1) / $close, 10)": {
+      "status": "FAIL",
+      "finite_count": 0,
+      "finite_ratio": 0.0,
+      "parsed_type": "VOLATILITY"
+    },
+    "Mean($close, 20)": {
+      "status": "FAIL",
+      "finite_count": 0,
+      "finite_ratio": 0.0,
+      "parsed_type": "MOVING_AVERAGE"
+    },
+    "$high / $low": {
+      "status": "FAIL",
+      "finite_count": 0,
+      "finite_ratio": 0.0,
+      "parsed_type": "PRICE_RATIO"
+    },
+    "$close - Ref($close, 10)": {
+      "status": "FAIL",
+      "finite_count": 0,
+      "finite_ratio": 0.0,
+      "parsed_type": "DELTA"
+    }
+  }
+}
