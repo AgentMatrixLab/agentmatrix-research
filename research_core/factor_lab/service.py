@@ -33,6 +33,8 @@ from research_core.factor_lab.truth import (
     validate_truth_frame,
 )
 from research_core.factor_lab.validation import export_proof_template, export_validation_report
+from research_core.factor_lab.diagnostics import MismatchDiagnostician
+from research_core.factor_lab.nc_classifier import NCClassifier
 
 
 def _read_json_if_exists(path: Path) -> dict[str, Any] | None:
@@ -564,4 +566,343 @@ def run_alpha101_truth_proof_batch(
         "requested_factor_count": len(job["requested_factors"]),
         "proof_batch_summary": report_payload["summary"],
         "artifacts": job["artifacts"],
+    }
+
+
+# ══════════════════════════════════════════════════════════════════
+#  jq_gm service wrappers (added Week 2)
+# ══════════════════════════════════════════════════════════════════
+#
+# These follow the same shape as alpha101 service functions, but use
+# jq_gm specs and compute instead of alpha101.  The core workflow
+# (panel → compute → evaluate → proof → report) is identical; only
+# the spec source and compute function differ.
+
+from research_core.factor_lab.libraries.jq_gm import (
+    JQ_GM_IMPLEMENTED_FACTORS,
+    jq_gm_specs,
+)
+from research_core.factor_lab.libraries.jq_gm.factors import (
+    compute_jq_gm_factors,
+)
+
+
+def _resolve_jq_gm_factor_names(factor_names: list[str] | None) -> list[str]:
+    """Validate and resolve jq_gm factor names against the implemented set."""
+    requested = factor_names or list(JQ_GM_IMPLEMENTED_FACTORS)
+    invalid = [name for name in requested if name not in JQ_GM_IMPLEMENTED_FACTORS]
+    if invalid:
+        raise ValueError(
+            f"Unsupported jq_gm factors: {invalid}. "
+            f"Use list-jq-gm to see available factors."
+        )
+    return requested
+
+
+def list_jq_gm_factors(
+    config: FactorLabWorkspaceConfig | None = None,
+) -> list[dict[str, Any]]:
+    """List all jq_gm factors with their proof status.
+
+    Same shape as list_alpha101_factors() — used by the list-jq-gm
+    CLI command and the factor_lab overview dashboard.
+    """
+    workspace = config or FactorLabWorkspaceConfig()
+    workspace.ensure_directories()
+    items: list[dict[str, Any]] = []
+    for spec in jq_gm_specs():
+        proof = _read_json_if_exists(
+            workspace.proof_path(spec.library, spec.factor_name)
+        )
+        items.append({
+            "factor_name": spec.factor_name,
+            "display_name": spec.display_name,
+            "category": spec.tags[0] if spec.tags else "",
+            "required_fields": spec.required_fields,
+            "gm_field": spec.metadata.get("gm_field", ""),
+            "has_formula": bool(spec.formula),
+            "proof_status": proof.get("status") if proof else "missing",
+        })
+    return items
+
+
+def run_jq_gm_research_job(
+    payload: dict[str, Any] | None = None,
+    config: FactorLabWorkspaceConfig | None = None,
+) -> dict[str, Any]:
+    """Run a jq_gm factor research job (demo or truth-backed).
+
+    Reuses the same 6-step pipeline as run_alpha101_research_job():
+      1. Demo panel generation
+      2. Factor computation (via compute_jq_gm_factors)
+      3. Evaluation metrics (IC, coverage, etc.)
+      4. Per-factor proof reports
+      5. Aggregated research report
+      6. Job metadata
+
+    In GM-stub mode (no GM SDK), step 2 returns NaN-filled frames,
+    sufficient for pipeline validation but not numerical correctness.
+    """
+    request_payload = payload or {}
+    workspace = config or FactorLabWorkspaceConfig()
+    workspace.ensure_directories()
+
+    factor_names = _resolve_jq_gm_factor_names(
+        request_payload.get("factor_names")
+    )
+    n_dates = int(request_payload.get("n_dates", 160))
+    n_codes = int(request_payload.get("n_codes", 8))
+    seed = int(request_payload.get("seed", 7))
+    data_source = request_payload.get("data_source", "demo")
+    truth_csv_path = request_payload.get("truth_csv_path", "")
+    truth_tolerance = float(request_payload.get("truth_tolerance", 1e-12))
+
+    if data_source != "demo":
+        raise ValueError(
+            "jq_gm research jobs currently support 'demo' data_source only."
+        )
+
+    specs = jq_gm_specs()
+    export_library_specs(config=workspace, library="jq_gm", specs=specs)
+
+    job_id = request_payload.get("job_id") or f"jq_gm-{uuid4().hex[:12]}"
+    panel = build_alpha101_demo_panel(n_dates=n_dates, n_codes=n_codes, seed=seed)
+    factor_frame = compute_jq_gm_factors(panel, factor_names=factor_names)
+
+    eval_report = build_factor_evaluation_report(
+        panel, factor_frame, factor_names=factor_names, library="jq_gm"
+    )
+    truth_frame = (
+        load_truth_frame(truth_csv_path, factor_names=factor_names)
+        if truth_csv_path else None
+    )
+    truth_summary = (
+        summarize_truth_frame(truth_frame, factor_names=factor_names)
+        if truth_frame is not None else {}
+    )
+
+    frame_path = workspace.frame_path("jq_gm", job_id)
+    factor_frame.to_csv(frame_path, index=False, encoding="utf-8")
+
+    eval_json_path = workspace.report_path(f"{job_id}_evaluation", suffix=".json")
+    eval_json_path.write_text(
+        json.dumps(eval_report, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    eval_md_path = workspace.report_path(f"{job_id}_evaluation", suffix=".md")
+    eval_md_path.write_text(
+        _render_evaluation_markdown(eval_report, factor_names=factor_names),
+        encoding="utf-8",
+    )
+
+    specs_by_name = _spec_map(specs)
+    proof_paths: dict[str, str] = {}
+    proof_payloads: dict[str, dict[str, Any]] = {}
+    truth_paths: dict[str, str] = {}
+    truth_payloads: dict[str, dict[str, Any]] = {}
+
+    for factor_name in factor_names:
+        factor_only = factor_frame[["date", "code", factor_name]].copy()
+        truth_path = ""
+        truth_metrics: dict[str, Any] | None = None
+        if truth_frame is not None:
+            truth_path, truth_metrics = export_truth_comparison(
+                config=workspace,
+                spec=specs_by_name[factor_name],
+                factor_frame=factor_only,
+                truth_frame=truth_frame,
+                tolerance=truth_tolerance,
+            )
+            truth_paths[factor_name] = truth_path
+            truth_payloads[factor_name] = truth_metrics
+
+        proof_paths[factor_name] = export_validation_report(
+            config=workspace,
+            spec=specs_by_name[factor_name],
+            factor_frame=factor_only,
+            evaluation_report=eval_report,
+            available_columns=panel.columns.tolist(),
+            evaluation_path=str(eval_json_path),
+            job_id=job_id,
+            truth_path=truth_path,
+            truth_metrics=truth_metrics,
+        )
+        proof_payloads[factor_name] = json.loads(
+            Path(proof_paths[factor_name]).read_text(encoding="utf-8")
+        )
+
+    # Generate proof templates for factors not in this run.
+    for spec in specs:
+        if spec.factor_name not in proof_paths:
+            export_proof_template(config=workspace, spec=spec)
+
+    # ── NC classification + diagnostics (W3-4) ──
+    nc_result = None
+    diagnosis_results = {}
+    nc_report_path = workspace.report_path(f"{job_id}_nc", suffix=".md")
+    diag_report_path = workspace.report_path(f"{job_id}_diagnosis", suffix=".json")
+    if truth_frame is not None and truth_payloads:
+        import pandas as _pd
+        rows = []
+        for fn in factor_names:
+            tp = truth_payloads.get(fn, {})
+            for mm in tp.get("mismatches", []):
+                rows.append({
+                    "factor_key": fn,
+                    "symbol": mm.get("code", mm.get("symbol", "")),
+                    "gm_value": mm.get("computed_value", float("nan")),
+                    "jq_value": mm.get("truth_value", float("nan")),
+                    "diff_pct": mm.get("abs_error", 0.0),
+                    "status": "MISMATCH",
+                })
+        if rows:
+            cmp_df = _pd.DataFrame(rows)
+            reg = {s.factor_name: {
+                "gm_field": s.metadata.get("gm_field", ""),
+                "display_name": s.display_name,
+                "ttm": s.metadata.get("ttm", False),
+            } for s in specs}
+            cls = NCClassifier(factor_registry=reg)
+            nc_result = cls.batch_classify(cmp_df)
+            diag = MismatchDiagnostician()
+            diagnosis_results = {k: v.to_dict() for k, v in
+                                 diag.diagnose_all(cmp_df, reg).items()}
+            nc_report_path.write_text(cls.generate_report(nc_result), encoding="utf-8")
+            import json as _json
+            diag_report_path.write_text(_json.dumps(
+                diagnosis_results, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    research_report = build_factor_research_report(
+        job_id=job_id,
+        library="jq_gm",
+        factor_names=factor_names,
+        evaluation_report=eval_report,
+        proof_payloads=proof_payloads,
+        truth_payloads=truth_payloads,
+        data_source=data_source,
+    )
+
+    report_json_path = workspace.report_path(
+        f"{job_id}_proof_report", suffix=".json"
+    )
+    report_json_path.write_text(
+        json.dumps(research_report, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    report_md_path = workspace.report_path(
+        f"{job_id}_proof_report", suffix=".md"
+    )
+    report_md_path.write_text(
+        render_factor_research_report_markdown(research_report),
+        encoding="utf-8",
+    )
+
+    job = {
+        "job_id": job_id,
+        "library": "jq_gm",
+        "status": "completed",
+        "data_source": data_source,
+        "truth_csv_path": truth_csv_path,
+        "truth_enabled": bool(truth_csv_path),
+        "truth_summary": truth_summary,
+        "nc_classification": {
+            "stats": nc_result.stats if nc_result else {},
+            "factor_nc": nc_result.factor_nc if nc_result else {},
+        },
+        "diagnostics": diagnosis_results,
+        "generated_at": now_iso(),
+        "requested_factors": factor_names,
+        "dataset": {"n_dates": n_dates, "n_codes": n_codes, "seed": seed},
+        "artifacts": {
+            "factor_frame": str(frame_path),
+            "evaluation_json": str(eval_json_path),
+            "evaluation_markdown": str(eval_md_path),
+            "research_report_json": str(report_json_path),
+            "research_report_markdown": str(report_md_path),
+            "proofs": proof_paths,
+            "truth_compares": truth_paths,
+            "catalog": str(workspace.catalog_path("jq_gm")),
+            "specs": str(workspace.specs_path("jq_gm")),
+            "nc_report_md": str(nc_report_path) if nc_result else "",
+            "diagnosis_report_json": str(diag_report_path) if diagnosis_results else "",
+        },
+    }
+    workspace.job_path(job_id).write_text(
+        json.dumps(job, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    return job
+
+
+def run_jq_gm_truth_proof_batch(
+    payload: dict[str, Any] | None = None,
+    config: FactorLabWorkspaceConfig | None = None,
+) -> dict[str, Any]:
+    """Run jq_gm proof-batch with an external truth CSV.
+
+    Thin wrapper around run_jq_gm_research_job() that enforces
+    truth_csv_path and returns a proof-batch summary.
+    """
+    request_payload = payload or {}
+    truth_csv_path = str(request_payload.get("truth_csv_path", "")).strip()
+    if not truth_csv_path:
+        raise ValueError(
+            "jq_gm proof-batch requires --truth-csv pointing to a "
+            "valid truth CSV file."
+        )
+
+    job = run_jq_gm_research_job(request_payload, config=config)
+    report_path = Path(job["artifacts"]["research_report_json"])
+    report_payload = json.loads(report_path.read_text(encoding="utf-8"))
+
+    return {
+        "job_id": job["job_id"],
+        "library": job["library"],
+        "status": job["status"],
+        "truth_csv_path": truth_csv_path,
+        "requested_factor_count": len(job["requested_factors"]),
+        "proof_batch_summary": report_payload["summary"],
+        "artifacts": job["artifacts"],
+    }
+
+
+def verify_candidates(
+    expressions: list[str],
+    *,
+    n_dates: int = 3,
+    n_codes: int = 20,
+    seed: int = 42,
+) -> dict[str, Any]:
+    """Verify AI-generated candidate factor expressions via mining bridge."""
+    from research_core.factor_lab.mining_bridge import (
+        batch_verify, feedback_to_miner,
+    )
+    import pandas as pd, numpy as np
+
+    rng = np.random.default_rng(seed)
+    dates = pd.date_range("2025-01-01", periods=n_dates, freq="B")
+    codes = [f"C{i:04d}" for i in range(n_codes)]
+    idx = pd.MultiIndex.from_product([dates, codes], names=["date", "code"])
+    panel = pd.DataFrame({
+        "open": rng.uniform(10, 100, len(idx)),
+        "high": rng.uniform(10, 100, len(idx)),
+        "low": rng.uniform(10, 100, len(idx)),
+        "close": rng.uniform(10, 100, len(idx)),
+        "volume": rng.uniform(1e4, 1e7, len(idx)),
+        "vwap": rng.uniform(10, 100, len(idx)),
+    }, index=idx).reset_index()
+
+    results = batch_verify(expressions, panel)
+    feedback = feedback_to_miner(results)
+
+    return {
+        "expressions": len(expressions),
+        "results": [
+            {
+                "expression": r.expression,
+                "status": r.status,
+                "parsed_type": r.parsed.expr_type.name if r.parsed else None,
+                "finite_ratio": r.finite_ratio,
+            }
+            for r in results
+        ],
+        "feedback": feedback,
     }

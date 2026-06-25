@@ -93,6 +93,17 @@ class QlibFactorLab:
         save_factor_definition(definition)
         return definition
 
+    def _resolve_instruments(self, instruments):
+        """Resolve string market name to actual instrument list for client provider."""
+        if instruments is None:
+            instruments = self.config.universe
+        if isinstance(instruments, str):
+            inst_file = Path(self.config.resolved_provider_uri()) / "instruments" / f"{instruments}.txt"
+            if inst_file.exists():
+                return sorted({line.split('\t')[0] for line in inst_file.read_text().splitlines() if line.strip()})
+            return instruments  # pass through, let qlib handle it
+        return instruments
+
     def fetch_expression_frame(
         self,
         expression: str,
@@ -105,8 +116,9 @@ class QlibFactorLab:
 
         from qlib.data import D
 
+        instruments = self._resolve_instruments(instruments)
         frame = D.features(
-            instruments=instruments or self.config.universe,
+            instruments=instruments,
             fields=[expression, "$close"],
             start_time=start_time,
             end_time=end_time,
@@ -132,8 +144,9 @@ class QlibFactorLab:
 
         from qlib.data import D
 
+        instruments = self._resolve_instruments(instruments)
         frame = D.features(
-            instruments=instruments or self.config.universe,
+            instruments=instruments,
             fields=[definition.expression, "$close"],
             start_time=start_time,
             end_time=end_time,
