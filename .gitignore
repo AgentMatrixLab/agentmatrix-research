@@ -25,6 +25,8 @@ desktop/build/
 desktop/dist/
 desktop/release/
 desktop/release-zoom/
+runtime/alpha158_lab/
+smartdata_cache/
 .DS_Store
 
 test_kline_api.py
