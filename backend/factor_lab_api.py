@@ -4,7 +4,7 @@ import os
 import sys
 from pathlib import Path
 
-from flask import Flask, jsonify, request, send_file
+from flask import Flask, jsonify, request, send_file, send_from_directory
 from flask_cors import CORS
 
 
@@ -21,19 +21,72 @@ from research_core.factor_lab import (  # noqa: E402
     list_factor_lab_jobs,
     run_alpha101_research_job,
 )
+from research_core.factor_lab_web import (  # noqa: E402
+    build_factor_library_view,
+    build_factor_view,
+    build_research_analysis_view,
+)
+from research_core.factor_lab_web.artifact_service import (  # noqa: E402
+    list_job_artifacts,
+    resolve_artifact_path,
+)
 
 
 app = Flask(__name__)
-CORS(app)
+
+
+def _cors_origins() -> list[str]:
+    raw = os.getenv(
+        "FACTOR_LAB_CORS_ORIGINS",
+        "http://127.0.0.1:5173,http://localhost:5173,http://127.0.0.1:8012,http://localhost:8012,null",
+    )
+    return [origin.strip() for origin in raw.split(",") if origin.strip()]
+
+
+CORS(app, resources={r"/api/*": {"origins": _cors_origins()}})
+FRONTEND_DIR = project_root / "frontend" / "factor-lab-dashboard"
 
 
 def _workspace() -> FactorLabWorkspaceConfig:
     return FactorLabWorkspaceConfig()
 
 
+@app.route("/factor-lab-dashboard/", methods=["GET"])
+def factor_lab_dashboard_index():
+    return send_from_directory(FRONTEND_DIR, "index.html")
+
+
+@app.route("/factor-lab-dashboard/<path:filename>", methods=["GET"])
+def factor_lab_dashboard_asset(filename: str):
+    return send_from_directory(FRONTEND_DIR, filename)
+
+
 @app.route("/api/agents/factor-lab/overview", methods=["GET"])
 def factor_lab_overview():
     return jsonify(get_factor_lab_overview(_workspace()))
+
+
+@app.route("/api/agents/factor-lab/factor-library", methods=["GET"])
+def factor_lab_factor_library():
+    return jsonify(build_factor_library_view(_workspace()))
+
+
+@app.route("/api/agents/factor-lab/health", methods=["GET"])
+def factor_lab_health():
+    return jsonify({"status": "ok", "service": "factor_lab", "local_flask": True})
+
+
+@app.route("/api/agents/factor-lab/factors/<path:factor_id>/view", methods=["GET"])
+def factor_lab_factor_view(factor_id: str):
+    payload = build_factor_view(factor_id, _workspace())
+    if payload is None:
+        return jsonify({"error": "Factor not found"}), 404
+    return jsonify(payload)
+
+
+@app.route("/api/agents/factor-lab/factors/<path:factor_id>/research-analysis/latest", methods=["GET"])
+def factor_lab_factor_research_analysis(factor_id: str):
+    return jsonify(build_research_analysis_view(factor_id, _workspace()))
 
 
 @app.route("/api/agents/factor-lab/alpha101/factors", methods=["GET"])
@@ -76,20 +129,30 @@ def factor_lab_job_detail(job_id: str):
     return jsonify(payload)
 
 
+@app.route("/api/agents/factor-lab/jobs/<job_id>/artifacts", methods=["GET"])
+def factor_lab_job_artifacts(job_id: str):
+    workspace = _workspace()
+    if get_factor_lab_job(job_id, workspace) is None:
+        return jsonify({"error": "Job not found"}), 404
+    return jsonify(
+        {
+            "job_id": job_id,
+            "factor": request.args.get("factor"),
+            "artifacts": list_job_artifacts(job_id, factor_name=request.args.get("factor"), workspace=workspace),
+        }
+    )
+
+
 @app.route("/api/agents/factor-lab/artifacts/<job_id>/<artifact_kind>", methods=["GET"])
 def factor_lab_job_artifact(job_id: str, artifact_kind: str):
-    payload = get_factor_lab_job(job_id, _workspace())
-    if payload is None:
+    workspace = _workspace()
+    if get_factor_lab_job(job_id, workspace) is None:
         return jsonify({"error": "Job not found"}), 404
 
-    artifacts = payload.get("artifacts", {})
-    path_str = artifacts.get(artifact_kind)
-    if artifact_kind == "proof" and request.args.get("factor"):
-        path_str = artifacts.get("proofs", {}).get(request.args["factor"])
-    if not path_str:
+    path = resolve_artifact_path(job_id, artifact_kind, factor_name=request.args.get("factor"), workspace=workspace)
+    if path is None:
         return jsonify({"error": "Artifact not found"}), 404
 
-    path = Path(path_str)
     if not path.exists():
         return jsonify({"error": "Artifact file missing"}), 404
     return send_file(path, as_attachment=False, download_name=path.name)
@@ -97,4 +160,5 @@ def factor_lab_job_artifact(job_id: str, artifact_kind: str):
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "8012"))
-    app.run(host="0.0.0.0", port=port, debug=False)
+    host = os.getenv("HOST", "127.0.0.1")
+    app.run(host=host, port=port, debug=False)
