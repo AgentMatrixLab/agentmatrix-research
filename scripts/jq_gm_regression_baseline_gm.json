@@ -1,0 +1,1234 @@
+{
+  "ATR14": {
+    "count": 20,
+    "mean": 1.8329610821428577
+  },
+  "BIAS20": {
+    "count": 20,
+    "mean": -0.7113630771397077
+  },
+  "BLEV": {
+    "count": 20,
+    "mean": 1.1160226672101459
+  },
+  "CCI14": {
+    "count": 20,
+    "mean": -68.62598150640643
+  },
+  "DTOA": {
+    "count": 20,
+    "mean": 0.5477339742108687
+  },
+  "EBIT": {
+    "count": 20,
+    "mean": 77169022394.773
+  },
+  "EBITDA": {
+    "count": 20,
+    "mean": 78201622394.773
+  },
+  "EMA10": {
+    "count": 20,
+    "mean": 132.8218522474615
+  },
+  "EMA20": {
+    "count": 20,
+    "mean": 133.4887427881954
+  },
+  "EMA5": {
+    "count": 20,
+    "mean": 132.2270064118135
+  },
+  "KDJ_D": {
+    "count": 20,
+    "mean": 22.493059109628536
+  },
+  "KDJ_J": {
+    "count": 20,
+    "mean": 22.493059109628536
+  },
+  "KDJ_K": {
+    "count": 20,
+    "mean": 22.493059109628536
+  },
+  "MA10": {
+    "count": 20,
+    "mean": 133.10427100500002
+  },
+  "MA20": {
+    "count": 20,
+    "mean": 133.344520075
+  },
+  "MA5": {
+    "count": 20,
+    "mean": 132.69714024
+  },
+  "MA60": {
+    "count": 20,
+    "mean": 135.2160066075
+  },
+  "MACD": {
+    "count": 20,
+    "mean": -0.8134950328956314
+  },
+  "MLEV": {
+    "count": 20,
+    "mean": 1.161397522144948
+  },
+  "REVS10": {
+    "count": 20,
+    "mean": -0.004371782706017596
+  },
+  "REVS120": {
+    "count": 20,
+    "mean": 0.0624399888724685
+  },
+  "REVS20": {
+    "count": 20,
+    "mean": -0.010977743420054059
+  },
+  "REVS250": {
+    "count": 20,
+    "mean": 0.13860261984947825
+  },
+  "REVS5": {
+    "count": 20,
+    "mean": -0.0076949590462213665
+  },
+  "REVS60": {
+    "count": 20,
+    "mean": 0.002670082106429844
+  },
+  "RSI": {
+    "count": 20,
+    "mean": 42.679631329310595
+  },
+  "Std10": {
+    "count": 20,
+    "mean": 0.14633604847772758
+  },
+  "Std20": {
+    "count": 20,
+    "mean": 0.16871890737243594
+  },
+  "Std5": {
+    "count": 20,
+    "mean": 0.1579196721815183
+  },
+  "Std60": {
+    "count": 20,
+    "mean": 0.20965439375368508
+  },
+  "accounts_receivable_turnover": {
+    "count": 16,
+    "mean": 1700.6747561546754
+  },
+  "adj_momentum": {
+    "count": 20,
+    "mean": 0.13352414413521707
+  },
+  "administration_expense_ttm": {
+    "count": 20,
+    "mean": 31643022601.2555
+  },
+  "alpha101_101": {
+    "count": 20,
+    "mean": -0.39102072169443236
+  },
+  "alpha101_12": {
+    "count": 20,
+    "mean": 0.6276343999999984
+  },
+  "alpha101_23": {
+    "count": 20,
+    "mean": 0.1165032
+  },
+  "alpha101_24": {
+    "count": 20,
+    "mean": 0.4232128500000007
+  },
+  "alpha101_35": {
+    "count": 20,
+    "mean": 0.2694346167186958
+  },
+  "alpha101_41": {
+    "count": 20,
+    "mean": -0.3894181375744929
+  },
+  "alpha101_43": {
+    "count": 20,
+    "mean": 0.3894736842105263
+  },
+  "alpha101_51": {
+    "count": 20,
+    "mean": 0.4594414000000013
+  },
+  "alpha101_53": {
+    "count": 19,
+    "mean": 93.62253463466833
+  },
+  "alpha101_54": {
+    "count": 20,
+    "mean": -0.21593121870481383
+  },
+  "alpha101_6": {
+    "count": 20,
+    "mean": -0.02762598228109312
+  },
+  "alpha101_7": {
+    "count": 20,
+    "mean": -0.525
+  },
+  "alpha101_84": {
+    "count": 18,
+    "mean": 140414621574.57523
+  },
+  "alpha101_9": {
+    "count": 20,
+    "mean": 1.0224123999999977
+  },
+  "alpha191_100": {
+    "count": 20,
+    "mean": 20197397.326942187
+  },
+  "alpha191_102": {
+    "count": 20,
+    "mean": 50.54847659558011
+  },
+  "alpha191_103": {
+    "count": 20,
+    "mean": 50.0
+  },
+  "alpha191_106": {
+    "count": 20,
+    "mean": -3.558409549999997
+  },
+  "alpha191_109": {
+    "count": 20,
+    "mean": 0.9763803808047795
+  },
+  "alpha191_11": {
+    "count": 20,
+    "mean": -40442255.53254272
+  },
+  "alpha191_110": {
+    "count": 20,
+    "mean": 96.18013452706931
+  },
+  "alpha191_111": {
+    "count": 20,
+    "mean": 6321507.147286636
+  },
+  "alpha191_112": {
+    "count": 20,
+    "mean": -14.129378610230408
+  },
+  "alpha191_118": {
+    "count": 20,
+    "mean": 99.23135913541691
+  },
+  "alpha191_122": {
+    "count": 20,
+    "mean": -0.00011145156310007772
+  },
+  "alpha191_126": {
+    "count": 20,
+    "mean": 131.36706865000002
+  },
+  "alpha191_127": {
+    "count": 20,
+    "mean": 2.2295804744712475
+  },
+  "alpha191_128": {
+    "count": 20,
+    "mean": 48.74713164417922
+  },
+  "alpha191_129": {
+    "count": 20,
+    "mean": 6.776015999999997
+  },
+  "alpha191_13": {
+    "count": 20,
+    "mean": -0.3894181375744929
+  },
+  "alpha191_132": {
+    "count": 20,
+    "mean": 2356387825.92855
+  },
+  "alpha191_133": {
+    "count": 20,
+    "mean": -17.0
+  },
+  "alpha191_134": {
+    "count": 20,
+    "mean": 1665750.399559668
+  },
+  "alpha191_135": {
+    "count": 20,
+    "mean": 0.9949457930519545
+  },
+  "alpha191_137": {
+    "count": 20,
+    "mean": -9.344189142223584
+  },
+  "alpha191_139": {
+    "count": 20,
+    "mean": -0.02762598228109312
+  },
+  "alpha191_14": {
+    "count": 20,
+    "mean": -2.2316621999999993
+  },
+  "alpha191_144": {
+    "count": 20,
+    "mean": 5.77840669212989e-12
+  },
+  "alpha191_145": {
+    "count": 20,
+    "mean": -4.5307531401946735
+  },
+  "alpha191_15": {
+    "count": 20,
+    "mean": -0.00011510358651973252
+  },
+  "alpha191_150": {
+    "count": 20,
+    "mean": 2378998714.4124846
+  },
+  "alpha191_151": {
+    "count": 20,
+    "mean": -1.7674256807344695
+  },
+  "alpha191_152": {
+    "count": 20,
+    "mean": -0.004049425408145344
+  },
+  "alpha191_153": {
+    "count": 20,
+    "mean": 132.86370999270832
+  },
+  "alpha191_155": {
+    "count": 20,
+    "mean": 1776536.572469928
+  },
+  "alpha191_158": {
+    "count": 20,
+    "mean": 0.015681178487093602
+  },
+  "alpha191_160": {
+    "count": 20,
+    "mean": 1.4175986799522229
+  },
+  "alpha191_161": {
+    "count": 20,
+    "mean": 1.7791897541666675
+  },
+  "alpha191_164": {
+    "count": 20,
+    "mean": 4748.430159116328
+  },
+  "alpha191_167": {
+    "count": 20,
+    "mean": 3.7259711499999995
+  },
+  "alpha191_168": {
+    "count": 20,
+    "mean": -0.9776697613121634
+  },
+  "alpha191_169": {
+    "count": 20,
+    "mean": -0.02982197306106164
+  },
+  "alpha191_171": {
+    "count": 20,
+    "mean": -0.49758261799709247
+  },
+  "alpha191_173": {
+    "count": 20,
+    "mean": 135.19026235888725
+  },
+  "alpha191_174": {
+    "count": 20,
+    "mean": 1.0053914626357534
+  },
+  "alpha191_175": {
+    "count": 20,
+    "mean": 1.6808709666666661
+  },
+  "alpha191_177": {
+    "count": 20,
+    "mean": 33.0
+  },
+  "alpha191_178": {
+    "count": 20,
+    "mean": 435738.1294129235
+  },
+  "alpha191_18": {
+    "count": 20,
+    "mean": 0.9923050409537787
+  },
+  "alpha191_187": {
+    "count": 20,
+    "mean": 10.322693750000022
+  },
+  "alpha191_188": {
+    "count": 20,
+    "mean": -0.4870010077882937
+  },
+  "alpha191_189": {
+    "count": 20,
+    "mean": 1.1225078833333335
+  },
+  "alpha191_19": {
+    "count": 20,
+    "mean": -0.007922510125782356
+  },
+  "alpha191_191": {
+    "count": 20,
+    "mean": 0.5764515809351607
+  },
+  "alpha191_2": {
+    "count": 20,
+    "mean": 0.35019351530852705
+  },
+  "alpha191_20": {
+    "count": 20,
+    "mean": -0.9815276493507573
+  },
+  "alpha191_21": {
+    "count": 20,
+    "mean": -0.18490645771428138
+  },
+  "alpha191_22": {
+    "count": 20,
+    "mean": -0.0012663407805580185
+  },
+  "alpha191_23": {
+    "count": 20,
+    "mean": 44.300298326489404
+  },
+  "alpha191_24": {
+    "count": 20,
+    "mean": -0.8469115438680481
+  },
+  "alpha191_26": {
+    "count": 20,
+    "mean": 2.858650674776148
+  },
+  "alpha191_27": {
+    "count": 20,
+    "mean": -0.028158861477918885
+  },
+  "alpha191_28": {
+    "count": 20,
+    "mean": 19.526612195124198
+  },
+  "alpha191_29": {
+    "count": 20,
+    "mean": 924380.4388183268
+  },
+  "alpha191_3": {
+    "count": 20,
+    "mean": -3.678658549999992
+  },
+  "alpha191_31": {
+    "count": 20,
+    "mean": -0.6904908186805561
+  },
+  "alpha191_34": {
+    "count": 20,
+    "mean": 1.0074139573251286
+  },
+  "alpha191_38": {
+    "count": 20,
+    "mean": 0.1165032
+  },
+  "alpha191_4": {
+    "count": 20,
+    "mean": 0.4
+  },
+  "alpha191_40": {
+    "count": 20,
+    "mean": 85.49222702779574
+  },
+  "alpha191_43": {
+    "count": 20,
+    "mean": -33884927.35
+  },
+  "alpha191_46": {
+    "count": 20,
+    "mean": 1.0073478814051486
+  },
+  "alpha191_47": {
+    "count": 20,
+    "mean": 57.67285368354895
+  },
+  "alpha191_49": {
+    "count": 20,
+    "mean": 0.5452466200654034
+  },
+  "alpha191_50": {
+    "count": 20,
+    "mean": -0.09049324013080662
+  },
+  "alpha191_51": {
+    "count": 20,
+    "mean": 0.4547533799345967
+  },
+  "alpha191_52": {
+    "count": 20,
+    "mean": 93.22169520151314
+  },
+  "alpha191_53": {
+    "count": 20,
+    "mean": 41.25
+  },
+  "alpha191_55": {
+    "count": 20,
+    "mean": -175.42852607941464
+  },
+  "alpha191_57": {
+    "count": 20,
+    "mean": 36.12602593057161
+  },
+  "alpha191_58": {
+    "count": 20,
+    "mean": 44.5
+  },
+  "alpha191_59": {
+    "count": 20,
+    "mean": -4.147297800000031
+  },
+  "alpha191_60": {
+    "count": 20,
+    "mean": -23611865.912222266
+  },
+  "alpha191_63": {
+    "count": 20,
+    "mean": 37.00151899577132
+  },
+  "alpha191_65": {
+    "count": 20,
+    "mean": 1.0080315718800785
+  },
+  "alpha191_66": {
+    "count": 20,
+    "mean": -0.7770188161013707
+  },
+  "alpha191_67": {
+    "count": 20,
+    "mean": 45.546659548392796
+  },
+  "alpha191_68": {
+    "count": 20,
+    "mean": -6.310012514687978e-07
+  },
+  "alpha191_69": {
+    "count": 20,
+    "mean": -0.20202824331891098
+  },
+  "alpha191_70": {
+    "count": 20,
+    "mean": 616527557.2826618
+  },
+  "alpha191_71": {
+    "count": 20,
+    "mean": -0.8703682232583964
+  },
+  "alpha191_72": {
+    "count": 20,
+    "mean": 56.54192213015788
+  },
+  "alpha191_76": {
+    "count": 20,
+    "mean": 0.659204757896567
+  },
+  "alpha191_78": {
+    "count": 20,
+    "mean": -76.63339645511259
+  },
+  "alpha191_79": {
+    "count": 20,
+    "mean": 41.805327709594515
+  },
+  "alpha191_80": {
+    "count": 20,
+    "mean": 22.616221207828165
+  },
+  "alpha191_81": {
+    "count": 20,
+    "mean": 65911017.68348988
+  },
+  "alpha191_82": {
+    "count": 20,
+    "mean": 55.98637859543486
+  },
+  "alpha191_84": {
+    "count": 20,
+    "mean": 42411323.55
+  },
+  "alpha191_86": {
+    "count": 20,
+    "mean": -0.1
+  },
+  "alpha191_88": {
+    "count": 20,
+    "mean": -0.010977743420054045
+  },
+  "alpha191_89": {
+    "count": 20,
+    "mean": -0.2970658490093473
+  },
+  "alpha191_9": {
+    "count": 20,
+    "mean": -1.7371212068670045e-08
+  },
+  "alpha191_93": {
+    "count": 20,
+    "mean": 13.141105349999993
+  },
+  "alpha191_94": {
+    "count": 20,
+    "mean": -102462893.35
+  },
+  "alpha191_95": {
+    "count": 20,
+    "mean": 687665512.6795281
+  },
+  "alpha191_96": {
+    "count": 20,
+    "mean": 44.42573279829532
+  },
+  "alpha191_97": {
+    "count": 20,
+    "mean": 17481649.38860268
+  },
+  "alpha191_98": {
+    "count": 20,
+    "mean": 0.4232128500000007
+  },
+  "ar_turn_ratio": {
+    "count": 16,
+    "mean": 1700.6747561546754
+  },
+  "asset_impairment_loss_ttm": {
+    "count": 9,
+    "mean": -2217451306.872222
+  },
+  "assets_turn_ratio": {
+    "count": 20,
+    "mean": 0.3102695793585216
+  },
+  "atr_20": {
+    "count": 20,
+    "mean": 1.9350830450000003
+  },
+  "basic_eps": {
+    "count": 20,
+    "mean": 5.94116
+  },
+  "beta": {
+    "count": 20,
+    "mean": 0.6653634371042294
+  },
+  "beta_252d": {
+    "count": 20,
+    "mean": 0.6653634371042294
+  },
+  "boll_lower": {
+    "count": 20,
+    "mean": 129.78812429209614
+  },
+  "boll_upper": {
+    "count": 20,
+    "mean": 136.90091585790384
+  },
+  "boll_width": {
+    "count": 20,
+    "mean": 0.06502679361446771
+  },
+  "book_to_price_ratio": {
+    "count": 20,
+    "mean": 0.7792418148357795
+  },
+  "bps": {
+    "count": 20,
+    "mean": 34.664994618098426
+  },
+  "capital_reserve_per_share": {
+    "count": 20,
+    "mean": 3.507857794625815
+  },
+  "cash_flow_per_share": {
+    "count": 20,
+    "mean": 6.131695568844202
+  },
+  "cash_flow_to_price_ratio": {
+    "count": 19,
+    "mean": 0.14983027135467533
+  },
+  "cash_ratio": {
+    "count": 15,
+    "mean": 1.319590026776326
+  },
+  "circulating_market_cap": {
+    "count": 20,
+    "mean": 685126707474.9974
+  },
+  "current_ratio": {
+    "count": 15,
+    "mean": 2.5985270307688544
+  },
+  "debt_to_assets_ratio": {
+    "count": 20,
+    "mean": 54.77339742108687
+  },
+  "diluted_eps": {
+    "count": 20,
+    "mean": 5.91271
+  },
+  "dividend_ratio": {
+    "count": 19,
+    "mean": 4.401073684210527
+  },
+  "downside_volatility_20d": {
+    "count": 20,
+    "mean": 0.10279625380730426
+  },
+  "dy_ttm": {
+    "count": 19,
+    "mean": 4.401073684210527
+  },
+  "earnings_yield": {
+    "count": 20,
+    "mean": 0.07570943476042527
+  },
+  "eps": {
+    "count": 20,
+    "mean": 5.94116
+  },
+  "eps_growth_rate": {
+    "count": 11,
+    "mean": 498.5625432265619
+  },
+  "eps_ttm": {
+    "count": 20,
+    "mean": 5.946867930517162
+  },
+  "equity": {
+    "count": 20,
+    "mean": 557616820166.983
+  },
+  "equity_parent_company_owners": {
+    "count": 20,
+    "mean": 513483661147.59
+  },
+  "ev": {
+    "count": 20,
+    "mean": 4304.241605681689
+  },
+  "ev2_to_ebitda": {
+    "count": 20,
+    "mean": 11.763484441984692
+  },
+  "financial_assets": {
+    "count": 20,
+    "mean": 1554891008997.1965
+  },
+  "financial_expense_ttm": {
+    "count": 15,
+    "mean": 248224927.67200014
+  },
+  "financial_liability": {
+    "count": 15,
+    "mean": 127819690927.03133
+  },
+  "goods_sale_and_service_render_cash_ttm": {
+    "count": 15,
+    "mean": 289781070562.8067
+  },
+  "gross_income_ratio": {
+    "count": 15,
+    "mean": 46.69646833179634
+  },
+  "gross_profit_growth_rate": {
+    "count": 15,
+    "mean": 550.396097023692
+  },
+  "gross_profit_margin": {
+    "count": 20,
+    "mean": 60.02235124884726
+  },
+  "gross_profit_ttm": {
+    "count": 20,
+    "mean": 135793275013.4825
+  },
+  "idiosyncratic_volatility_252d": {
+    "count": 20,
+    "mean": 0.19988644807492545
+  },
+  "inc_return": {
+    "count": 20,
+    "mean": 13.784749999999999
+  },
+  "inventory_turnover": {
+    "count": 15,
+    "mean": 4.683809842292262
+  },
+  "kurtosis_20d": {
+    "count": 20,
+    "mean": 0.7406022800315213
+  },
+  "leverage": {
+    "count": 20,
+    "mean": 0.6553754318241182
+  },
+  "liquidity": {
+    "count": 20,
+    "mean": 0.49097
+  },
+  "ma_10": {
+    "count": 20,
+    "mean": 133.10427100500002
+  },
+  "ma_20": {
+    "count": 20,
+    "mean": 133.344520075
+  },
+  "ma_5": {
+    "count": 20,
+    "mean": 132.69714024
+  },
+  "ma_60": {
+    "count": 20,
+    "mean": 135.2160066075
+  },
+  "macd": {
+    "count": 20,
+    "mean": -0.8134950328956314
+  },
+  "macd_hist": {
+    "count": 20,
+    "mean": -0.297065849009324
+  },
+  "macd_signal": {
+    "count": 20,
+    "mean": -0.6649621083909694
+  },
+  "market_cap": {
+    "count": 20,
+    "mean": 685126707474.9974
+  },
+  "max_drawdown_20d": {
+    "count": 20,
+    "mean": -0.04348154401220108
+  },
+  "momentum": {
+    "count": 20,
+    "mean": 0.13352414413521707
+  },
+  "momentum_10d": {
+    "count": 20,
+    "mean": -0.004371782706017596
+  },
+  "momentum_120d": {
+    "count": 20,
+    "mean": 0.0624399888724685
+  },
+  "momentum_20d": {
+    "count": 20,
+    "mean": -0.010977743420054059
+  },
+  "momentum_252d": {
+    "count": 20,
+    "mean": 0.12384783879228985
+  },
+  "momentum_5d": {
+    "count": 20,
+    "mean": -0.0076949590462213665
+  },
+  "momentum_60d": {
+    "count": 20,
+    "mean": 0.002670082106429844
+  },
+  "momentum_style": {
+    "count": 20,
+    "mean": 0.13352414413521707
+  },
+  "net_debt": {
+    "count": 15,
+    "mean": 35662524999.87666
+  },
+  "net_finance_cash_flow_ttm": {
+    "count": 20,
+    "mean": -4005277447.708499
+  },
+  "net_interest_expense": {
+    "count": 20,
+    "mean": -85342880679.8015
+  },
+  "net_invest_cash_flow_ttm": {
+    "count": 20,
+    "mean": -183781581165.8185
+  },
+  "net_operate_cash_flow": {
+    "count": 20,
+    "mean": 131084913396.90149
+  },
+  "net_operate_cash_flow_growth_rate": {
+    "count": 20,
+    "mean": 125.53680344849472
+  },
+  "net_operate_cash_flow_ttm": {
+    "count": 20,
+    "mean": 122951597331.3925
+  },
+  "net_profit": {
+    "count": 20,
+    "mean": 51129387413.371
+  },
+  "net_profit_growth_per_share": {
+    "count": 15,
+    "mean": 550.396097023692
+  },
+  "net_profit_growth_rate": {
+    "count": 15,
+    "mean": 550.396097023692
+  },
+  "net_profit_margin": {
+    "count": 20,
+    "mean": 26.546420015377077
+  },
+  "net_profit_ttm": {
+    "count": 20,
+    "mean": 63928456334.943504
+  },
+  "net_working_capital": {
+    "count": 15,
+    "mean": 91523750812.404
+  },
+  "non_linear_size": {
+    "count": 20,
+    "mean": 19352.67322523185
+  },
+  "non_operating_net_profit_ttm": {
+    "count": 20,
+    "mean": -129617522.705
+  },
+  "np_parent_company_owners_growth_rate": {
+    "count": 20,
+    "mean": 0.05102023232571491
+  },
+  "np_parent_company_owners_ttm": {
+    "count": 20,
+    "mean": 61032997552.630005
+  },
+  "obv": {
+    "count": 20,
+    "mean": 2849582033.55
+  },
+  "ocf_to_operating_profit": {
+    "count": 20,
+    "mean": 1.1844070905082666
+  },
+  "ocfps": {
+    "count": 20,
+    "mean": 6.131695568844202
+  },
+  "operating_assets": {
+    "count": 20,
+    "mean": 3593470147392.745
+  },
+  "operating_cost_ttm": {
+    "count": 15,
+    "mean": 212666671832.47665
+  },
+  "operating_cycle": {
+    "count": 15,
+    "mean": 445.04353915915163
+  },
+  "operating_liability": {
+    "count": 20,
+    "mean": 4590744336222.959
+  },
+  "operating_net_income": {
+    "count": 20,
+    "mean": 61122872764.152
+  },
+  "operating_profit_growth_rate": {
+    "count": 15,
+    "mean": -4.973019208150569
+  },
+  "operating_profit_margin": {
+    "count": 20,
+    "mean": 32.645323843409315
+  },
+  "operating_profit_per_share": {
+    "count": 20,
+    "mean": 7.825371850769405
+  },
+  "operating_profit_to_total_profit": {
+    "count": 20,
+    "mean": 1.0024191465337862
+  },
+  "operating_profit_ttm": {
+    "count": 20,
+    "mean": 77155521537.7705
+  },
+  "operating_revenue": {
+    "count": 20,
+    "mean": 254124323690.289
+  },
+  "operating_revenue_growth_rate": {
+    "count": 20,
+    "mean": -4.392838362928776
+  },
+  "operating_revenue_growth_ttm": {
+    "count": 20,
+    "mean": -4.392838362928776
+  },
+  "operating_revenue_per_share": {
+    "count": 20,
+    "mean": 21.610885752083384
+  },
+  "operating_revenue_ttm": {
+    "count": 20,
+    "mean": 338833164964.331
+  },
+  "pb_mrq": {
+    "count": 20,
+    "mean": 2.846785
+  },
+  "pb_ratio": {
+    "count": 20,
+    "mean": 2.846785
+  },
+  "pcf_ratio": {
+    "count": 20,
+    "mean": 5.9219100000000005
+  },
+  "pcf_ttm": {
+    "count": 20,
+    "mean": 5.9219100000000005
+  },
+  "pe_ratio": {
+    "count": 20,
+    "mean": 15.64509
+  },
+  "pe_ratio_lyr": {
+    "count": 20,
+    "mean": 15.64509
+  },
+  "pe_ttm": {
+    "count": 20,
+    "mean": 13.757685
+  },
+  "price_momentum_ratio": {
+    "count": 20,
+    "mean": 0.42004786174678255
+  },
+  "price_volume_trend": {
+    "count": 20,
+    "mean": 102947389.00435996
+  },
+  "ps_ratio": {
+    "count": 20,
+    "mean": 3.7785800000000003
+  },
+  "ps_ttm": {
+    "count": 20,
+    "mean": 3.7785800000000003
+  },
+  "quick_ratio": {
+    "count": 15,
+    "mean": 2.1674386840741033
+  },
+  "residual_volatility": {
+    "count": 20,
+    "mean": 0.19988644807492545
+  },
+  "retained_earnings": {
+    "count": 20,
+    "mean": -275841839702.134
+  },
+  "retained_earnings_per_share": {
+    "count": 20,
+    "mean": 25.468616245845837
+  },
+  "revenue_ps": {
+    "count": 20,
+    "mean": 21.610885752083384
+  },
+  "reversal_20d": {
+    "count": 20,
+    "mean": 0.010977743420054059
+  },
+  "reversal_5d": {
+    "count": 20,
+    "mean": 0.0076949590462213665
+  },
+  "reversal_60d": {
+    "count": 20,
+    "mean": -0.002670082106429844
+  },
+  "roa": {
+    "count": 20,
+    "mean": 6.339113203
+  },
+  "roa_ttm": {
+    "count": 20,
+    "mean": 0.06797956542664198
+  },
+  "roe": {
+    "count": 20,
+    "mean": 13.784749999999999
+  },
+  "roe_ttm": {
+    "count": 20,
+    "mean": 17.583604189
+  },
+  "roic": {
+    "count": 15,
+    "mean": 0.09551055999672296
+  },
+  "rsi_14": {
+    "count": 20,
+    "mean": 42.679631329310595
+  },
+  "rsi_6": {
+    "count": 20,
+    "mean": 37.00151899577132
+  },
+  "sale_expense_ttm": {
+    "count": 15,
+    "mean": 8239143819.824666
+  },
+  "sales_to_price_ratio": {
+    "count": 20,
+    "mean": 0.891865045152656
+  },
+  "sharpe_ratio": {
+    "count": 20,
+    "mean": 0.28002343364393645
+  },
+  "size": {
+    "count": 20,
+    "mean": 26.816644902226177
+  },
+  "skewness_20d": {
+    "count": 20,
+    "mean": -0.20345021312514672
+  },
+  "skewness_60d": {
+    "count": 20,
+    "mean": 0.6134257615322461
+  },
+  "surplus_reserve_per_share": {
+    "count": 20,
+    "mean": 3.2005969474184957
+  },
+  "tangible_assets_to_debt_ratio": {
+    "count": 19,
+    "mean": 2.9521826082944713
+  },
+  "total_asset_turnover": {
+    "count": 20,
+    "mean": 0.3102695793585216
+  },
+  "total_assets": {
+    "count": 20,
+    "mean": 5148361156389.942
+  },
+  "total_assets_growth_rate": {
+    "count": 20,
+    "mean": 0.0848967
+  },
+  "total_liability": {
+    "count": 20,
+    "mean": 4590744336222.959
+  },
+  "total_operating_cost_ttm": {
+    "count": 15,
+    "mean": 212666671832.47665
+  },
+  "total_operating_revenue": {
+    "count": 20,
+    "mean": 254124323690.289
+  },
+  "total_operating_revenue_ttm": {
+    "count": 20,
+    "mean": 338833164964.331
+  },
+  "total_owner_equities": {
+    "count": 20,
+    "mean": 557616820166.983
+  },
+  "total_profit_growth_rate": {
+    "count": 20,
+    "mean": -45.853144645921496
+  },
+  "total_profit_ttm": {
+    "count": 20,
+    "mean": 76849414342.8765
+  },
+  "turnover_ratio": {
+    "count": 20,
+    "mean": 0.49097
+  },
+  "turnover_ratio_120d": {
+    "count": 20,
+    "mean": 0.49097
+  },
+  "turnover_ratio_20d": {
+    "count": 20,
+    "mean": 0.49097
+  },
+  "turnover_ratio_20d_to_120d": {
+    "count": 20,
+    "mean": 0.49097
+  },
+  "turnover_ratio_5d": {
+    "count": 20,
+    "mean": 0.49097
+  },
+  "turnover_ratio_5d_to_120d": {
+    "count": 20,
+    "mean": 0.49097
+  },
+  "turnover_ratio_60d": {
+    "count": 20,
+    "mean": 0.49097
+  },
+  "value_change_profit_ttm": {
+    "count": 20,
+    "mean": 15093245000.079
+  },
+  "volatility_120d": {
+    "count": 20,
+    "mean": 0.22304629742825002
+  },
+  "volatility_20d": {
+    "count": 20,
+    "mean": 0.1644468492240006
+  },
+  "volatility_20d_risk": {
+    "count": 20,
+    "mean": 0.01035917778416287
+  },
+  "volatility_60d": {
+    "count": 20,
+    "mean": 0.2078999328360196
+  },
+  "volume_momentum_20d": {
+    "count": 20,
+    "mean": 0.8332805678234326
+  },
+  "volume_ratio": {
+    "count": 20,
+    "mean": 1.0120894914462426
+  },
+  "vwap": {
+    "count": 20,
+    "mean": 134.89191045880926
+  }
+}
