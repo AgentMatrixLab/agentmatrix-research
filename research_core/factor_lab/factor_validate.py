@@ -95,16 +95,52 @@ def param_sensitivity_dummy():
 def neutralization_dummy():
     return {"note": "requires industry/market-cap data for full neutralization check", "score": 5}
 
-# ===== Similarity scan =====
-def similarity_check(factor_name, factor_values, existing_factors_json_path=None):
-    if not existing_factors_json_path:
-        return {"note": "no existing factor library for similarity scan", "score": 5}
+# ===== Similarity scan against factor library =====
+def similarity_check(factor_name, ic_series, panel_url=None):
+    """Scan against existing factor library using IC time series correlation."""
+    if not panel_url or not ic_series or len(ic_series) < 10:
+        return {"note": "need IC series and panel URL for similarity scan", "score": 5}
+    
     try:
-        with open(existing_factors_json_path) as f:
-            lib = json.load(f)
-        return {"note": f"scanned against {len(lib.get('factors',[]))} factors", "max_corr": None}
-    except:
-        return {"error": "could not load factor library"}
+        import urllib.request
+        resp = urllib.request.urlopen(panel_url, timeout=15)
+        panel = json.loads(resp.read())
+        lib_factors = panel.get("factors", [])
+        
+        my_ics = np.asarray(ic_series, dtype=float)
+        my_ics = my_ics[~np.isnan(my_ics)]
+        
+        matches = []
+        for fac in lib_factors:
+            if fac["name"] == factor_name:
+                continue
+            hist = fac.get("ic_history", [])
+            if len(hist) < len(my_ics) * 0.5:
+                continue
+            their_ics = np.array([h["ic"] for h in hist[-len(my_ics):]])
+            if len(their_ics) < 10:
+                continue
+            # Align lengths
+            min_len = min(len(my_ics), len(their_ics))
+            corr = np.corrcoef(my_ics[-min_len:], their_ics[-min_len:])[0,1]
+            if not np.isnan(corr):
+                matches.append((fac["name"], round(float(corr), 3), fac.get("category","?")))
+        
+        matches.sort(key=lambda x: abs(x[1]), reverse=True)
+        top5 = matches[:5]
+        max_corr = abs(top5[0][1]) if top5 else 0
+        
+        score = 15 if max_corr < 0.3 else (10 if max_corr < 0.5 else (5 if max_corr < 0.7 else 0))
+        
+        return {
+            "scanned_against": len(lib_factors),
+            "top_matches": [{"name": m[0], "corr": m[1], "category": m[2]} for m in top5],
+            "max_corr": max_corr,
+            "score": score,
+            "warning": f"最大相关={max_corr:.2f}, 与已有因子高度相似" if max_corr > 0.5 else None
+        }
+    except Exception as e:
+        return {"error": str(e), "score": 5}
 
 # ===== Composite confidence score =====
 def compute_confidence(bootstrap_result, shuffle_result, oos_result, param_result, neut_result, sim_result):
@@ -151,7 +187,7 @@ def compute_confidence(bootstrap_result, shuffle_result, oos_result, param_resul
             }[verdict]}
 
 # ===== Main =====
-def validate_factor(name, ic_series=None, factor_values=None, forward_returns=None):
+def validate_factor(name, ic_series=None, factor_values=None, forward_returns=None, panel_url=None):
     results = {"factor": name, "checks": {}, "confidence": {}}
     
     # If we have IC series from panel
@@ -175,7 +211,7 @@ def validate_factor(name, ic_series=None, factor_values=None, forward_returns=No
     
     results["checks"]["param_sensitivity"] = param_sensitivity_dummy()
     results["checks"]["neutralization"] = neutralization_dummy()
-    results["checks"]["similarity"] = similarity_check(name, factor_values)
+    results["checks"]["similarity"] = similarity_check(name, ic_series, panel_url)
     
     results["confidence"] = compute_confidence(
         bs, sh, oos,
@@ -218,5 +254,5 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"Warning: could not load panel data: {e}", file=sys.stderr)
     
-    result = validate_factor(args.factor, ic_series=ic_series)
+    result = validate_factor(args.factor, ic_series=ic_series, panel_url=args.panel_url)
     print(json.dumps(result, ensure_ascii=False, indent=2))
