@@ -519,7 +519,10 @@ def _alpha29(df: pd.DataFrame) -> pd.Series:
     log_sum = np.log(_ts_sum_series(df, ts_min_rank, 1, "ts_min_rank").replace(0, np.nan))
     scaled = cross_sectional_scale(df.assign(log_sum=log_sum), "log_sum")
     rank_scaled = _cs_rank(df, _cs_rank(df, scaled, "scaled_inner"), "rank_scaled")
-    prod = _ts_product_series(df, rank_scaled, 5, "rank_scaled")
+
+    # Original Alpha101 formula uses product(..., 1), which is effectively an identity transform.
+    prod = _ts_product_series(df, rank_scaled, 1, "rank_scaled")
+
     left = _ts_min_series(df, prod, 5, "prod")
     returns = _returns(df)
     right = _ts_rank_series(df, _ts_delay_series(df, -returns, 6, "neg_returns"), 5, "delay_neg_returns")
@@ -629,9 +632,18 @@ def _alpha38(df: pd.DataFrame) -> pd.Series:
 
 def _alpha39(df: pd.DataFrame) -> pd.Series:
     returns = _returns(df)
-    adv20 = _adv(df, 20)
+
+    # adv20 in Alpha101 means average daily volume, so use volume / mean(volume, 20).
+    adv20_volume = ts_mean(df, "volume", 20, min_periods=20)
+
     delta_close_7 = ts_delta(df, "close", 7)
-    decay_volume_adv = ts_decay_linear(df.assign(amount_adv=safe_div(df["amount"], adv20.replace(0, np.nan))), "amount_adv", 9, min_periods=9)
+    decay_volume_adv = ts_decay_linear(
+        df.assign(volume_adv=safe_div(df["volume"], adv20_volume.replace(0, np.nan))),
+        "volume_adv",
+        9,
+        min_periods=9,
+    )
+
     rank_decay = cross_sectional_rank(df.assign(decay_volume_adv=decay_volume_adv), "decay_volume_adv")
     rank_delta_term = cross_sectional_rank(df.assign(delta_term=delta_close_7 * (1.0 - rank_decay)), "delta_term")
     sum_returns_250 = ts_sum(df.assign(returns=returns), "returns", 250, min_periods=250)
