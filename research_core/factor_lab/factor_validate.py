@@ -260,6 +260,7 @@ def batch_validate(panel_url="https://samzhang8.github.io/model/factor_metrics.j
     return report
 
 # ===== CLI =====
+def main():
     p = argparse.ArgumentParser(description="一键因子验证")
     p.add_argument("--factor", required=True, help="因子名")
     p.add_argument("--ic-history", help="IC时序JSON文件路径")
@@ -292,3 +293,6 @@ def batch_validate(panel_url="https://samzhang8.github.io/model/factor_metrics.j
     
     result = validate_factor(args.factor, ic_series=ic_series, panel_url=args.panel_url)
     print(json.dumps(result, ensure_ascii=False, indent=2))
+
+if __name__ == "__main__":
+    main()

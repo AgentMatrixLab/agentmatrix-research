@@ -335,14 +335,23 @@ def fetch_real_panel(
         if cached is not None:
             cached_codes = cached["code"].unique()
             if set(codes).issubset(set(cached_codes)):
-                if verbose:
-                    print(f"[Data Adapter] Using cached panel: "
-                          f"{len(cached_codes)} stocks × {cached['date'].nunique()} days")
-                # Filter to requested date range
-                panel = cached[
-                    (cached["date"] >= start) & (cached["date"] <= end)
-                ].copy()
-                return panel
+                # Verify date range coverage
+                cached_min = pd.Timestamp(cached["date"].min())
+                cached_max = pd.Timestamp(cached["date"].max())
+                req_start = pd.Timestamp(start)
+                req_end = pd.Timestamp(end)
+                if cached_min <= req_start and cached_max >= req_end:
+                    if verbose:
+                        print(f"[Data Adapter] Using cached panel: "
+                              f"{len(cached_codes)} stocks × {cached['date'].nunique()} days")
+                    # Filter to requested date range
+                    panel = cached[
+                        (cached["date"] >= start) & (cached["date"] <= end)
+                    ].copy()
+                    return panel
+                elif verbose:
+                    print(f"[Data Adapter] Cache date range [{cached_min.date()},{cached_max.date()}] "
+                          f"does not cover request [{req_start.date()},{req_end.date()}], re-fetching...")
 
     if verbose:
         print(f"[Data Adapter] Fetching {len(codes)} stocks from akshare "

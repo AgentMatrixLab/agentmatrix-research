@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """
 快速开始 — 跑一个示例因子，体验完整的 mine→reproduce→validate 流程
+从仓库根目录运行: python scripts/quick_start.py
 """
+import sys, os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import json, math
 from research_core.factor_lab.factor_validate import validate_factor
 
