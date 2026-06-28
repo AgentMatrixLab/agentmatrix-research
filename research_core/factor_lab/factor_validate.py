@@ -222,8 +222,44 @@ def validate_factor(name, ic_series=None, factor_values=None, forward_returns=No
     
     return results
 
+# ===== Batch validation =====
+def batch_validate(panel_url="https://samzhang8.github.io/model/factor_metrics.json", min_ic_points=10):
+    """Validate all factors in panel and return ranked report."""
+    import urllib.request
+    resp = urllib.request.urlopen(panel_url, timeout=30)
+    panel = json.loads(resp.read())
+    factors = panel.get("factors", [])
+    
+    results = []
+    for fac in factors:
+        hist = fac.get("ic_history", [])
+        ic_series = [h["ic"] for h in hist] if hist else []
+        if len(ic_series) >= min_ic_points:
+            r = validate_factor(fac["name"], ic_series=ic_series, panel_url=panel_url)
+            results.append({
+                "name": fac["name"],
+                "category": fac.get("category", "?"),
+                "ic_ir": fac.get("ic_ir", 0),
+                "win_rate": fac.get("win_rate", 0),
+                "confidence": r["confidence"]["score"],
+                "verdict": r["confidence"]["verdict"],
+                "breakdown": r["confidence"]["breakdown"],
+            })
+    
+    results.sort(key=lambda x: x["confidence"], reverse=True)
+    
+    report = {
+        "generated_at": str(pd.Timestamp.now()) if 'pd' in dir() else None,
+        "total_validated": len(results),
+        "safe_count": sum(1 for r in results if r["verdict"] == "SAFE"),
+        "review_count": sum(1 for r in results if r["verdict"] == "REVIEW"),
+        "reject_count": sum(1 for r in results if r["verdict"] == "REJECT"),
+        "top_safe": [r for r in results if r["verdict"] == "SAFE"][:20],
+        "results": results,
+    }
+    return report
+
 # ===== CLI =====
-if __name__ == "__main__":
     p = argparse.ArgumentParser(description="一键因子验证")
     p.add_argument("--factor", required=True, help="因子名")
     p.add_argument("--ic-history", help="IC时序JSON文件路径")
