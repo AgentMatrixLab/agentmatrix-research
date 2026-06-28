@@ -32,7 +32,7 @@ jobs:
           python-version: '3.11'
 
       - name: Install dependencies
-        run: pip install numpy pandas pytest -q
+        run: pip install numpy pandas scipy pytest -q
 
       - name: Detect changed factors
         id: detect
@@ -49,7 +49,7 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          python -m pytest research_core/factor_lab/ -v --tb=short 2>&1 | tee /tmp/unit_test_output.txt
+          python -m pytest research_core/factor_lab/ tests/ -v --tb=short 2>&1 | tee /tmp/unit_test_output.txt
 
       - name: "Run submission tests [Layer 1: Formula]"
         shell: bash
