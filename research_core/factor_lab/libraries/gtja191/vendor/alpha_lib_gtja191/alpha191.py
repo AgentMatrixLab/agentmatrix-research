@@ -208,9 +208,8 @@ def alpha_029(ctx):
 def alpha_030(ctx):
   _CLOSE = ctx('CLOSE')
   ret = ((_CLOSE / ctx.DELAY(_CLOSE, 1)) - 1)
-  # Original formula is a multi-factor FF residual. The adapter uses external
-  # MKT/SMB/HML when supplied; otherwise MKT is the benchmark-return proxy and
-  # SMB/HML are zero arrays. This fallback is recorded in the manifest/report.
+  # Original formula is a multi-factor FF residual. The factor_lab adapter
+  # requires explicit MKT or benchmark context before this function is called.
   residual = ctx.REGRESI(ret, ctx('MKT'), 60)
   return ctx.WMA(np.power(residual, 2), 20)
 
@@ -1374,6 +1373,5 @@ def alpha_190(ctx):
 def alpha_191(ctx):
   _LOW = ctx('LOW')
   return ((ctx.CORR(ctx.MEAN(ctx('VOLUME'), 20), _LOW, 5) + ((ctx('HIGH') + _LOW) / 2)) - ctx('CLOSE'))
-
 
 

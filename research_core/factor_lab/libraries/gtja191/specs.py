@@ -201,10 +201,22 @@ GTJA191_COMMON_THRESHOLDS = [
     ValidationThreshold("paper_formula_manifest_coverage", ">=", 1.0, "Specs formulas must come from the paper-derived GTJA191 manifest."),
     ValidationThreshold("backend_factor_count", ">=", 191, "factor_lab exposes alpha1-alpha191."),
 ]
+GTJA191_MARKET_CONTEXT_FIELDS: dict[int, list[str]] = {
+    30: ["mkt"],
+    75: ["benchmark_index_close", "benchmark_index_open"],
+    149: ["benchmark_index_close"],
+    181: ["benchmark_index_close"],
+    182: ["benchmark_index_close", "benchmark_index_open"],
+}
 
 def gtja191_specs() -> list[FactorResearchSpec]:
     specs: list[FactorResearchSpec] = []
     for idx in range(1, 192):
+        context_fields = GTJA191_MARKET_CONTEXT_FIELDS.get(idx, [])
+        required_fields = ["open", "high", "low", "close", "volume", "amount", *context_fields]
+        tags = ["gtja191", "price_volume", "implemented", "paper_formula_manifest"]
+        if context_fields:
+            tags.append("requires_market_context")
         specs.append(FactorResearchSpec(
             factor_name=f"alpha{idx}",
             library="GTJA191",
@@ -214,10 +226,17 @@ def gtja191_specs() -> list[FactorResearchSpec]:
             source_document=GTJA191_SOURCE,
             formula=GTJA191_FORMULAS[idx],
             description=f"GTJA191 Alpha#{idx} implemented through factor_lab alpha-lib adapter.",
-            required_fields=["open", "high", "low", "close", "volume", "amount"],
-            parameters={"formula_source": "paper_manifest", "execution_engine": "py-alpha-lib", "alpha_number": idx},
+            required_fields=required_fields,
+            parameters={"formula_source": "paper_manifest", "execution_engine": "optional py-alpha-lib", "alpha_number": idx},
             validation_targets=GTJA191_COMMON_THRESHOLDS,
-            tags=["gtja191", "price_volume", "implemented", "paper_formula_manifest"],
-            metadata={"status": "implemented", "implementation_stage": "factor_lab", "factor_count": 191, "formula_source": "paper_manifest", "execution_engine": "py-alpha-lib"},
+            tags=tags,
+            metadata={
+                "status": "implemented",
+                "implementation_stage": "factor_lab",
+                "factor_count": 191,
+                "formula_source": "paper_manifest",
+                "execution_engine": "optional py-alpha-lib",
+                "market_context_required": bool(context_fields),
+            },
         ))
     return specs

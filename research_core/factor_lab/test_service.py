@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import json
 import tempfile
 import unittest
@@ -20,6 +21,17 @@ from research_core.factor_lab.service import (
     validate_alpha101_truth_csv,
 )
 from research_core.factor_lab.runtime import FactorLabWorkspaceConfig
+
+
+def _gtja_runtime_available() -> bool:
+    try:
+        importlib.import_module("alpha.context")
+    except ImportError:
+        return False
+    return True
+
+
+GTJA_RUNTIME_AVAILABLE = _gtja_runtime_available()
 
 
 class FactorLabServiceTest(unittest.TestCase):
@@ -200,6 +212,7 @@ class FactorLabServiceTest(unittest.TestCase):
         self.assertEqual(validation["duplicate_key_count"], 2)
         self.assertEqual(validation["empty_factors"], [])
 
+    @unittest.skipUnless(GTJA_RUNTIME_AVAILABLE, "GTJA191 optional runtime dependency is not installed")
     def test_run_gtja191_factor_set_job_exports_formal_chain_artifacts(self) -> None:
         workspace = self._workspace()
         job = run_factor_set_research_job(
