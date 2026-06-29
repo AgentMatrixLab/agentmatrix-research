@@ -1,0 +1,10 @@
+{
+  "formula_truth_source": "paper_manifest",
+  "paper_manifest_formula_count": 191,
+  "alpha_lib_formula_count": 191,
+  "specs_formula_source": "skills DOCX Appendix A/B -> runtime/factor_lab/formula_audit/gtja191_formula_manifest.json:items[].normalized_formula",
+  "execution_engine": "py-alpha-lib examples/gtja191/al/alpha191.py",
+  "alpha191_py_sha256": "1387d221ff8aee1cbd25ca7e46bb959399c043f87a9f23690e343ef85393ad40",
+  "alpha191_txt_sha256": "33427dcc07e9727995dd0d2ed06a8b21b842cbc56f825fd3ce7c22436cf543c2",
+  "rule": "alpha-lib is an execution engine only; embedded Appendix A/B manifest formulas are authoritative for specs/catalog/report"
+}
