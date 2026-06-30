@@ -8,6 +8,7 @@ import pandas as pd
 from contracts.backtest import ExternalSimulationRequest
 from registry.factor_registry.lifecycle import build_promotion_record, validate_transition
 from research_core.backtest_adapter.external_simulation import package_external_simulation, parse_external_simulation_result
+import research_core.data_loader.amazingdata as amazingdata_module
 from research_core.data_loader.amazingdata import (
     AmazingDataConfig,
     build_data_quality_report,
@@ -17,17 +18,22 @@ from research_core.data_loader.amazingdata import (
 )
 from research_core.factor_lab.internal_validation import summarize_internal_validation
 from research_core.factor_lab.runtime import FactorLabWorkspaceConfig
+import research_core.factor_lab.service as factor_lab_service
 from research_core.factor_lab.service import run_factor_set_research_job
 from research_core.strategy_engine.alpha_strategy import build_alpha_strategy_package
 
 
 class FakeClickHouseClient:
+    def __init__(self):
+        self.selection_params = []
+
     def execute(self, sql, params=None):
         if "SELECT 1" in sql:
             return [(1,)]
         if "countDistinct(trade_date)" in sql:
             return [(4,)]
         if "SELECT k.symbol" in sql:
+            self.selection_params.append(params or {})
             return [("000001.SZ",), ("000002.SZ",)]
         if "SELECT" in sql and "trade_date AS date" in sql:
             dates = pd.date_range("2024-01-01", periods=5, freq="B")
@@ -40,7 +46,8 @@ class FakeClickHouseClient:
         raise AssertionError(f"Unexpected SQL: {sql}")
 
 
-def test_amazingdata_fake_client_fetch_and_quality():
+def test_amazingdata_fake_client_fetch_and_quality(monkeypatch):
+    monkeypatch.setattr(amazingdata_module, "resolve_market_universe", lambda universe: ["000001", "000002", "000003"])
     config = AmazingDataConfig(user="readonly", password="secret")
     client = FakeClickHouseClient()
     assert check_connection(config, client=client)["ok"] is True
@@ -55,6 +62,8 @@ def test_amazingdata_fake_client_fetch_and_quality():
     assert list(panel.columns) == ["date", "code", "open", "high", "low", "close", "volume", "amount", "vwap"]
     assert quality.status == "passed"
     assert quality.n_codes == 2
+    assert "universe_symbols" in client.selection_params[0]
+    assert "000001.SZ" in client.selection_params[0]["universe_symbols"]
 
 
 def test_normalize_price_panel_drops_duplicates_and_flags_missing():
@@ -103,6 +112,54 @@ def test_factor_set_demo_job_emits_new_artifacts(tmp_path):
     assert job["dataset"]["data_source"] == "demo"
 
 
+def test_amazingdata_validation_trims_warmup_window(tmp_path, monkeypatch):
+    workspace = FactorLabWorkspaceConfig(data_root=tmp_path / "data", runtime_root=tmp_path / "runtime")
+    dates = pd.date_range("2023-12-20", "2024-01-12", freq="B")
+    records = []
+    for code_idx in range(6):
+        code = f"00000{code_idx + 1}.SZ"
+        base = 10.0 + code_idx
+        for i, date in enumerate(dates):
+            close = base + i * 0.1
+            records.append(
+                {
+                    "date": date,
+                    "code": code,
+                    "open": close - 0.05,
+                    "high": close + 0.10,
+                    "low": close - 0.10,
+                    "close": close,
+                    "volume": 10_000 + i,
+                    "amount": close * (10_000 + i),
+                    "vwap": close,
+                }
+            )
+    full_panel = pd.DataFrame(records)
+
+    def fake_fetch_amazingdata_panel(**kwargs):
+        return full_panel.copy(), build_data_quality_report(full_panel, source="amazingdata")
+
+    monkeypatch.setattr(factor_lab_service, "fetch_amazingdata_panel", fake_fetch_amazingdata_panel)
+    job = run_factor_set_research_job(
+        {
+            "factor_set": "wq101",
+            "factor_names": ["alpha1"],
+            "data_source": "amazingdata",
+            "start": "2024-01-02",
+            "end": "2024-01-08",
+            "universe": "csi800",
+        },
+        config=workspace,
+    )
+
+    frame = pd.read_csv(job["artifacts"]["factor_frame"])
+    assert frame["date"].min() == "2024-01-02"
+    assert frame["date"].max() == "2024-01-08"
+    assert job["dataset"]["warmup_rows"] > 0
+    evaluation = json.loads(Path(job["artifacts"]["evaluation_json"]).read_text(encoding="utf-8"))
+    assert evaluation["dataset"]["dates"] == 5
+
+
 def test_lifecycle_transition_requires_approval_for_live_ready():
     validate_transition("implemented", "internal_validated")
     record = build_promotion_record(
@@ -140,6 +197,8 @@ def test_strategy_and_external_package_from_validated_run(tmp_path):
     )
     strategy = build_alpha_strategy_package(validated_run_path=workspace.job_path(job["job_id"]), top_n=3)
     signal_path = strategy["artifacts"]["signals"]
+    signals = pd.read_csv(signal_path)
+    assert signals["date"].nunique() > 1
     request = ExternalSimulationRequest(
         run_id="sim-smoke",
         engine="gm",
@@ -151,6 +210,8 @@ def test_strategy_and_external_package_from_validated_run(tmp_path):
     )
     package = package_external_simulation(request, output_dir=tmp_path / "sim")
     assert Path(package.artifacts["strategy_script"]).exists()
+    assert package.diagnostics["signal_dates"] == signals["date"].nunique()
+    assert "previous_target_codes" in Path(package.artifacts["strategy_script"]).read_text(encoding="utf-8")
     result_path = tmp_path / "result.json"
     result_path.write_text(json.dumps({"total_return": 0.1, "sharpe": 1.2}), encoding="utf-8")
     parsed = parse_external_simulation_result(run_id="sim-smoke", engine="gm", result_path=result_path)

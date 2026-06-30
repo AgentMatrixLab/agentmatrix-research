@@ -26,6 +26,7 @@ python -m research_core.factor_lab.cli run-factor-research --factor-set wq101 --
 ```
 
 If amazingdata is unavailable, stop and report the missing local ClickHouse/tunnel/config condition. Do not replace it with demo data unless the user explicitly asks for a smoke test.
+Named amazingdata universes must be index-filtered; use `--universe all` only when coverage-based listed-equity selection is the intended research design. Warmup history may be used for factor computation, but proof/evaluation windows must be trimmed to the requested start and end dates.
 
 ## Invocation Conditions
 

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
@@ -47,18 +46,78 @@ def build_target_weights(
     scores: pd.DataFrame,
     *,
     as_of: str | None = None,
+    start: str | None = None,
+    end: str | None = None,
+    rebalance_frequency: str = "single",
     top_n: int = 50,
     long_short: bool = False,
     max_abs_weight: float = 0.10,
 ) -> pd.DataFrame:
     frame = scores.copy()
     frame["date"] = pd.to_datetime(frame["date"])
-    target_date = pd.Timestamp(as_of) if as_of else frame["date"].max()
-    available_dates = sorted(frame.loc[frame["date"] <= target_date, "date"].unique())
-    if not available_dates:
-        raise ValueError(f"No alpha scores available on or before {target_date.date()}")
-    selected_date = pd.Timestamp(available_dates[-1])
-    cross_section = frame.loc[frame["date"] == selected_date].sort_values("alpha_score", ascending=False)
+    selected_dates = _select_rebalance_dates(frame, as_of=as_of, start=start, end=end, frequency=rebalance_frequency)
+    targets = [
+        _build_target_weights_for_date(
+            frame,
+            selected_date=date_value,
+            top_n=top_n,
+            long_short=long_short,
+            max_abs_weight=max_abs_weight,
+        )
+        for date_value in selected_dates
+    ]
+    return pd.concat(targets, ignore_index=True) if targets else pd.DataFrame(
+        columns=["date", "code", "alpha_score", "target_weight", "side"]
+    )
+
+
+def _select_rebalance_dates(
+    scores: pd.DataFrame,
+    *,
+    as_of: str | None = None,
+    start: str | None = None,
+    end: str | None = None,
+    frequency: str = "single",
+) -> list[pd.Timestamp]:
+    frame = scores.copy()
+    available = frame[["date"]].dropna().copy()
+    if start:
+        available = available.loc[available["date"] >= pd.Timestamp(start)]
+    if end:
+        available = available.loc[available["date"] <= pd.Timestamp(end)]
+    unique_dates = pd.Series(sorted(pd.Timestamp(value) for value in available["date"].unique()))
+    if unique_dates.empty:
+        window = f"[{start or '-inf'}, {end or '+inf'}]"
+        raise ValueError(f"No alpha scores available in requested rebalance window {window}")
+
+    if as_of:
+        target_date = pd.Timestamp(as_of)
+        prior_dates = unique_dates.loc[unique_dates <= target_date]
+        if prior_dates.empty:
+            raise ValueError(f"No alpha scores available on or before {target_date.date()}")
+        return [pd.Timestamp(prior_dates.iloc[-1])]
+
+    normalized = frequency.lower().replace("-", "_")
+    if normalized in {"single", "snapshot"}:
+        return [pd.Timestamp(unique_dates.iloc[-1])]
+    if normalized in {"daily", "trade_date", "each_date"}:
+        return [pd.Timestamp(value) for value in unique_dates]
+    if normalized in {"weekly", "week"}:
+        return [pd.Timestamp(value) for value in unique_dates.groupby(unique_dates.dt.to_period("W")).max()]
+    if normalized in {"monthly", "month"}:
+        return [pd.Timestamp(value) for value in unique_dates.groupby(unique_dates.dt.to_period("M")).max()]
+    raise ValueError("rebalance_frequency must be one of: single, daily, weekly, monthly")
+
+
+def _build_target_weights_for_date(
+    scores: pd.DataFrame,
+    *,
+    selected_date: pd.Timestamp,
+    top_n: int,
+    long_short: bool,
+    max_abs_weight: float,
+) -> pd.DataFrame:
+    cross_section = scores.loc[scores["date"] == selected_date].sort_values("alpha_score", ascending=False)
     if cross_section.empty:
         raise ValueError(f"No alpha scores for selected date {selected_date.date()}")
 
@@ -129,6 +188,9 @@ def build_alpha_strategy_package(
     validated_run_path: str | Path,
     factor_names: list[str] | None = None,
     as_of: str = "",
+    start: str = "",
+    end: str = "",
+    rebalance_frequency: str = "daily",
     top_n: int = 50,
     long_short: bool = False,
     output_dir: str | Path | None = None,
@@ -141,7 +203,15 @@ def build_alpha_strategy_package(
     if not requested_factors:
         raise ValueError("No factor names supplied and validated run has no requested_factors.")
     scores = build_alpha_scores(frame, factor_names=requested_factors)
-    weights = build_target_weights(scores, as_of=as_of or None, top_n=top_n, long_short=long_short)
+    weights = build_target_weights(
+        scores,
+        as_of=as_of or None,
+        start=start or None,
+        end=end or None,
+        rebalance_frequency="single" if as_of else rebalance_frequency,
+        top_n=top_n,
+        long_short=long_short,
+    )
 
     strategy_id = f"{payload['job_id']}_alpha_strategy"
     target_dir = Path(output_dir) if output_dir else runtime_path("strategy_engine", strategy_id)
@@ -154,7 +224,10 @@ def build_alpha_strategy_package(
         "source_job_id": payload["job_id"],
         "source_run": str(run_path),
         "factor_names": requested_factors,
-        "as_of": str(weights["date"].iloc[0]) if not weights.empty else as_of,
+        "as_of": str(weights["date"].iloc[0]) if as_of and not weights.empty else as_of,
+        "signal_start": str(weights["date"].min()) if not weights.empty else start,
+        "signal_end": str(weights["date"].max()) if not weights.empty else end,
+        "rebalance_frequency": "single" if as_of else rebalance_frequency,
         "top_n": top_n,
         "long_short": long_short,
         "signal_path": str(signal_path),

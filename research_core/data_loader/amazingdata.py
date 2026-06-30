@@ -17,6 +17,7 @@ from contracts.factor_research import (
     PanelRequest,
     PanelSnapshot,
 )
+from research_core.data_loader.market_data import resolve_universe as resolve_market_universe
 
 
 DEFAULT_ENV_FILE = Path.home() / ".config/db4quant/smartdata_ro.env"
@@ -100,6 +101,49 @@ def parse_symbol_list(raw: str | Sequence[str] | None) -> list[str]:
     return [str(item).strip() for item in raw if str(item).strip()]
 
 
+def _symbol_variants(symbol: str) -> list[str]:
+    value = str(symbol).strip().upper()
+    if not value:
+        return []
+    variants = [value]
+    base = value.split(".", 1)[0]
+    if len(base) == 6 and base.isdigit():
+        variants.extend([base, f"{base}.SH", f"{base}.SZ", f"SH{base}", f"SZ{base}"])
+    return list(dict.fromkeys(variants))
+
+
+def resolve_amazingdata_universe_symbols(universe: str | Sequence[str] | None) -> list[str]:
+    """Resolve an index universe to ClickHouse symbol candidates.
+
+    ``all``/``listed`` intentionally means no index filter. Named index
+    universes are resolved through the existing market-data resolver and then
+    expanded to common A-share code formats before intersecting in ClickHouse.
+    """
+    if universe is None:
+        return []
+    if not isinstance(universe, str):
+        raw_symbols = [str(item) for item in universe]
+    else:
+        label = universe.strip().lower()
+        if not label or label in {"all", "listed", "listed_equities"}:
+            return []
+        if "," in label:
+            raw_symbols = parse_symbol_list(universe)
+        else:
+            try:
+                raw_symbols = resolve_market_universe(label)
+            except Exception as exc:
+                raise ValueError(
+                    f"Could not resolve universe {universe!r}. "
+                    "Use --universe all to select listed equities by coverage, "
+                    "or pass explicit --symbols for a server-local universe."
+                ) from exc
+    candidates: list[str] = []
+    for symbol in raw_symbols:
+        candidates.extend(_symbol_variants(symbol))
+    return list(dict.fromkeys(candidates))
+
+
 def _identifier(value: str) -> str:
     if not value.replace("_", "").isalnum():
         raise ValueError(f"Unsafe ClickHouse identifier: {value!r}")
@@ -134,6 +178,7 @@ def select_symbols(
     config: AmazingDataConfig,
     start_date: str | date,
     end_date: str | date,
+    universe_symbols: Sequence[str] | None = None,
     max_symbols: int | None = 300,
     min_coverage: float = 0.95,
 ) -> list[str]:
@@ -147,6 +192,11 @@ def select_symbols(
     )[0][0]
     min_rows = max(1, int(np.ceil(float(date_count) * float(min_coverage))))
     limit_clause = "" if max_symbols is None or int(max_symbols) <= 0 else f"LIMIT {int(max_symbols)}"
+    universe_candidates = tuple(dict.fromkeys(str(symbol) for symbol in universe_symbols or [] if str(symbol)))
+    universe_clause = "AND k.symbol IN %(universe_symbols)s" if universe_candidates else ""
+    params: dict[str, Any] = {"start": start_date, "end": end_date, "min_rows": min_rows}
+    if universe_candidates:
+        params["universe_symbols"] = universe_candidates
     rows = client.execute(
         f"""
         SELECT k.symbol
@@ -155,12 +205,13 @@ def select_symbols(
         WHERE k.trade_date BETWEEN %(start)s AND %(end)s
           AND s.security_type = 'EQUITY'
           AND s.is_listed = 1
+          {universe_clause}
         GROUP BY k.symbol
         HAVING countDistinct(k.trade_date) >= %(min_rows)s
         ORDER BY k.symbol
         {limit_clause}
         """,
-        {"start": start_date, "end": end_date, "min_rows": min_rows},
+        params,
     )
     return [str(row[0]) for row in rows]
 
@@ -312,11 +363,13 @@ def fetch_amazingdata_panel(
     query_start = output_start - timedelta(days=int(warmup_calendar_days))
     selected_symbols = list(symbols or [])
     if not selected_symbols:
+        universe_symbols = resolve_amazingdata_universe_symbols(universe)
         selected_symbols = select_symbols(
             active_client,
             config=cfg,
             start_date=query_start,
             end_date=output_end,
+            universe_symbols=universe_symbols,
             max_symbols=max_symbols,
             min_coverage=min_symbol_coverage,
         )

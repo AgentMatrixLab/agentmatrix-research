@@ -3,3 +3,4 @@ pandas>=2.2
 scipy>=1.14
 Flask>=3.0
 flask-cors>=5.0
+clickhouse-driver>=0.2.9  # optional runtime dependency for amazingdata ClickHouse access

@@ -33,7 +33,7 @@ python -m research_core.factor_lab.cli run-factor-research --factor-set wq101 --
 Build strategy signals:
 
 ```bash
-python -m research_core.strategy_engine.cli build-alpha-strategy --validated-run runtime/factor_lab/jobs/<job_id>.json --top-n 50
+python -m research_core.strategy_engine.cli build-alpha-strategy --validated-run runtime/factor_lab/jobs/<job_id>.json --rebalance-frequency daily --top-n 50
 ```
 
 Package external simulation:
@@ -47,4 +47,7 @@ python -m research_core.backtest_adapter.cli package-external-sim --engine gm --
 - Internal validation is necessary but not sufficient for live trading.
 - Never promote to `live_ready` without external simulation evidence and explicit human approval.
 - Never auto-flip factor direction to improve metrics.
+- For amazingdata, named universes must be resolved and intersected with ClickHouse listed equities; use `--universe all` only when index membership is intentionally not enforced.
+- Warmup rows are allowed for factor computation, but validation evidence must be trimmed to the requested `[start, end]` window.
+- Multi-year external simulations require multi-date strategy signals; use `--as-of` only for a single-snapshot smoke export.
 - Stop on failed data-quality status, missing required fields, empty factor coverage, or unresolved lookahead risk.

@@ -113,6 +113,41 @@ def _quality_messages(quality: Any) -> str:
     return "; ".join(f"{item.severity}:{item.check}:{item.message}" for item in issues)
 
 
+def _trim_to_requested_window(
+    panel: pd.DataFrame,
+    factor_frame: pd.DataFrame,
+    dataset: dict[str, Any],
+) -> tuple[pd.DataFrame, pd.DataFrame, dict[str, Any]]:
+    start = str(dataset.get("start", "") or "").strip()
+    end = str(dataset.get("end", "") or "").strip()
+    if not start or not end:
+        return panel, factor_frame, {}
+
+    start_ts = pd.Timestamp(start)
+    end_ts = pd.Timestamp(end)
+    trimmed_panel = panel.copy()
+    trimmed_factor_frame = factor_frame.copy()
+    trimmed_panel["date"] = pd.to_datetime(trimmed_panel["date"])
+    trimmed_factor_frame["date"] = pd.to_datetime(trimmed_factor_frame["date"])
+
+    panel_mask = (trimmed_panel["date"] >= start_ts) & (trimmed_panel["date"] <= end_ts)
+    factor_mask = (trimmed_factor_frame["date"] >= start_ts) & (trimmed_factor_frame["date"] <= end_ts)
+    trimmed_panel = trimmed_panel.loc[panel_mask].reset_index(drop=True)
+    trimmed_factor_frame = trimmed_factor_frame.loc[factor_mask].reset_index(drop=True)
+    if trimmed_panel.empty or trimmed_factor_frame.empty:
+        raise ValueError(f"No validation rows remain after trimming to requested window [{start}, {end}].")
+
+    metadata = {
+        "validation_start": start,
+        "validation_end": end,
+        "warmup_rows": int(len(panel) - len(trimmed_panel)),
+        "warmup_dates": int(panel["date"].nunique() - trimmed_panel["date"].nunique()),
+        "validation_rows": int(len(trimmed_panel)),
+        "validation_dates": int(trimmed_panel["date"].nunique()),
+    }
+    return trimmed_panel, trimmed_factor_frame, metadata
+
+
 def check_amazingdata(payload: dict[str, Any] | None = None) -> dict[str, Any]:
     request_payload = payload or {}
     config = (
@@ -446,10 +481,12 @@ def run_alpha101_research_job(
         default_seed=seed,
     )
     factor_frame = compute_alpha101_factors(panel, factor_names=factor_names)
-    evaluation_report = build_alpha101_evaluation_report(panel, factor_frame, factor_names=factor_names)
+    validation_panel, validation_factor_frame, validation_window = _trim_to_requested_window(panel, factor_frame, dataset)
+    dataset.update(validation_window)
+    evaluation_report = build_alpha101_evaluation_report(validation_panel, validation_factor_frame, factor_names=factor_names)
     internal_report = summarize_internal_validation(
-        panel,
-        factor_frame,
+        validation_panel,
+        validation_factor_frame,
         factor_names=factor_names,
         horizon=int(request_payload.get("horizon", 1)),
         quantiles=int(request_payload.get("quantiles", 5)),
@@ -458,7 +495,7 @@ def run_alpha101_research_job(
     truth_summary = summarize_truth_frame(truth_frame, factor_names=factor_names) if truth_frame is not None else {}
 
     frame_path = workspace.frame_path("alpha101", job_id)
-    factor_frame.to_csv(frame_path, index=False, encoding="utf-8")
+    validation_factor_frame.to_csv(frame_path, index=False, encoding="utf-8")
 
     evaluation_json_path = workspace.report_path(f"{job_id}_evaluation", suffix=".json")
     evaluation_json_path.write_text(json.dumps(evaluation_report, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -476,7 +513,7 @@ def run_alpha101_research_job(
     truth_paths: dict[str, str] = {}
     truth_payloads: dict[str, dict[str, Any]] = {}
     for factor_name in factor_names:
-        factor_only_frame = factor_frame[["date", "code", factor_name]].copy()
+        factor_only_frame = validation_factor_frame[["date", "code", factor_name]].copy()
         truth_path = ""
         truth_metrics: dict[str, Any] | None = None
         if truth_frame is not None:
@@ -494,7 +531,7 @@ def run_alpha101_research_job(
             spec=spec_map[factor_name],
             factor_frame=factor_only_frame,
             evaluation_report=evaluation_report,
-            available_columns=panel.columns.tolist(),
+            available_columns=validation_panel.columns.tolist(),
             evaluation_path=str(evaluation_json_path),
             job_id=job_id,
             truth_path=truth_path,
@@ -586,10 +623,17 @@ def run_factor_set_research_job(
         default_seed=seed,
     )
     factor_frame = compute_factor_set(panel, factor_set, factor_names=factor_names)
-    evaluation_report = build_factor_evaluation_report(panel, factor_frame, factor_names=factor_names, library=library)
+    validation_panel, validation_factor_frame, validation_window = _trim_to_requested_window(panel, factor_frame, dataset)
+    dataset.update(validation_window)
+    evaluation_report = build_factor_evaluation_report(
+        validation_panel,
+        validation_factor_frame,
+        factor_names=factor_names,
+        library=library,
+    )
     internal_report = summarize_internal_validation(
-        panel,
-        factor_frame,
+        validation_panel,
+        validation_factor_frame,
         factor_names=factor_names,
         horizon=int(request_payload.get("horizon", 1)),
         quantiles=int(request_payload.get("quantiles", 5)),
@@ -598,7 +642,7 @@ def run_factor_set_research_job(
     truth_summary = summarize_truth_frame(truth_frame, factor_names=factor_names) if truth_frame is not None else {}
 
     frame_path = workspace.frame_path(catalog_key, job_id)
-    factor_frame.to_csv(frame_path, index=False, encoding="utf-8")
+    validation_factor_frame.to_csv(frame_path, index=False, encoding="utf-8")
 
     evaluation_json_path = workspace.report_path(f"{job_id}_evaluation", suffix=".json")
     evaluation_json_path.write_text(json.dumps(evaluation_report, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -613,7 +657,7 @@ def run_factor_set_research_job(
     truth_paths: dict[str, str] = {}
     truth_payloads: dict[str, dict[str, Any]] = {}
     for factor_name in factor_names:
-        factor_only_frame = factor_frame[["date", "code", factor_name]].copy()
+        factor_only_frame = validation_factor_frame[["date", "code", factor_name]].copy()
         truth_path = ""
         truth_metrics: dict[str, Any] | None = None
         if truth_frame is not None:
@@ -631,7 +675,7 @@ def run_factor_set_research_job(
             spec=specs_by_name[factor_name],
             factor_frame=factor_only_frame,
             evaluation_report=evaluation_report,
-            available_columns=panel.columns.tolist(),
+            available_columns=validation_panel.columns.tolist(),
             evaluation_path=str(evaluation_json_path),
             job_id=job_id,
             truth_path=truth_path,

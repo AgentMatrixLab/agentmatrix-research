@@ -34,7 +34,7 @@ python -m research_core.factor_lab.cli run-factor-research --factor-set wq101 --
 Build strategy signals from a validated job:
 
 ```bash
-python -m research_core.strategy_engine.cli build-alpha-strategy --validated-run runtime/factor_lab/jobs/<job_id>.json --top-n 50
+python -m research_core.strategy_engine.cli build-alpha-strategy --validated-run runtime/factor_lab/jobs/<job_id>.json --rebalance-frequency daily --top-n 50
 ```
 
 Package external simulation:
@@ -56,6 +56,10 @@ candidate -> implemented -> internal_validated -> strategy_candidate -> external
 ## Data Rules
 
 - amazingdata uses read-only ClickHouse config, normally `~/.config/db4quant/smartdata_ro.env`.
+- amazingdata ClickHouse access requires the optional Python package `clickhouse-driver`.
+- Named universes such as `csi300`, `csi500`, and `csi800` are resolved through `research_core.data_loader.market_data.resolve_universe()` and then intersected with listed ClickHouse equities. Use `--universe all` for listed equities by data coverage only, or pass explicit `--symbols` for a server-local universe.
+- Factor computation may fetch warmup history before `start`, but validation reports, proof artifacts, and saved factor frames are trimmed back to `[start, end]`.
+- Strategy exports are multi-date rebalance signal files by default. Pass `--as-of YYYY-MM-DD` to build a single-snapshot smoke export.
 - Do not commit credentials or paste secrets into chat.
 - Stop on empty panels, failed schema checks, duplicate date-code rows, bad date parsing, or required field coverage below threshold.
 - Preserve raw factor direction. Do not auto-flip signs to improve metrics.
