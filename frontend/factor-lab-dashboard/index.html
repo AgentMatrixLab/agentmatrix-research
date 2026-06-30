@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Factor Lab 因子库</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside id="sidebar" class="sidebar">
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true">
+            <img src="./assets/factor-lab-logo.png" alt="" />
+          </div>
+          <div class="brand-title">Factor Lab</div>
+          <div class="brand-version">v0.1</div>
+        </div>
+
+        <nav class="nav-list" aria-label="主导航">
+          <button class="nav-item active" type="button" data-view="library">
+            <span class="nav-icon">⌁</span>
+            <span>因子库</span>
+          </button>
+          <button class="nav-item" type="button" data-view="monitor">
+            <span class="nav-icon">△</span>
+            <span>因子监控</span>
+          </button>
+          <button class="nav-item muted" type="button" disabled>
+            <span class="nav-icon">□</span>
+            <span>报告中心</span>
+            <span class="nav-lock">锁定</span>
+          </button>
+          <button class="nav-item muted" type="button" disabled>
+            <span class="nav-icon">≡</span>
+            <span>人工审核</span>
+          </button>
+          <button class="nav-item muted" type="button" disabled>
+            <span class="nav-icon">AI</span>
+            <span>AI Agent 接入</span>
+          </button>
+          <button class="nav-item muted" type="button" disabled>
+            <span class="nav-icon">⚙</span>
+            <span>设置</span>
+          </button>
+        </nav>
+
+        <div class="sidebar-footer">
+          <button id="collapseButton" class="collapse-button" type="button">
+            <span class="collapse-icon"></span>
+            <span class="collapse-label">收起</span>
+          </button>
+        </div>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <div class="page-heading">
+            <h1 id="pageTitle">因子库</h1>
+            <span class="divider"></span>
+            <span id="localStatus" class="status-pill status-warn">本地 Flask：检测中</span>
+            <span id="cloudStatus" class="status-pill status-warn">云端信息库：未同步</span>
+          </div>
+
+          <div class="topbar-actions">
+            <button id="refreshButton" class="icon-button" type="button" aria-label="刷新">刷新</button>
+            <div class="avatar" aria-label="当前用户">JD</div>
+          </div>
+        </header>
+
+        <section id="libraryView" class="content">
+          <section class="category-panel" aria-label="因子分类">
+            <div class="filter-row">
+              <div class="filter-label">因子大类：</div>
+              <div id="categoryTabs" class="tabs"></div>
+            </div>
+            <div class="filter-row sub-filter-row">
+              <div class="filter-label">子库：</div>
+              <div id="libraryTabs" class="tabs tabs-sub"></div>
+            </div>
+          </section>
+
+          <section class="research-period-panel" aria-label="研究时间段">
+            <div class="period-main">
+              <span class="toolbar-label">研究时间段：</span>
+              <span class="period-pill active">当前复现样本区间</span>
+              <button class="period-option" type="button" disabled>近3个月</button>
+              <button class="period-option" type="button" disabled>近1年</button>
+              <button class="period-option" type="button" disabled>近3年</button>
+              <button class="period-option" type="button" disabled>自定义</button>
+            </div>
+            <div class="period-note">当前 IC / IR / 覆盖率来自已生成的复现样本；接入研究分析数据后可切换不同时间段。</div>
+          </section>
+
+          <section class="toolbar" aria-label="快速筛选">
+            <div class="toolbar-left">
+              <span class="toolbar-label">快速筛选：</span>
+              <select id="proofFilter">
+                <option value="all">复现状态：全部</option>
+                <option value="passed">复现状态：已通过</option>
+                <option value="failed">复现状态：失败</option>
+                <option value="missing">复现状态：缺失</option>
+              </select>
+              <select id="truthFilter">
+                <option value="all">真值校验：全部</option>
+                <option value="exact_match">真值校验：完全匹配</option>
+                <option value="mismatch">真值校验：不匹配</option>
+                <option value="not_applicable">真值校验：无需对照</option>
+                <option value="not_compared">真值校验：待对照 not_compared</option>
+                <option value="pending">真值校验：待对照 pending</option>
+                <option value="empty_compare">真值校验：对照异常</option>
+                <option value="missing">真值校验：缺失</option>
+              </select>
+              <select id="reuseFilter">
+                <option value="all">复用建议：全部</option>
+                <option value="可复用">复用建议：可复用</option>
+                <option value="建议重跑">复用建议：建议重跑</option>
+                <option value="未复现">复用建议：未复现</option>
+              </select>
+              <button id="resetFiltersButton" class="text-button" type="button">重置所有筛选</button>
+            </div>
+
+            <label class="search">
+              <span>搜索</span>
+              <input id="searchInput" type="search" placeholder="搜索因子名称..." />
+            </label>
+          </section>
+
+          <section id="errorPanel" class="error-panel hidden">
+            <strong>无法读取本地 Factor Lab 接口。</strong>
+            <span>请确认 Flask 服务已启动：python backend/factor_lab_api.py</span>
+          </section>
+
+          <section class="table-card" aria-label="因子列表">
+            <div class="table-scroll">
+              <table class="factor-table">
+                <thead>
+                  <tr>
+                    <th class="select-col">选择</th>
+                    <th class="sortable" data-sort="factor_name">因子名称</th>
+                    <th>所属库</th>
+                    <th>二级分类</th>
+                    <th>复现状态</th>
+                    <th>真值校验</th>
+                    <th class="number sortable" data-sort="coverage_ratio">覆盖率</th>
+                    <th class="number sortable" data-sort="rank_ic_mean">IC均值</th>
+                    <th class="number sortable" data-sort="rank_ic_ir">IR均值</th>
+                    <th class="number sortable" data-sort="truth_exact_match_ratio">真值匹配率</th>
+                    <th class="number sortable" data-sort="long_short_mean">多空均值</th>
+                    <th>最近校验时间</th>
+                    <th>复用建议</th>
+                  </tr>
+                </thead>
+                <tbody id="factorTableBody"></tbody>
+              </table>
+            </div>
+            <footer class="table-footer">
+              <span id="pageSummary">显示 0-0 / 共 0 个因子</span>
+              <div id="pagination" class="pagination"></div>
+            </footer>
+          </section>
+        </section>
+
+        <section id="monitorView" class="content monitor-view hidden" aria-label="因子监控">
+          <section class="monitor-head">
+            <div>
+              <h2>因子监控面板</h2>
+              <p>基于当前因子库已生成的复现产物和 IC / IR 指标做只读巡检。这里不计算新指标，也不替代正式策略回测。</p>
+            </div>
+            <div class="monitor-note">
+              <strong>当前边界</strong>
+              <span>重复/镜像因子、市值暴露、行业中性和近期衰减需要后续 research_analysis.json 或真实数据 API 支持。</span>
+            </div>
+          </section>
+
+          <section id="monitorStats" class="monitor-stats" aria-label="监控统计"></section>
+
+          <section class="monitor-toolbar" aria-label="监控筛选">
+            <div class="monitor-filter-group">
+              <button class="monitor-filter active" type="button" data-monitor-filter="all">全部</button>
+              <button class="monitor-filter" type="button" data-monitor-filter="strong">强有效</button>
+              <button class="monitor-filter" type="button" data-monitor-filter="medium">中等</button>
+              <button class="monitor-filter" type="button" data-monitor-filter="weak">弱或失效</button>
+              <button class="monitor-filter" type="button" data-monitor-filter="missing">待数据</button>
+            </div>
+            <span class="monitor-toolbar-note">分层仅按当前已有 IC/IR 与验证状态做临时巡检，不代表投资有效性。</span>
+          </section>
+
+          <section class="table-card monitor-table-card" aria-label="因子监控列表">
+            <div class="table-scroll">
+              <table class="monitor-table">
+                <thead>
+                  <tr>
+                    <th>状态</th>
+                    <th>因子</th>
+                    <th>来源</th>
+                    <th class="number">IC_IR</th>
+                    <th class="number">IC均值</th>
+                    <th class="number">覆盖率</th>
+                    <th class="number">多空均值</th>
+                    <th>复现</th>
+                    <th>真值</th>
+                    <th>监控提示</th>
+                  </tr>
+                </thead>
+                <tbody id="monitorTableBody"></tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+
+        <section id="detailView" class="content detail-view hidden" aria-label="单因子详情"></section>
+
+        <footer id="selectionBar" class="selection-bar">
+          <div class="selection-summary">
+            <strong id="selectedCount">已选择 0 个因子</strong>
+            <span id="selectedReusable">可复用 0 个</span>
+            <span id="selectedRerun">建议重跑 0 个</span>
+          </div>
+        </footer>
+      </main>
+    </div>
+    <script src="./app.js?v=20260624-health-check"></script>
+  </body>
+</html>

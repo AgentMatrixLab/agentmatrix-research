@@ -366,7 +366,6 @@ def run_alpha101_research_job(
     for spec in specs:
         if spec.factor_name not in proof_paths:
             export_proof_template(config=workspace, spec=spec)
-
     research_report = build_alpha101_research_report(
         job_id=job_id,
         factor_names=factor_names,
