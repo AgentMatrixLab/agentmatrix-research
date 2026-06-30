@@ -19,6 +19,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
+      issues: write
 
     steps:
       - name: Checkout repo
@@ -93,6 +94,7 @@ jobs:
 
       - name: Post PR comment
         if: always() && github.event_name == 'pull_request'
+        continue-on-error: true
         uses: thollander/actions-comment-pull-request@v3
         with:
           file-path: /tmp/pr_comment.md
