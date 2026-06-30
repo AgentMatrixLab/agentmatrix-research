@@ -4,8 +4,13 @@ on:
   pull_request:
     paths:
       - 'research_core/factor_lab/**'
+      - 'research_core/data_loader/**'
+      - 'research_core/strategy_engine/**'
+      - 'research_core/backtest_adapter/**'
+      - 'registry/factor_registry/**'
       - 'submissions/**'
       - 'contracts/factor_research.py'
+      - 'contracts/backtest.py'
   workflow_dispatch:
     inputs:
       factors:

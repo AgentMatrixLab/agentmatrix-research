@@ -6,8 +6,20 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+import pandas as pd
+
+from contracts.factor_research import DataSourceSpec, PanelRequest, PanelSnapshot
+from research_core.data_loader.amazingdata import (
+    AmazingDataConfig,
+    build_data_quality_report,
+    build_panel_snapshot,
+    check_connection,
+    fetch_amazingdata_panel,
+    parse_symbol_list,
+)
 from research_core.factor_lab.demo_data import build_alpha101_demo_panel
 from research_core.factor_lab.evaluation import build_alpha101_evaluation_report, build_factor_evaluation_report
+from research_core.factor_lab.internal_validation import summarize_internal_validation, write_internal_validation_report
 from research_core.factor_lab.libraries.factor_sets import (
     compute_factor_set,
     factor_set_library_name,
@@ -86,6 +98,119 @@ def _render_evaluation_markdown(report: dict[str, Any], *, factor_names: list[st
             f"{metrics['rank_ic_mean']:.6f} | {metrics['rank_ic_ir']:.6f} | {metrics['long_short_mean']:.6f} |"
         )
     return "\n".join(lines) + "\n"
+
+
+def _write_json(path: Path, payload: dict[str, Any]) -> str:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    return str(path)
+
+
+def _quality_messages(quality: Any) -> str:
+    issues = getattr(quality, "issues", [])
+    if not issues:
+        return "none"
+    return "; ".join(f"{item.severity}:{item.check}:{item.message}" for item in issues)
+
+
+def check_amazingdata(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    request_payload = payload or {}
+    config = (
+        AmazingDataConfig.from_env_file(request_payload["env_file"])
+        if request_payload.get("env_file")
+        else AmazingDataConfig.from_env_file()
+    )
+    result = check_connection(config)
+    result["env_file"] = str(request_payload.get("env_file") or "")
+    return result
+
+
+def _load_panel_for_job(
+    request_payload: dict[str, Any],
+    *,
+    workspace: FactorLabWorkspaceConfig,
+    job_id: str,
+    default_n_dates: int,
+    default_n_codes: int,
+    default_seed: int,
+) -> tuple[pd.DataFrame, dict[str, Any], dict[str, str]]:
+    data_source = str(request_payload.get("data_source", "demo")).lower()
+    artifacts: dict[str, str] = {}
+
+    if data_source == "demo":
+        n_dates = int(request_payload.get("n_dates", default_n_dates))
+        n_codes = int(request_payload.get("n_codes", default_n_codes))
+        seed = int(request_payload.get("seed", default_seed))
+        panel = build_alpha101_demo_panel(n_dates=n_dates, n_codes=n_codes, seed=seed)
+        if "vwap" not in panel.columns:
+            panel["vwap"] = panel["amount"] / panel["volume"].replace(0, pd.NA)
+        quality = build_data_quality_report(panel, source="demo")
+        request = PanelRequest(data_source="demo", start="", end="", universe="synthetic", max_symbols=n_codes)
+        snapshot = PanelSnapshot(
+            request=request,
+            source=DataSourceSpec(name="demo", kind="synthetic", description="Deterministic factor_lab panel."),
+            quality=quality,
+            rows=int(len(panel)),
+            n_codes=int(panel["code"].nunique()),
+            n_dates=int(panel["date"].nunique()),
+            metadata={"seed": seed},
+        )
+        dataset = {
+            "data_source": "demo",
+            "n_dates": n_dates,
+            "n_codes": n_codes,
+            "seed": seed,
+            "quality_status": quality.status,
+        }
+    elif data_source == "amazingdata":
+        start = str(request_payload.get("start") or request_payload.get("start_date") or "").strip()
+        end = str(request_payload.get("end") or request_payload.get("end_date") or "").strip()
+        if not start or not end:
+            raise ValueError("amazingdata jobs require start and end dates.")
+        env_file = request_payload.get("env_file") or request_payload.get("config_path")
+        config = AmazingDataConfig.from_env_file(env_file) if env_file else AmazingDataConfig.from_env_file()
+        symbols = parse_symbol_list(request_payload.get("symbols"))
+        panel, quality = fetch_amazingdata_panel(
+            start=start,
+            end=end,
+            universe=str(request_payload.get("universe", "csi800")),
+            symbols=symbols,
+            max_symbols=request_payload.get("max_symbols", request_payload.get("n_codes", 300)),
+            warmup_calendar_days=int(request_payload.get("warmup_calendar_days", 420)),
+            min_symbol_coverage=float(request_payload.get("min_symbol_coverage", 0.95)),
+            config=config,
+        )
+        request = PanelRequest(
+            data_source="amazingdata",
+            start=start,
+            end=end,
+            universe=str(request_payload.get("universe", "csi800")),
+            symbols=symbols,
+            warmup_calendar_days=int(request_payload.get("warmup_calendar_days", 420)),
+            max_symbols=request_payload.get("max_symbols", request_payload.get("n_codes", 300)),
+        )
+        snapshot = build_panel_snapshot(request, quality, config=config)
+        dataset = {
+            "data_source": "amazingdata",
+            "start": start,
+            "end": end,
+            "universe": request.universe,
+            "symbols": len(symbols),
+            "rows": int(len(panel)),
+            "codes": int(panel["code"].nunique()),
+            "dates": int(panel["date"].nunique()),
+            "quality_status": quality.status,
+        }
+    else:
+        raise ValueError("Unsupported data_source. Use 'demo' or 'amazingdata'.")
+
+    quality_path = workspace.report_path(f"{job_id}_data_quality", suffix=".json")
+    snapshot_path = workspace.report_path(f"{job_id}_panel_snapshot", suffix=".json")
+    artifacts["data_quality_json"] = _write_json(quality_path, asdict(quality))
+    artifacts["panel_snapshot_json"] = _write_json(snapshot_path, asdict(snapshot))
+    if quality.status == "failed":
+        raise ValueError(f"Data quality failed for {data_source}: {_quality_messages(quality)}")
+    return panel, dataset, artifacts
 
 
 def export_alpha101_truth_template(
@@ -307,16 +432,28 @@ def run_alpha101_research_job(
     data_source = request_payload.get("data_source", "demo")
     truth_csv_path = request_payload.get("truth_csv_path", "")
     truth_tolerance = float(request_payload.get("truth_tolerance", 1e-12))
-    if data_source != "demo":
-        raise ValueError("Current factor_lab backend supports 'demo' data_source only for Alpha101 research jobs.")
 
     specs = alpha101_specs()
     export_library_specs(config=workspace, library="alpha101", specs=specs)
 
     job_id = request_payload.get("job_id") or f"alpha101-{uuid4().hex[:12]}"
-    panel = build_alpha101_demo_panel(n_dates=n_dates, n_codes=n_codes, seed=seed)
+    panel, dataset, data_artifacts = _load_panel_for_job(
+        request_payload,
+        workspace=workspace,
+        job_id=job_id,
+        default_n_dates=n_dates,
+        default_n_codes=n_codes,
+        default_seed=seed,
+    )
     factor_frame = compute_alpha101_factors(panel, factor_names=factor_names)
     evaluation_report = build_alpha101_evaluation_report(panel, factor_frame, factor_names=factor_names)
+    internal_report = summarize_internal_validation(
+        panel,
+        factor_frame,
+        factor_names=factor_names,
+        horizon=int(request_payload.get("horizon", 1)),
+        quantiles=int(request_payload.get("quantiles", 5)),
+    )
     truth_frame = load_truth_frame(truth_csv_path, factor_names=factor_names) if truth_csv_path else None
     truth_summary = summarize_truth_frame(truth_frame, factor_names=factor_names) if truth_frame is not None else {}
 
@@ -330,6 +467,8 @@ def run_alpha101_research_job(
         _render_evaluation_markdown(evaluation_report, factor_names=factor_names),
         encoding="utf-8",
     )
+    internal_validation_json_path = workspace.report_path(f"{job_id}_internal_validation", suffix=".json")
+    write_internal_validation_report(internal_report, internal_validation_json_path)
 
     spec_map = _alpha101_spec_map()
     proof_paths: dict[str, str] = {}
@@ -396,15 +535,13 @@ def run_alpha101_research_job(
         "truth_summary": truth_summary,
         "generated_at": now_iso(),
         "requested_factors": factor_names,
-        "dataset": {
-            "n_dates": n_dates,
-            "n_codes": n_codes,
-            "seed": seed,
-        },
+        "dataset": dataset,
         "artifacts": {
+            **data_artifacts,
             "factor_frame": str(frame_path),
             "evaluation_json": str(evaluation_json_path),
             "evaluation_markdown": str(evaluation_md_path),
+            "internal_validation_json": str(internal_validation_json_path),
             "research_report_json": str(research_report_json_path),
             "research_report_markdown": str(research_report_md_path),
             "proofs": proof_paths,
@@ -433,8 +570,6 @@ def run_factor_set_research_job(
     data_source = request_payload.get("data_source", "demo")
     truth_csv_path = request_payload.get("truth_csv_path", "")
     truth_tolerance = float(request_payload.get("truth_tolerance", 1e-12))
-    if data_source != "demo":
-        raise ValueError("Current factor_lab backend supports 'demo' data_source only for factor-set research jobs.")
 
     specs = factor_set_specs(factor_set)
     library = factor_set_library_name(factor_set)
@@ -442,9 +577,23 @@ def run_factor_set_research_job(
     export_library_specs(config=workspace, library=catalog_key, specs=specs)
 
     job_id = request_payload.get("job_id") or f"{factor_set}-{uuid4().hex[:12]}"
-    panel = build_alpha101_demo_panel(n_dates=n_dates, n_codes=n_codes, seed=seed)
+    panel, dataset, data_artifacts = _load_panel_for_job(
+        request_payload,
+        workspace=workspace,
+        job_id=job_id,
+        default_n_dates=n_dates,
+        default_n_codes=n_codes,
+        default_seed=seed,
+    )
     factor_frame = compute_factor_set(panel, factor_set, factor_names=factor_names)
     evaluation_report = build_factor_evaluation_report(panel, factor_frame, factor_names=factor_names, library=library)
+    internal_report = summarize_internal_validation(
+        panel,
+        factor_frame,
+        factor_names=factor_names,
+        horizon=int(request_payload.get("horizon", 1)),
+        quantiles=int(request_payload.get("quantiles", 5)),
+    )
     truth_frame = load_truth_frame(truth_csv_path, factor_names=factor_names) if truth_csv_path else None
     truth_summary = summarize_truth_frame(truth_frame, factor_names=factor_names) if truth_frame is not None else {}
 
@@ -455,6 +604,8 @@ def run_factor_set_research_job(
     evaluation_json_path.write_text(json.dumps(evaluation_report, ensure_ascii=False, indent=2), encoding="utf-8")
     evaluation_md_path = workspace.report_path(f"{job_id}_evaluation", suffix=".md")
     evaluation_md_path.write_text(_render_evaluation_markdown(evaluation_report, factor_names=factor_names), encoding="utf-8")
+    internal_validation_json_path = workspace.report_path(f"{job_id}_internal_validation", suffix=".json")
+    write_internal_validation_report(internal_report, internal_validation_json_path)
 
     specs_by_name = _spec_map(specs)
     proof_paths: dict[str, str] = {}
@@ -517,15 +668,13 @@ def run_factor_set_research_job(
         "truth_summary": truth_summary,
         "generated_at": now_iso(),
         "requested_factors": factor_names,
-        "dataset": {
-            "n_dates": n_dates,
-            "n_codes": n_codes,
-            "seed": seed,
-        },
+        "dataset": dataset,
         "artifacts": {
+            **data_artifacts,
             "factor_frame": str(frame_path),
             "evaluation_json": str(evaluation_json_path),
             "evaluation_markdown": str(evaluation_md_path),
+            "internal_validation_json": str(internal_validation_json_path),
             "research_report_json": str(research_report_json_path),
             "research_report_markdown": str(research_report_md_path),
             "proofs": proof_paths,

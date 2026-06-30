@@ -202,6 +202,50 @@ def validate_submission(sub_dir: str) -> dict[str, Any]:
     }
 
 
+def validate_pipeline_smoke() -> dict[str, Any]:
+    result = run_cli_command(
+        [
+            "python", "-m", "research_core.factor_lab.cli",
+            "run-factor-research",
+            "--factor-set", "wq101",
+            "--data-source", "demo",
+            "--factors", "alpha1",
+            "--n-dates", "80",
+            "--n-codes", "8",
+            "--seed", "42",
+        ]
+    )
+    if result.get("error"):
+        return {"status": "failed", "error": result["error"], "stdout": result.get("stdout", "")}
+    artifacts = result.get("artifacts", {})
+    required = ["data_quality_json", "panel_snapshot_json", "internal_validation_json", "factor_frame"]
+    missing = [name for name in required if not artifacts.get(name)]
+    return {
+        "status": "failed" if missing else "passed",
+        "job_id": result.get("job_id"),
+        "missing_artifacts": missing,
+        "artifacts": {key: artifacts.get(key) for key in required},
+    }
+
+
+def validate_lifecycle_registry() -> dict[str, Any]:
+    try:
+        from registry.factor_registry.lifecycle import build_promotion_record, validate_transition
+
+        validate_transition("implemented", "internal_validated")
+        build_promotion_record(
+            factor_name="alpha1",
+            from_state="implemented",
+            to_state="internal_validated",
+            promoted_by="ci",
+            run_id="ci-smoke",
+            reason="CI lifecycle smoke test",
+        )
+    except Exception as exc:
+        return {"status": "failed", "error": str(exc)}
+    return {"status": "passed"}
+
+
 def main():
     import argparse
     parser = argparse.ArgumentParser()
@@ -221,7 +265,12 @@ def main():
     results: dict[str, Any] = {
         "alpha101": {},
         "submissions": {},
+        "pipeline_smoke": {},
+        "lifecycle": {},
     }
+
+    results["pipeline_smoke"] = validate_pipeline_smoke()
+    results["lifecycle"] = validate_lifecycle_registry()
 
     # Validate alpha101 factors
     alpha_factors = changed.get("changed_factors", [])
@@ -257,6 +306,9 @@ def main():
             has_failures = True
     for sub_result in results["submissions"].values():
         if sub_result.get("status") == "failed" or sub_result.get("error"):
+            has_failures = True
+    for key in ("pipeline_smoke", "lifecycle"):
+        if results[key].get("status") == "failed" or results[key].get("error"):
             has_failures = True
 
     if has_failures:
