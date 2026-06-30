@@ -297,8 +297,8 @@ def generate_batch_report(
         "artifacts": {
             "market_panel": str((workspace.output_dir / "market_panel.parquet").resolve()),
             "factor_frame": str((workspace.output_dir / "alpha158_factors_smartdata.parquet").resolve()),
-            "accuracy_report": str((workspace.output_dir / "validation" / "accuracy_report.json").resolve()),
-            "effectiveness_report": str((workspace.output_dir / "effectiveness" / "effectiveness_report.json").resolve()),
+            "accuracy_report": str(accuracy_path.resolve()),
+            "effectiveness_report": str(effectiveness_path.resolve()),
         },
         "batch_conclusion": (
             f"批次 {batch.batch_id} 共 {len(batch.factor_names)} 个因子，"

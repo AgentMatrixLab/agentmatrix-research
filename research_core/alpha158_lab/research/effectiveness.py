@@ -10,6 +10,15 @@ import pandas as pd
 from research_core.factor_lab.evaluation import summarize_factor_frame
 
 
+def forward_daily_return_frame(panel: pd.DataFrame) -> pd.DataFrame:
+    """Next-day close-to-close return per security (shift applied within each code)."""
+    data = panel.sort_values(["code", "date"]).copy()
+    data["date"] = pd.to_datetime(data["date"])
+    grouped_close = data.groupby("code", sort=False)["close"]
+    data["forward_return_1d"] = grouped_close.shift(-1) / data["close"] - 1
+    return data[["date", "code", "forward_return_1d"]]
+
+
 def _month_end_factor_values(factor_frame: pd.DataFrame, factor_names: list[str]) -> pd.DataFrame:
     data = factor_frame.copy()
     data["date"] = pd.to_datetime(data["date"])
@@ -24,7 +33,8 @@ def _forward_monthly_return(panel: pd.DataFrame) -> pd.DataFrame:
     data["date"] = pd.to_datetime(data["date"])
     data["month"] = data["date"].dt.to_period("M")
     month_close = data.groupby(["code", "month"])["close"].last().reset_index()
-    month_close["forward_return_1m"] = month_close.groupby("code")["close"].pct_change().shift(-1)
+    grouped_close = month_close.groupby("code", sort=False)["close"]
+    month_close["forward_return_1m"] = grouped_close.shift(-1) / month_close["close"] - 1
     return month_close[["code", "month", "forward_return_1m"]]
 
 

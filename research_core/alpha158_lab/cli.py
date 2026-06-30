@@ -126,12 +126,11 @@ def main() -> None:
                 from pathlib import Path
 
                 script = Path(__file__).resolve().parents[2] / "scripts" / "generate_alpha158_all_reports.py"
-                proc = subprocess.run([sys.executable, str(script)], check=False)
-                payload["master_report_exit_code"] = proc.returncode
-                if proc.returncode == 0:
-                    payload["master_dashboard"] = str(
-                        (cfg.output_dir / "reports" / "master" / "MASTER_DASHBOARD.html").resolve()
-                    )
+                proc = subprocess.run([sys.executable, str(script)], check=True)
+                payload["master_report_exit_code"] = 0
+                payload["master_dashboard"] = str(
+                    (cfg.output_dir / "reports" / "master" / "MASTER_DASHBOARD.html").resolve()
+                )
         print(json.dumps(payload, ensure_ascii=False, indent=2))
 
 

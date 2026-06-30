@@ -17,7 +17,7 @@ from research_core.alpha158_lab.data.smartdata import (
 )
 from research_core.alpha158_lab.factors.compute import compute_alpha158_factors
 from research_core.alpha158_lab.factors.specs import ALPHA158_BATCHES, ALPHA158_FIRST_10
-from research_core.alpha158_lab.research.effectiveness import run_effectiveness_suite
+from research_core.alpha158_lab.research.effectiveness import forward_daily_return_frame, run_effectiveness_suite
 from research_core.alpha158_lab.research.batch_report import (
     BatchReportConfig,
     ensure_report_template,
@@ -190,9 +190,7 @@ def run_alpha158_batch(
     )
     artifacts["effectiveness_report"] = effectiveness["path"]
 
-    returns_panel = panel.sort_values(["code", "date"]).copy()
-    returns_panel["forward_return_1d"] = returns_panel.groupby("code")["close"].pct_change().shift(-1)
-    return_df = returns_panel[["date", "code", "forward_return_1d"]]
+    return_df = forward_daily_return_frame(panel)
     ic_df = compute_ic_series(
         factor_frame,
         return_df,

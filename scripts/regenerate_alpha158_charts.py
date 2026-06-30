@@ -8,7 +8,7 @@ import pandas as pd
 
 from research_core.alpha158_lab.config import Alpha158ResearchConfig
 from research_core.alpha158_lab.factors.specs import ALPHA158_FIRST_10
-from research_core.alpha158_lab.research.effectiveness import run_effectiveness_suite
+from research_core.alpha158_lab.research.effectiveness import forward_daily_return_frame, run_effectiveness_suite
 from research_core.alpha158_lab.research.visualize import (
     plot_long_short_nav,
     plot_quantile_layer_returns,
@@ -29,11 +29,10 @@ def main() -> None:
         output_dir=root / "effectiveness",
     )
 
-    returns_panel = panel.sort_values(["code", "date"]).copy()
-    returns_panel["forward_return_1d"] = returns_panel.groupby("code")["close"].pct_change().shift(-1)
+    return_df = forward_daily_return_frame(panel)
     ic_df = compute_ic_series(
         factor_frame,
-        returns_panel[["date", "code", "forward_return_1d"]],
+        return_df,
         list(ALPHA158_FIRST_10),
         return_col="forward_return_1d",
     )
