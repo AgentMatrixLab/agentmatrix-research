@@ -4,8 +4,13 @@ on:
   pull_request:
     paths:
       - 'research_core/factor_lab/**'
+      - 'research_core/data_loader/**'
+      - 'research_core/strategy_engine/**'
+      - 'research_core/backtest_adapter/**'
+      - 'registry/factor_registry/**'
       - 'submissions/**'
       - 'contracts/factor_research.py'
+      - 'contracts/backtest.py'
   workflow_dispatch:
     inputs:
       factors:
@@ -92,7 +97,7 @@ jobs:
             --output /tmp/pr_comment.md
 
       - name: Post PR comment
-        if: always() && github.event_name == 'pull_request'
+        if: always() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
         uses: thollander/actions-comment-pull-request@v3
         with:
           file-path: /tmp/pr_comment.md
