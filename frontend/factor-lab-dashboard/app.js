@@ -1,8 +1,13 @@
-const API_HOST =
-  window.location.protocol.startsWith("http") && window.location.port === "8012"
+const CLOUD_DEMO_MODE =
+  window.location.hostname.endsWith("github.io") ||
+  new URLSearchParams(window.location.search).has("demo");
+const API_HOST = CLOUD_DEMO_MODE
+  ? ""
+  : window.location.protocol.startsWith("http") && window.location.port === "8012"
     ? window.location.origin
     : "http://127.0.0.1:8012";
-const API_BASE = `${API_HOST}/api/agents/factor-lab`;
+const API_BASE = CLOUD_DEMO_MODE ? "" : `${API_HOST}/api/agents/factor-lab`;
+const DEMO_LIBRARY_URL = "./data/demo-factor-library.json";
 const PAGE_SIZE = 50;
 const AUTO_REFRESH_INTERVAL_MS = 10000;
 const REQUEST_TIMEOUT_MS = 1800;
@@ -413,8 +418,13 @@ function renderTabs(payload) {
 function updateConnectionStatus(ok, payload) {
   state.localConnected = ok;
   els.localStatus.className = ok ? "status-pill status-ok" : "status-pill status-bad";
-  els.localStatus.textContent = ok ? "本地 Flask：已连接" : "本地 Flask：未连接";
-  els.localStatus.title = ok ? "已通过 /health 接口确认" : "未能访问 /health 接口，请确认本地 Flask 服务已启动";
+  if (CLOUD_DEMO_MODE) {
+    els.localStatus.textContent = "GitHub Pages：演示模式";
+    els.localStatus.title = "当前使用静态演示数据，未连接本地 Flask 服务";
+  } else {
+    els.localStatus.textContent = ok ? "本地 Flask：已连接" : "本地 Flask：未连接";
+    els.localStatus.title = ok ? "已通过 /health 接口确认" : "未能访问 /health 接口，请确认本地 Flask 服务已启动";
+  }
   const cloudLabel = payload?.cloud_registry?.label || "未同步";
   els.cloudStatus.textContent = `云端信息库：${cloudLabel}`;
 }
@@ -432,6 +442,12 @@ function updateQuantApiStatus(payload, failed = false) {
   const configured = Boolean(payload?.token_configured);
   state.quantApiConfigured = configured;
   state.quantApiReachable = true;
+  if (CLOUD_DEMO_MODE) {
+    els.quantStatus.className = "status-pill status-warn";
+    els.quantStatus.textContent = "Quant API：静态演示";
+    els.quantStatus.title = "GitHub Pages 版本不直接持有 token，也不调用真实 Quant API";
+    return;
+  }
   els.quantStatus.className = configured ? "status-pill status-ok" : "status-pill status-warn";
   els.quantStatus.textContent = configured ? "Quant API：已配置 token" : "Quant API：未配置 token";
   els.quantStatus.title = configured
@@ -447,7 +463,7 @@ function updateRefreshButton(loading) {
 }
 
 function withCacheBust(url) {
-  const parsed = new URL(url);
+  const parsed = new URL(url, window.location.href);
   parsed.searchParams.set("_", String(Date.now()));
   return parsed.toString();
 }
@@ -467,6 +483,13 @@ async function fetchWithTimeout(url, options = {}) {
 }
 
 async function checkLocalHealth() {
+  if (CLOUD_DEMO_MODE) {
+    updateConnectionStatus(true, {
+      cloud_registry: { status: "demo", label: "GitHub Pages Demo" },
+      local_flask: false,
+    });
+    return true;
+  }
   if (healthPromise) {
     return healthPromise;
   }
@@ -489,6 +512,13 @@ async function checkLocalHealth() {
 }
 
 async function checkQuantApiStatus() {
+  if (CLOUD_DEMO_MODE) {
+    updateQuantApiStatus({
+      token_configured: false,
+      base_url: "Static demo data",
+    });
+    return null;
+  }
   try {
     const response = await fetchWithTimeout(withCacheBust(`${API_BASE}/quant-api/status`));
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -502,6 +532,9 @@ async function checkQuantApiStatus() {
 }
 
 async function loadOfficialQuantFactors(quantStatus) {
+  if (CLOUD_DEMO_MODE) {
+    return [];
+  }
   if (!quantStatus?.token_configured) {
     return [];
   }
@@ -561,6 +594,28 @@ async function loadData() {
   state.isLoading = true;
   updateRefreshButton(true);
   try {
+    if (CLOUD_DEMO_MODE) {
+      const response = await fetchWithTimeout(withCacheBust(DEMO_LIBRARY_URL));
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const payload = await response.json();
+      const normalizedPayload = normalizePayload(payload);
+      state.rawFactors = normalizedPayload.factors || [];
+      updateConnectionStatus(true, payload);
+      updateQuantApiStatus({
+        token_configured: false,
+        base_url: "Static demo data",
+      });
+      els.errorPanel.classList.add("hidden");
+      renderTabs(normalizedPayload);
+      applyFilters();
+      syncDetailFromHash();
+      if (state.view === "detail") renderDetail();
+      if (state.view === "monitor") renderMonitor();
+      if (state.view === "strategy") renderStrategy();
+      if (state.view === "strategy-detail") renderStrategyDetail();
+      if (state.view === "tasks") renderTasks();
+      return;
+    }
     const healthy = await checkLocalHealth();
     if (!healthy) throw new Error("Local Flask service is offline");
     const quantStatus = await checkQuantApiStatus();
@@ -1655,6 +1710,24 @@ function removePendingFile(index) {
 
 async function loadAgentTasks() {
   if (state.agentTasksLoaded) return;
+  if (CLOUD_DEMO_MODE) {
+    state.agentTasks = [
+      {
+        task_id: "demo-cloud-factor-review",
+        status: "completed",
+        instruction: "GitHub Pages 展示模式：复核 WQ101 与 GTJA191 样例因子的复现状态。",
+        requested_at: "2026-07-06T00:00:00Z",
+        message: "静态演示任务，真实执行需要连接云端后端。",
+        is_placeholder: true,
+        current_gate: "G2",
+        progress: 100,
+      },
+    ];
+    state.agentTasksLoaded = true;
+    renderAgentTask();
+    if (state.view === "tasks") renderTasks();
+    return;
+  }
   try {
     const response = await fetchWithTimeout(withCacheBust(`${API_BASE}/agent-tasks`));
     if (!response.ok) return;
@@ -1668,6 +1741,9 @@ async function loadAgentTasks() {
 }
 
 async function submitTaskRequest(payload) {
+  if (CLOUD_DEMO_MODE) {
+    throw new Error("GitHub Pages demo mode is read-only. Deploy the Flask backend to enable Agent tasks.");
+  }
   // TODO(backend agent ready):
   //   switch this isolated function to the real agent task endpoint if needed.
   //   submitAgentTask should not need to change.
@@ -1725,6 +1801,10 @@ function openAgentTaskProgress(taskId) {
 
 async function deleteAgentTask(taskId) {
   if (!taskId) return;
+  if (CLOUD_DEMO_MODE) {
+    showToast("GitHub Pages demo mode is read-only");
+    return;
+  }
   const ok = window.confirm(`删除任务 ${taskId}？这会同时删除本地 request.json、status.json 和 artifacts 目录。`);
   if (!ok) return;
 
@@ -1749,6 +1829,9 @@ async function deleteAgentTask(taskId) {
 }
 
 async function deleteAgentTaskById(taskId) {
+  if (CLOUD_DEMO_MODE) {
+    throw new Error("GitHub Pages demo mode is read-only");
+  }
   const response = await fetch(`${API_BASE}/agent-tasks/${encodeURIComponent(taskId)}`, {
     method: "DELETE",
   });
@@ -1781,6 +1864,10 @@ async function deleteSelectedAgentTasks() {
 
 async function openAgentTaskFolder(taskId) {
   if (!taskId) return;
+  if (CLOUD_DEMO_MODE) {
+    showToast("GitHub Pages demo mode cannot open local folders");
+    return;
+  }
   try {
     const response = await fetch(`${API_BASE}/agent-tasks/${encodeURIComponent(taskId)}/open-folder`, {
       method: "POST",
