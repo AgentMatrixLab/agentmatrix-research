@@ -18,3 +18,5 @@ runtime/factor_lab/
 runtime/gtja191/
 .DS_Store
 gp_results.json
+runtime/qlib/factor_registry.json
+*.json

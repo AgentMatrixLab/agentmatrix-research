@@ -134,12 +134,15 @@ def export_from_gm_terminal(output_path: str) -> None:
     and exports the results.  Use this if you don't have a v78
     comparison CSV but do have the GM terminal running.
     """
-    # Import gm_factor_lib (requires GM SDK).
-    sys.path.insert(0, str(Path.home() / "Desktop" / "TYDQUANT" / "JQ2GM"))
+    import sys, os
+    from pathlib import Path
+
+    _gm_path = os.environ.get("JQ2GM_PATH",
+                              str(Path.home() / "Desktop" / "TYDQUANT" / "JQ2GM"))
+    sys.path.insert(0, _gm_path)
     from gm_factor_lib import calc_factors  # type: ignore[import]
 
-    # Load your stock list.
-    stocks_csv = Path.home() / "Desktop" / "TYDQUANT" / "JQ2GM" / "hs300.csv"
+    stocks_csv = Path(_gm_path) / "hs300.csv"
     if stocks_csv.exists():
         stocks = pd.read_csv(stocks_csv).iloc[:, 0].tolist()
     else:

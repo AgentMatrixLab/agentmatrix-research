@@ -373,11 +373,12 @@ def verify_gm(
             from gm.api import set_token as _set_token  # type: ignore[import]
             _set_token(gm_token)
         # Import gm_factor_lib from known paths
-        import sys as _sys
+        import sys as _sys, os as _os
         from pathlib import Path as _Path
         for _p in [
             _Path.home() / ".goldminer3" / "projects",
-            _Path.home() / "Desktop" / "TYDQUANT" / "JQ2GM",
+            _Path(_os.environ.get("JQ2GM_PATH",
+                  str(_Path.home() / "Desktop" / "TYDQUANT" / "JQ2GM"))),
         ]:
             if str(_p) not in _sys.path and _p.exists():
                 _sys.path.insert(0, str(_p))

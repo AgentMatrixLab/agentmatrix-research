@@ -50,11 +50,15 @@ _calc_factors = None
 try:
     # Path to gm_factor_lib in the CrossvalidationTYD project.
     # In production, users should symlink or pip-install gm_factor_lib.
-    import sys
+    import sys, os
     from pathlib import Path
 
-    _gm_lib_path = Path.home() / "Desktop" / "TYDQUANT" / "JQ2GM"
-    if str(_gm_lib_path) not in sys.path:
+    _gm_lib_path = os.environ.get(
+        "JQ2GM_PATH",
+        str(Path.home() / "Desktop" / "TYDQUANT" / "JQ2GM"),
+    )
+    _gm_lib_path = Path(_gm_lib_path)
+    if str(_gm_lib_path) not in sys.path and _gm_lib_path.exists():
         sys.path.insert(0, str(_gm_lib_path))
 
     from gm_factor_lib import calc_factors as _gm_calc_factors, GM_AVAILABLE as _GM_SDK_AVAILABLE  # type: ignore[import]
