@@ -2,6 +2,13 @@
 name: "alpha101-factor-research"
 description: "Builds and validates Alpha101 factors in factor_lab. Invoke when reproducing Alpha101, exporting proof artifacts, or preparing intern/agent research runs."
 ---
+## Environment Prerequisites
+
+Before running any command in this skill, confirm the execution environment:
+
+- **Shell**: All commands in this skill are written as **single lines** and run as-is in PowerShell, Git Bash, macOS, or Linux. **Do not split a command across multiple lines using backslash (`\`) continuation** — `\` works in Bash but fails in Windows PowerShell with `ParserError`. Always emit each command on one line.
+- **Python env**: Requires Python 3.10+ with dependencies installed (`pip install -r scripts/requirements.txt` and `pip install -r requirements-factor-lab.txt`). Use whatever Python already works on this machine — no special environment setup is needed.
+- **Working directory**: Run all commands from the project root (the folder containing `research_core/`, `contracts/`, `backend/`).
 
 # Alpha101 Factor Research
 
@@ -22,21 +29,25 @@ Do not use this skill to build UI pages. Front-end interaction belongs in the de
 
 ## Workflow
 
+Critical — pass panel parameters explicitly when generating and consuming demo truth.
+export-alpha101-truth-template and run-alpha101-proof-batch must use identical --n-dates, --n-codes, and --seed values. Their built-in defaults differ (160/seed 7 vs 420/seed 29), so relying on defaults produces mismatched data and fails.
+validate-alpha101-truth does not accept panel-shape arguments; it only validates the generated truth CSV before batch proof.
+
 1. Read the current `factor_lab` contracts, runtime layout, specs, and existing Alpha101 implementation.
 2. Preserve existing working paths such as `qlib_lab` and `gtja191_lab`; make additive changes.
 3. Export or refresh the Alpha101 spec and catalog:
 
    ```bash
-   python -m research_core.factor_lab.cli export-alpha101 --proof-factor alpha101
+   python -m research_core.factor_lab.cli export-alpha101 --proof-factor alpha1
    ```
 
-4. Export a truth CSV template when an external truth process is needed:
+4. Export a truth CSV template when preparing a truth-aligned proof run:
 
    ```bash
    python -m research_core.factor_lab.cli export-alpha101-truth-template --n-dates 420 --n-codes 8 --seed 29
    ```
 
-5. Validate the truth CSV before batch proof:
+5. Validate the generated truth CSV before batch proof:
 
    ```bash
    python -m research_core.factor_lab.cli validate-alpha101-truth --truth-csv data/factor_lab/alpha101_truth_template_101f_420d_8c_s29.csv
@@ -50,11 +61,13 @@ Do not use this skill to build UI pages. Front-end interaction belongs in the de
    python -m research_core.factor_lab.cli run-alpha101-demo --n-dates 420 --n-codes 8 --seed 29
    ```
 
-   Batch proof with aligned external truth:
+  Batch proof against **project-generated demo truth** (internal consistency only — hard-codes `data_source="demo"`, no external reference):
 
    ```bash
    python -m research_core.factor_lab.cli run-alpha101-proof-batch --truth-csv data/factor_lab/alpha101_truth_template_101f_420d_8c_s29.csv --n-dates 420 --n-codes 8 --seed 29
    ```
+   
+   > **Note:** Proves self-consistency, not correctness against an authority. A real external-truth comparison (JoinQuant/RiceQuant/public impl on the **same real data**) is a separate, not-yet-automated step. Until then, proof status is at most `partial`.
 
 7. Verify the generated artifacts:
 
