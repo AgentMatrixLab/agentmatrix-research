@@ -125,7 +125,17 @@ def _build_target_weights_for_date(
     top["target_weight"] = min(1.0 / max(1, len(top)), max_abs_weight)
     top["side"] = "long"
     if long_short:
-        bottom = cross_section.tail(top_n).copy()
+        leg_size = min(int(top_n), int(len(cross_section) // 2))
+        if leg_size < 1:
+            raise ValueError(
+                f"At least two securities are required for long_short targets on {selected_date.date()}"
+            )
+        top = cross_section.head(leg_size).copy()
+        long_codes = set(top["code"].astype(str))
+        bottom = cross_section.loc[~cross_section["code"].astype(str).isin(long_codes)].tail(leg_size).copy()
+        if bottom.empty:
+            raise ValueError(f"No non-overlapping short leg available for {selected_date.date()}")
+        top["side"] = "long"
         bottom["target_weight"] = -min(0.5 / max(1, len(bottom)), max_abs_weight)
         bottom["side"] = "short"
         top["target_weight"] = min(0.5 / max(1, len(top)), max_abs_weight)

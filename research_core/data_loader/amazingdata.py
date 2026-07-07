@@ -202,9 +202,11 @@ def select_symbols(
         SELECT k.symbol
         FROM {_qualified(config, config.price_table)} AS k
         INNER JOIN {_qualified(config, config.security_table)} AS s ON k.symbol = s.symbol
+        INNER JOIN {_qualified(config, config.status_table)} AS st
+            ON k.symbol = st.symbol AND k.trade_date = st.trade_date
         WHERE k.trade_date BETWEEN %(start)s AND %(end)s
           AND s.security_type = 'EQUITY'
-          AND s.is_listed = 1
+          AND st.is_listed = 1
           {universe_clause}
         GROUP BY k.symbol
         HAVING countDistinct(k.trade_date) >= %(min_rows)s
@@ -387,10 +389,15 @@ def fetch_amazingdata_panel(
             close,
             volume,
             amount
-        FROM {_qualified(cfg, cfg.price_table)}
-        WHERE symbol IN %(symbols)s
-          AND trade_date BETWEEN %(start)s AND %(end)s
-        ORDER BY symbol, trade_date
+        FROM {_qualified(cfg, cfg.price_table)} AS k
+        INNER JOIN {_qualified(cfg, cfg.security_table)} AS s ON k.symbol = s.symbol
+        INNER JOIN {_qualified(cfg, cfg.status_table)} AS st
+            ON k.symbol = st.symbol AND k.trade_date = st.trade_date
+        WHERE k.symbol IN %(symbols)s
+          AND k.trade_date BETWEEN %(start)s AND %(end)s
+          AND s.security_type = 'EQUITY'
+          AND st.is_listed = 1
+        ORDER BY k.symbol, k.trade_date
         """,
         {"symbols": tuple(selected_symbols), "start": query_start, "end": output_end},
     )

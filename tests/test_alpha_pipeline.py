@@ -20,12 +20,14 @@ from research_core.factor_lab.internal_validation import summarize_internal_vali
 from research_core.factor_lab.runtime import FactorLabWorkspaceConfig
 import research_core.factor_lab.service as factor_lab_service
 from research_core.factor_lab.service import run_factor_set_research_job
-from research_core.strategy_engine.alpha_strategy import build_alpha_strategy_package
+from research_core.strategy_engine.alpha_strategy import build_alpha_strategy_package, build_target_weights
 
 
 class FakeClickHouseClient:
     def __init__(self):
         self.selection_params = []
+        self.selection_sql = ""
+        self.fetch_sql = ""
 
     def execute(self, sql, params=None):
         if "SELECT 1" in sql:
@@ -33,9 +35,11 @@ class FakeClickHouseClient:
         if "countDistinct(trade_date)" in sql:
             return [(4,)]
         if "SELECT k.symbol" in sql:
+            self.selection_sql = sql
             self.selection_params.append(params or {})
             return [("000001.SZ",), ("000002.SZ",)]
         if "SELECT" in sql and "trade_date AS date" in sql:
+            self.fetch_sql = sql
             dates = pd.date_range("2024-01-01", periods=5, freq="B")
             rows = []
             for code, base in [("000001.SZ", 10.0), ("000002.SZ", 20.0)]:
@@ -64,6 +68,10 @@ def test_amazingdata_fake_client_fetch_and_quality(monkeypatch):
     assert quality.n_codes == 2
     assert "universe_symbols" in client.selection_params[0]
     assert "000001.SZ" in client.selection_params[0]["universe_symbols"]
+    assert "ods_security_status_daily" in client.selection_sql
+    assert "st.is_listed = 1" in client.selection_sql
+    assert "s.is_listed = 1" not in client.selection_sql
+    assert "ods_security_status_daily" in client.fetch_sql
 
 
 def test_normalize_price_panel_drops_duplicates_and_flags_missing():
@@ -180,6 +188,23 @@ def test_lifecycle_transition_requires_approval_for_live_ready():
         assert "approvals" in str(exc)
     else:
         raise AssertionError("live_ready should require approval evidence")
+
+
+def test_long_short_targets_do_not_overlap_when_top_n_exceeds_half_universe():
+    scores = pd.DataFrame(
+        {
+            "date": ["2024-01-02"] * 6,
+            "code": [f"stock_{idx}" for idx in range(6)],
+            "alpha_score": [6, 5, 4, 3, 2, 1],
+        }
+    )
+    targets = build_target_weights(scores, as_of="2024-01-02", top_n=5, long_short=True)
+    assert not targets.duplicated(["date", "code"]).any()
+    long_codes = set(targets.loc[targets["side"] == "long", "code"])
+    short_codes = set(targets.loc[targets["side"] == "short", "code"])
+    assert long_codes.isdisjoint(short_codes)
+    assert len(long_codes) == 3
+    assert len(short_codes) == 3
 
 
 def test_strategy_and_external_package_from_validated_run(tmp_path):
