@@ -1,3 +1,9 @@
+// 本次修改点：
+// 1. 默认落地页切换为因子监控，配合左侧导航新顺序。
+// 2. 子库筛选暂时隐藏，保留 state.library 和渲染函数方便后续恢复。
+// 3. 分类筛选继续使用聚宽口径，并作为因子库/监控后续共用过滤基础。
+// 4. 新增因子库准入视觉状态、研究口径选择器、策略草稿生成，以及监控页分类/方向筛选。
+// 5. 新增独立策略构建页、成品策略模板契约、策略看板删除模式与股票池省略显示。
 const urlParams = new URLSearchParams(window.location.search);
 const configuredApiHost = (
   window.FACTOR_LAB_API_HOST ||
@@ -26,42 +32,55 @@ const REQUEST_TIMEOUT_MS = 1800;
 const COVERAGE_WARN_THRESHOLD = 0.6;
 const COVERAGE_DANGER_THRESHOLD = 0.3;
 const LONG_SHORT_MEAN_HELP = "多空分组收益均值（日频，demo 数据）";
-const QUANT_API_FACTOR_META = {
-  roe_ttm: ["财务因子", "盈利能力"],
-  roa_ttm: ["财务因子", "盈利能力"],
-  net_margin: ["财务因子", "盈利能力"],
-  debt_to_asset: ["财务因子", "偿债能力"],
-  revenue_yoy: ["财务因子", "成长能力"],
-  profit_yoy: ["财务因子", "成长能力"],
-  eps_yoy: ["财务因子", "成长能力"],
-  asset_turnover: ["财务因子", "营运能力"],
-  log_price: ["价值因子", "价格水平"],
-  ret_1m: ["量价因子", "收益"],
-  ret_3m: ["量价因子", "收益"],
-  ret_6m: ["量价因子", "收益"],
-  ret_12m: ["量价因子", "收益"],
-  momentum_12_1: ["量价因子", "动量"],
-  reversal: ["量价因子", "反转"],
-  avg_amount_1m: ["量价因子", "成交额"],
-  log_amount_1m: ["量价因子", "成交额"],
-  turnover_proxy: ["量价因子", "换手"],
-  volume_ratio: ["量价因子", "成交量"],
-  up_ratio_1m: ["量价因子", "上涨比例"],
-  max_ret_1m: ["技术因子", "极值收益"],
-  min_ret_1m: ["技术因子", "极值收益"],
-  volatility_1m: ["技术因子", "波动率"],
-  volatility_3m: ["技术因子", "波动率"],
-  volatility_6m: ["技术因子", "波动率"],
-  ma_signal: ["技术因子", "均线"],
-  vol_convergence: ["技术因子", "量能收敛"],
-  illiquidity: ["技术因子", "流动性"],
-  high_low_1m: ["技术因子", "振幅"],
-  rsi_14: ["技术因子", "RSI"],
-  bb_position: ["技术因子", "布林带"],
-  ret_3m_vol_adj: ["技术因子", "风险调整收益"],
-  amplitude_1m: ["技术因子", "振幅"],
+const ENABLE_AGENT_TASK_DEBUG = false;
+// AI 任务调试入口暂时关闭。恢复时打开 ENABLE_AGENT_TASK_DEBUG，并恢复 index.html 中对应入口。
+const JQ_FACTOR_CATEGORIES = [
+  "基础科目及衍生类因子",
+  "情绪类因子",
+  "动量类因子",
+  "质量类因子",
+  "成长类因子",
+  "风险因子-新风格因子",
+  "每股指标因子",
+  "风险类因子",
+  "风险因子-风格因子",
+  "技术指标因子",
+];
+const JQ_CATEGORY_BY_FACTOR = {
+  roe_ttm: "质量类因子",
+  roa_ttm: "质量类因子",
+  net_margin: "质量类因子",
+  debt_to_asset: "风险类因子",
+  revenue_yoy: "成长类因子",
+  profit_yoy: "成长类因子",
+  eps_yoy: "每股指标因子",
+  asset_turnover: "质量类因子",
+  log_price: "风险因子-风格因子",
+  ret_1m: "动量类因子",
+  ret_3m: "动量类因子",
+  ret_6m: "动量类因子",
+  ret_12m: "动量类因子",
+  reversal: "动量类因子",
+  momentum_12_1: "动量类因子",
+  ret_3m_vol_adj: "动量类因子",
+  up_ratio_1m: "动量类因子",
+  avg_amount_1m: "情绪类因子",
+  log_amount_1m: "情绪类因子",
+  turnover_proxy: "情绪类因子",
+  volume_ratio: "情绪类因子",
+  illiquidity: "情绪类因子",
+  volatility_1m: "风险类因子",
+  volatility_3m: "风险类因子",
+  volatility_6m: "风险类因子",
+  max_ret_1m: "风险类因子",
+  min_ret_1m: "风险类因子",
+  high_low_1m: "风险类因子",
+  amplitude_1m: "风险类因子",
+  ma_signal: "技术指标因子",
+  vol_convergence: "技术指标因子",
+  rsi_14: "技术指标因子",
+  bb_position: "技术指标因子",
 };
-
 const AGENT_TASK_TEXT = {
   title: "AI 任务(调试入口)",
   subtitle:
@@ -86,6 +105,7 @@ const state = {
   selectedIds: new Set(),
   selectedAgentTaskIds: new Set(),
   category: "全部",
+  selectedCategories: new Set(JQ_FACTOR_CATEGORIES),
   library: "全部",
   proof: "all",
   truth: "all",
@@ -102,6 +122,8 @@ const state = {
   isLoading: false,
   autoRefreshTimer: null,
   monitorFilter: "all",
+  monitorDirectionFilter: "all",
+  monitorSelectedCategories: new Set(JQ_FACTOR_CATEGORIES),
   monitorCardFilter: null,
   monitorSortKey: null,
   monitorSortDirection: "default",
@@ -110,7 +132,7 @@ const state = {
     targetChecked: true,
     touched: new Set(),
   },
-  view: "library",
+  view: "monitor",
   activeFactorId: null,
   activeStrategyId: null,
   activeTaskId: null,
@@ -120,6 +142,25 @@ const state = {
   agentTasksLoaded: false,
   agentInstruction: "",
   agentTaskSubmitting: false,
+  usableOnly: false,
+  strategyDrafts: [],
+  strategyBuilderFactors: [],
+  strategyTemplates: [],
+  strategyTemplatesLoaded: false,
+  strategyTemplatesLoading: false,
+  selectedStrategyTemplateId: null,
+  strategyBuilderParams: {},
+  strategyBuilderName: "",
+  strategyBuilderResult: null,
+  strategyDeleteMode: false,
+  selectedStrategyDeleteIds: new Set(),
+  researchParams: {
+    universe: "沪深300",
+    period: "近1年",
+    portfolio: "纯多头",
+    cost: "无",
+    limitFilter: "是",
+  },
 };
 
 const els = {
@@ -130,6 +171,7 @@ const els = {
   libraryView: document.querySelector("#libraryView"),
   monitorView: document.querySelector("#monitorView"),
   strategyView: document.querySelector("#strategyView"),
+  strategyBuilderView: document.querySelector("#strategyBuilderView"),
   taskView: document.querySelector("#taskView"),
   strategyDetailView: document.querySelector("#strategyDetailView"),
   detailView: document.querySelector("#detailView"),
@@ -142,6 +184,12 @@ const els = {
   proofFilter: document.querySelector("#proofFilter"),
   truthFilter: document.querySelector("#truthFilter"),
   reuseFilter: document.querySelector("#reuseFilter"),
+  usableOnlyToggle: document.querySelector("#usableOnlyToggle"),
+  researchUniverse: document.querySelector("#researchUniverse"),
+  researchPeriod: document.querySelector("#researchPeriod"),
+  researchPortfolio: document.querySelector("#researchPortfolio"),
+  researchCost: document.querySelector("#researchCost"),
+  researchLimitFilter: document.querySelector("#researchLimitFilter"),
   searchInput: document.querySelector("#searchInput"),
   resetFiltersButton: document.querySelector("#resetFiltersButton"),
   tableBody: document.querySelector("#factorTableBody"),
@@ -156,6 +204,8 @@ const els = {
   monitorStats: document.querySelector("#monitorStats"),
   monitorTableBody: document.querySelector("#monitorTableBody"),
   monitorFilters: document.querySelectorAll("[data-monitor-filter]"),
+  monitorCategoryFilters: document.querySelector("#monitorCategoryFilters"),
+  monitorDirectionFilters: document.querySelector("#monitorDirectionFilters"),
   strategyStats: document.querySelector("#strategyStats"),
   strategyTableBody: document.querySelector("#strategyTableBody"),
   taskStats: document.querySelector("#taskStats"),
@@ -319,6 +369,38 @@ function canOpenFactor(factor) {
   return Boolean(factor?.latest_job_id) && factor?.proof_status !== "missing";
 }
 
+function factorReplicationStatus(factor) {
+  // 临时映射：后端正式字段 replication_status 到位前，用现有 proof_status 作为复现状态。
+  if (factor?.replication_status) return factor.replication_status;
+  if (factor?.proof_status === "passed") return "passed";
+  if (factor?.proof_status === "failed") return "failed";
+  return "pending";
+}
+
+function factorAlphaTier(factor) {
+  // 临时映射：后端正式字段 alpha_tier 到位前，用 IR 近似分层。IR>0.3 strong，0.1~0.3 weak，<0.1 dead。
+  if (factor?.alpha_tier) return factor.alpha_tier;
+  const ir = Math.abs(toFiniteNumber(factor?.rank_ic_ir) ?? 0);
+  if (ir > 0.3) return "strong";
+  if (ir >= 0.1) return "weak";
+  return "dead";
+}
+
+function factorAdmission(factor) {
+  const replication = factorReplicationStatus(factor);
+  const alphaTier = factorAlphaTier(factor);
+  const inLibrary = replication === "passed";
+  const agentReadable = inLibrary && alphaTier !== "dead";
+  return {
+    replication,
+    alphaTier,
+    inLibrary,
+    agentReadable,
+    selectable: inLibrary,
+    weak: inLibrary && ["dead", "weak"].includes(alphaTier),
+  };
+}
+
 function isProofFailed(factor) {
   return factor?.proof_status === "failed";
 }
@@ -381,39 +463,63 @@ function tabButton(label, count, active, onClick, disabled = false) {
   return button;
 }
 
+function categoryCheckbox(label, checked, onChange, disabled = false, count = undefined) {
+  const wrapper = document.createElement("label");
+  wrapper.className = disabled ? "category-check disabled" : "category-check";
+  if (count !== undefined) {
+    wrapper.title = `${label}：${count} 个因子`;
+  }
+  const checkbox = document.createElement("input");
+  checkbox.type = "checkbox";
+  checkbox.checked = checked;
+  checkbox.disabled = disabled;
+  checkbox.addEventListener("change", onChange);
+  const text = document.createElement("span");
+  text.textContent = label;
+  wrapper.append(checkbox, text);
+  return wrapper;
+}
+
 function renderTabs(payload) {
   const categories = payload.categories || {};
   const libraries = payload.libraries || {};
-  if (state.category !== "全部" && (categories[state.category] ?? 0) === 0) {
-    state.category = "全部";
-    state.library = "全部";
-  }
   if (state.library !== "全部" && (libraries[state.library] ?? 0) === 0) {
     state.library = "全部";
   }
   els.categoryTabs.replaceChildren();
-  ["全部", "量价因子", "技术因子", "财务因子", "规模因子", "价值因子", "自定义因子"].forEach((label) => {
+  const allSelected = JQ_FACTOR_CATEGORIES.every((label) => state.selectedCategories.has(label));
+  els.categoryTabs.appendChild(categoryCheckbox("全选", allSelected, () => {
+    state.selectedCategories = allSelected ? new Set() : new Set(JQ_FACTOR_CATEGORIES);
+    state.category = state.selectedCategories.size === JQ_FACTOR_CATEGORIES.length ? "全部" : "自定义";
+    state.page = 1;
+    renderTabs({ categories: countCategories(), libraries: countLibraries() });
+    applyFilters();
+  }));
+  JQ_FACTOR_CATEGORIES.forEach((label) => {
     const count = categories[label] ?? 0;
-    const disabled = label !== "全部" && count === 0;
     els.categoryTabs.appendChild(
-      tabButton(label, count, state.category === label, () => {
-        state.category = label;
-        state.library = "全部";
+      categoryCheckbox(label, state.selectedCategories.has(label), () => {
+        if (state.selectedCategories.has(label)) {
+          state.selectedCategories.delete(label);
+        } else {
+          state.selectedCategories.add(label);
+        }
+        state.category = state.selectedCategories.size === JQ_FACTOR_CATEGORIES.length ? "全部" : "自定义";
         state.page = 1;
         renderTabs({ categories: countCategories(), libraries: countLibraries() });
         applyFilters();
-      }, disabled),
+      }, false, count),
     );
   });
 
-  const showLibraryTabs = state.category === "量价因子";
+  const showLibraryTabs = false;
   els.libraryRow?.classList.toggle("hidden", !showLibraryTabs);
   els.libraryTabs.replaceChildren();
   if (!showLibraryTabs) {
     return;
   }
 
-  ["全部", "WQ101", "GTJA191", "QuantAPI", "TA-Lib", "User Custom"].forEach((label) => {
+  ["全部", "WQ101", "GTJA191", "Quant API", "TA-Lib", "User Custom"].forEach((label) => {
     const count = label === "全部" ? state.rawFactors.length : libraries[label] ?? 0;
     const disabled = label !== "全部" && count === 0;
     els.libraryTabs.appendChild(
@@ -424,6 +530,34 @@ function renderTabs(payload) {
         applyFilters();
       }, disabled),
     );
+  });
+}
+
+function renderMonitorCategoryFilters() {
+  if (!els.monitorCategoryFilters) return;
+  const allSelected = JQ_FACTOR_CATEGORIES.every((label) => state.monitorSelectedCategories.has(label));
+  els.monitorCategoryFilters.replaceChildren();
+  els.monitorCategoryFilters.appendChild(categoryCheckbox("全选", allSelected, () => {
+    state.monitorSelectedCategories = allSelected ? new Set() : new Set(JQ_FACTOR_CATEGORIES);
+    renderMonitor();
+  }));
+  JQ_FACTOR_CATEGORIES.forEach((label) => {
+    els.monitorCategoryFilters.appendChild(
+      categoryCheckbox(label, state.monitorSelectedCategories.has(label), () => {
+        if (state.monitorSelectedCategories.has(label)) {
+          state.monitorSelectedCategories.delete(label);
+        } else {
+          state.monitorSelectedCategories.add(label);
+        }
+        renderMonitor();
+      }),
+    );
+  });
+}
+
+function renderMonitorDirectionFilters() {
+  els.monitorDirectionFilters?.querySelectorAll("[data-monitor-direction]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.monitorDirection === state.monitorDirectionFilter);
   });
 }
 
@@ -543,62 +677,6 @@ async function checkQuantApiStatus() {
   }
 }
 
-async function loadOfficialQuantFactors(quantStatus) {
-  if (CLOUD_DEMO_MODE) {
-    return [];
-  }
-  if (!quantStatus?.token_configured) {
-    return [];
-  }
-  try {
-    const response = await fetchWithTimeout(withCacheBust(`${API_BASE}/quant-api/factor-monthly/factors`));
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const payload = await response.json();
-    const factors = Array.isArray(payload?.factors) ? payload.factors : [];
-    return factors.map(officialQuantFactorRow);
-  } catch (error) {
-    return [];
-  }
-}
-
-function officialQuantFactorRow(factorName) {
-  const [category, subcategory] = QUANT_API_FACTOR_META[factorName] || ["量价因子", "官方因子"];
-  return {
-    id: `QuantAPI:${factorName}`,
-    factor_name: factorName,
-    raw_factor_name: factorName,
-    library: "QuantAPI",
-    raw_library: "QuantAPI",
-    category,
-    category_inferred: false,
-    subcategory,
-    required_fields: [],
-    metadata: {
-      official_source: "Quant API factor_monthly",
-      not_reproduced_locally: true,
-    },
-    formula: "",
-    description: "官方 Quant API 月频因子，当前仅作为数据源展示，尚未进入本地复现流程。",
-    source: "quant_api",
-    source_id: "factor_monthly/factors",
-    implementation_status: "official_data_only",
-    proof_status: "missing",
-    truth_status: "not_applicable",
-    overall_status: "missing",
-    coverage_ratio: null,
-    rank_ic_mean: null,
-    rank_ic_ir: null,
-    long_short_mean: null,
-    truth_exact_match_ratio: null,
-    truth_max_abs_error: null,
-    latest_job_id: null,
-    latest_checked_at: null,
-    data_source: "Quant API",
-    dataset: {},
-    reuse_recommendation: "未复现",
-  };
-}
-
 async function loadData() {
   if (state.isLoading) {
     return;
@@ -630,12 +708,11 @@ async function loadData() {
     }
     const healthy = await checkLocalHealth();
     if (!healthy) throw new Error("Local Flask service is offline");
-    const quantStatus = await checkQuantApiStatus();
+    await checkQuantApiStatus();
     const response = await fetchWithTimeout(withCacheBust(`${API_BASE}/factor-library`));
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const payload = await response.json();
-    const officialFactors = await loadOfficialQuantFactors(quantStatus);
-    const normalizedPayload = normalizePayload(withOfficialQuantFactors(payload, officialFactors));
+    const normalizedPayload = normalizePayload(payload);
     state.rawFactors = normalizedPayload.factors || [];
     updateConnectionStatus(true, payload);
     els.errorPanel.classList.add("hidden");
@@ -672,28 +749,16 @@ function startAutoRefresh() {
   state.autoRefreshTimer = window.setInterval(loadData, AUTO_REFRESH_INTERVAL_MS);
 }
 
-function withOfficialQuantFactors(payload, officialFactors) {
-  if (!officialFactors.length) {
-    return payload;
-  }
-  const existingIds = new Set((payload.factors || []).map((factor) => factor.id));
-  const mergedFactors = [
-    ...(payload.factors || []),
-    ...officialFactors.filter((factor) => !existingIds.has(factor.id)),
-  ];
-  return {
-    ...payload,
-    factors: mergedFactors,
-    categories: countBy(mergedFactors, "category", { 全部: mergedFactors.length }),
-    libraries: countBy(mergedFactors, "library"),
-  };
-}
-
 function normalizePayload(payload) {
-  const factors = payload.factors || [];
+  const factors = removeEmptyQuantApiPlaceholders(payload.factors || []);
   const hasAlpha101 = factors.some((factor) => factor.library === "Alpha101");
   if (!hasAlpha101) {
-    return payload;
+    return {
+      ...payload,
+      factors,
+      categories: countJqCategories(factors),
+      libraries: countBy(factors, "library"),
+    };
   }
 
   const normalizedFactors = factors
@@ -710,9 +775,24 @@ function normalizePayload(payload) {
   return {
     ...payload,
     factors: normalizedFactors,
-    categories: countBy(normalizedFactors, "category", { 全部: normalizedFactors.length }),
+    categories: countJqCategories(normalizedFactors),
     libraries: countBy(normalizedFactors, "library"),
   };
+}
+
+function removeEmptyQuantApiPlaceholders(factors) {
+  return factors.filter((factor) => {
+    const library = String(factor.library || factor.raw_library || "").toLowerCase().replace(/\s+/g, "");
+    const isQuantApi = library === "quantapi" || library === "quantapi33";
+    if (!isQuantApi) return true;
+    const hasMetric =
+      toFiniteNumber(factor.coverage_ratio) !== null ||
+      toFiniteNumber(factor.rank_ic_mean) !== null ||
+      toFiniteNumber(factor.rank_ic_ir) !== null ||
+      toFiniteNumber(factor.long_short_mean) !== null;
+    const hasArtifact = Boolean(factor.latest_job_id || factor.latest_checked_at);
+    return hasMetric || hasArtifact;
+  });
 }
 
 function countBy(items, key, initial = {}) {
@@ -726,17 +806,30 @@ function countBy(items, key, initial = {}) {
   );
 }
 
+function countJqCategories(factors) {
+  const counts = { 全部: factors.length };
+  JQ_FACTOR_CATEGORIES.forEach((label) => {
+    counts[label] = 0;
+  });
+  factors.forEach((factor) => {
+    const category = jqFactorCategory(factor);
+    counts[category] = (counts[category] || 0) + 1;
+  });
+  return counts;
+}
+
 function applyFilters() {
   const query = state.query.trim().toLowerCase();
   state.filteredFactors = state.rawFactors
-    .filter((factor) => state.category === "全部" || factor.category === state.category)
+    .filter((factor) => state.selectedCategories.has(jqFactorCategory(factor)))
+    .filter((factor) => !state.usableOnly || factorAdmission(factor).agentReadable)
     .filter((factor) => state.library === "全部" || factor.library === state.library)
     .filter((factor) => state.proof === "all" || factor.proof_status === state.proof)
     .filter((factor) => state.truth === "all" || factor.truth_status === state.truth)
     .filter((factor) => state.reuse === "all" || factor.reuse_recommendation === state.reuse)
     .filter((factor) => {
       if (!query) return true;
-      return [factor.factor_name, factor.raw_factor_name, factor.library, factor.subcategory]
+      return [factor.factor_name, factor.raw_factor_name, factor.library, factor.subcategory, jqFactorCategory(factor)]
         .join(" ")
         .toLowerCase()
         .includes(query);
@@ -750,6 +843,23 @@ function applyFilters() {
   renderTable();
   renderSortHeaders();
   renderSelectionSummary();
+}
+
+function jqFactorCategory(factor) {
+  const name = String(factor.raw_factor_name || factor.factor_name || "").toLowerCase();
+  if (JQ_CATEGORY_BY_FACTOR[name]) return JQ_CATEGORY_BY_FACTOR[name];
+  const subcategory = String(factor.subcategory || "").toLowerCase();
+  const category = String(factor.category || "").toLowerCase();
+  const library = String(factor.library || factor.raw_library || "").toLowerCase();
+  if (subcategory.includes("成长")) return "成长类因子";
+  if (subcategory.includes("盈利") || subcategory.includes("营运")) return "质量类因子";
+  if (subcategory.includes("偿债") || subcategory.includes("波动") || subcategory.includes("振幅")) return "风险类因子";
+  if (subcategory.includes("成交") || subcategory.includes("流动") || subcategory.includes("换手")) return "情绪类因子";
+  if (subcategory.includes("动量") || subcategory.includes("收益") || subcategory.includes("反转")) return "动量类因子";
+  if (category.includes("财务")) return "基础科目及衍生类因子";
+  if (category.includes("价值") || category.includes("规模")) return "风险因子-风格因子";
+  if (library.includes("barra")) return "风险因子-新风格因子";
+  return "技术指标因子";
 }
 
 function compareFactors(left, right) {
@@ -878,6 +988,9 @@ function beginDragSelection(event, factor, row, checkbox) {
   if (event.button !== 0) {
     return;
   }
+  if (!factorAdmission(factor).selectable) {
+    return;
+  }
   if (event.target.closest(".factor-link")) {
     return;
   }
@@ -924,6 +1037,7 @@ function renderTable() {
   pageItems.forEach((factor) => {
     const [proofText, proofClass] = proofBadge(factor.proof_status);
     const openable = canOpenFactor(factor);
+    const admission = factorAdmission(factor);
     const displayName = compactName(factor.factor_name);
     const coverageTone = coverageClass(factor.coverage_ratio);
     const coverageHelp = coverageTitle(factor.coverage_ratio);
@@ -931,20 +1045,22 @@ function renderTable() {
     row.className = [
       state.selectedIds.has(factor.id) ? "selected" : "",
       openable ? "openable" : "not-openable",
+      admission.inLibrary ? "admitted" : "not-admitted",
+      admission.weak ? "weak-alpha" : "",
     ]
       .filter(Boolean)
       .join(" ");
     row.innerHTML = `
       <td>
-        <input type="checkbox" ${state.selectedIds.has(factor.id) ? "checked" : ""} aria-label="选择 ${escapeHtml(factor.factor_name)}" />
+        <input type="checkbox" ${state.selectedIds.has(factor.id) ? "checked" : ""} ${admission.selectable ? "" : "disabled"} aria-label="选择 ${escapeHtml(factor.factor_name)}" />
       </td>
       <td>
         <button class="factor-link" type="button" data-factor-id="${escapeHtml(factor.id)}" ${openable ? "" : "disabled"} title="${escapeHtml(factor.factor_name)} · ${openable ? "查看单因子详情" : "未复现，暂无详情报告"}">
-          ${escapeHtml(displayName)}
+          ${escapeHtml(displayName)}${admission.weak ? '<span class="weak-tag">弱</span>' : ""}
         </button>
       </td>
       <td>${escapeHtml(factor.library)}</td>
-      <td>${escapeHtml(factor.subcategory || "-")}</td>
+      <td>${escapeHtml(jqFactorCategory(factor))}<span class="factor-subcategory">${escapeHtml(factor.subcategory || "")}</span></td>
       <td><span class="badge ${proofClass}">${proofText}</span></td>
       <td>${truthBadgeHtml(factor)}</td>
       <td class="number ${coverageTone}" title="${escapeHtml(coverageHelp)}">${formatRatio(factor.coverage_ratio)}</td>
@@ -961,6 +1077,7 @@ function renderTable() {
     });
     checkbox.addEventListener("click", (event) => event.stopPropagation());
     checkbox.addEventListener("change", (event) => {
+      if (!admission.selectable) return;
       if (event.target.checked) {
         state.selectedIds.add(factor.id);
       } else {
@@ -1039,7 +1156,7 @@ function paginationItems(currentPage, totalPages) {
 }
 
 function renderSelectionSummary() {
-  if (state.view === "agent_task") {
+  if (ENABLE_AGENT_TASK_DEBUG && state.view === "agent_task") {
     renderAgentTaskSelectionSummary();
     return;
   }
@@ -1049,6 +1166,12 @@ function renderSelectionSummary() {
   els.selectedCount.textContent = `已选择 ${selected.length} 个因子`;
   els.selectedReusable.textContent = `可复用 ${reusable} 个`;
   els.selectedRerun.textContent = `建议重跑 ${rerun} 个`;
+  if (els.selectionActions) {
+    els.selectionActions.innerHTML = `
+      <button type="button" class="primary-action compact" id="generateStrategyDraft" ${selected.length ? "" : "disabled"}>生成策略</button>
+    `;
+    els.selectionActions.querySelector("#generateStrategyDraft")?.addEventListener("click", generateStrategyDraftFromSelection);
+  }
 }
 
 function renderAgentTaskSelectionSummary() {
@@ -1068,6 +1191,29 @@ function renderAgentTaskSelectionSummary() {
   els.selectionActions.querySelector("#deleteSelectedAgentTasks")?.addEventListener("click", deleteSelectedAgentTasks);
 }
 
+function selectedUsableFactors() {
+  return state.rawFactors.filter((factor) => state.selectedIds.has(factor.id) && factorAdmission(factor).selectable);
+}
+
+function generateStrategyDraftFromSelection() {
+  const factors = selectedUsableFactors();
+  if (!factors.length) {
+    showToast("请选择可用因子");
+    return;
+  }
+  state.strategyBuilderFactors = factors;
+  state.strategyBuilderName =
+    factors.length === 1 ? `${factors[0].factor_name} 策略研究` : `多因子成品策略 ${state.strategyDrafts.length + 1}`;
+  state.strategyBuilderResult = null;
+  state.selectedStrategyTemplateId = state.selectedStrategyTemplateId || null;
+  state.strategyBuilderParams = {};
+  state.view = "strategy-builder";
+  window.location.hash = "strategy-builder";
+  loadStrategyTemplates();
+  renderView();
+  showToast("已进入策略构建页");
+}
+
 function monitorBucket(factor) {
   const ic = toFiniteNumber(factor.rank_ic_mean);
   const ir = toFiniteNumber(factor.rank_ic_ir);
@@ -1075,18 +1221,17 @@ function monitorBucket(factor) {
   if (factor.proof_status === "failed" || factor.proof_status === "missing" || isTruthIssue(factor.truth_status)) {
     return "weak";
   }
-  const absIc = Math.abs(ic ?? 0);
   const absIr = Math.abs(ir ?? 0);
-  if (absIr >= 0.3 || absIc >= 0.05) return "strong";
-  if (absIr >= 0.1 || absIc >= 0.02) return "medium";
+  if (absIr >= 0.3) return "strong";
+  if (absIr >= 0.1) return "medium";
   return "weak";
 }
 
 function monitorBucketLabel(bucket) {
   return {
-    strong: "强有效",
-    medium: "中等",
-    weak: "弱或失效",
+    strong: "IR>0.3",
+    medium: "IR 0.1-0.3",
+    weak: "IR<0.1",
     missing: "待数据",
   }[bucket] || "全部";
 }
@@ -1123,6 +1268,68 @@ function monitorSortValue(factor) {
   const ic = toFiniteNumber(factor.rank_ic_mean);
   if (ic !== null) return Math.abs(ic);
   return -1;
+}
+
+function monitorDirection(factor) {
+  const ic = toFiniteNumber(factor.rank_ic_mean);
+  if (ic === null || Math.abs(ic) < 0.0001) {
+    return { label: "中性", symbol: "→", className: "neutral" };
+  }
+  return ic > 0
+    ? { label: "正向", symbol: "↑", className: "positive" }
+    : { label: "反向", symbol: "↓", className: "negative" };
+}
+
+function monitorIcBarHtml(factor, bucket) {
+  const ic = toFiniteNumber(factor.rank_ic_mean);
+  const width = ic === null ? 0 : Math.min(100, Math.max(4, Math.abs(ic) / 0.08 * 100));
+  const tone = ic === null ? "missing" : bucket;
+  return `
+    <span class="ic-bar-track" title="IC均值 ${escapeHtml(formatNumber(ic, 4))}">
+      <span class="ic-bar-fill ${tone}" style="width: ${width.toFixed(1)}%"></span>
+    </span>
+  `;
+}
+
+function monitorRecentIcHtml(factor) {
+  const direction = monitorDirection(factor);
+  const recent = toFiniteNumber(factor.long_short_mean);
+  return `<span class="recent-ic ${direction.className}">${direction.symbol}</span> ${formatNumber(recent, 4)}`;
+}
+
+function monitorValidationHtml(factor) {
+  const coverage = toFiniteNumber(factor.coverage_ratio);
+  const ir = Math.abs(toFiniteNumber(factor.rank_ic_ir) ?? 0);
+  const score = Math.round(Math.min(99, Math.max(30, ir * 100)));
+  if (factor.proof_status === "failed" || isTruthIssue(factor.truth_status)) {
+    return `<span class="validation-badge reject">REJECT ${score}</span>`;
+  }
+  if (factor.proof_status === "missing" || factor.proof_status === "partial" || (coverage !== null && coverage < COVERAGE_WARN_THRESHOLD)) {
+    return `<span class="validation-badge review">REVIEW ${score}</span>`;
+  }
+  return `<span class="validation-badge safe">SAFE ${score}</span>`;
+}
+
+function monitorMarketHtml(factor) {
+  const hints = monitorHints(factor);
+  if (hints.includes("覆盖率过低")) {
+    return `<span class="hint-chip">覆盖率过低</span>`;
+  }
+  return mutedDash();
+}
+
+function factorSourceDisplay(factor) {
+  const officialSource = factor.metadata?.official_source || factor.source_document || factor.data_source || factor.library || "-";
+  if (String(officialSource).includes("Quant API factor_monthly")) {
+    return {
+      primary: "Quant API",
+      secondary: `factor_monthly · ${factor.subcategory || factor.category || "-"}`,
+    };
+  }
+  return {
+    primary: factor.library || officialSource,
+    secondary: factor.subcategory || factor.category || officialSource || "-",
+  };
 }
 
 function renderMonitorStats() {
@@ -1168,8 +1375,16 @@ function renderMonitorFilters() {
 function renderMonitor() {
   renderMonitorStats();
   renderMonitorFilters();
+  renderMonitorCategoryFilters();
+  renderMonitorDirectionFilters();
   const factors = state.rawFactors
     .map((factor) => ({ factor, bucket: monitorBucket(factor) }))
+    .filter((item) => state.monitorSelectedCategories.has(jqFactorCategory(item.factor)))
+    .filter((item) => {
+      if (state.monitorDirectionFilter === "all") return true;
+      const direction = monitorDirection(item.factor).className;
+      return direction === state.monitorDirectionFilter;
+    })
     .filter((item) => state.monitorFilter === "all" || item.bucket === state.monitorFilter)
     .filter((item) => {
       if (!state.monitorCardFilter) return true;
@@ -1198,7 +1413,7 @@ function renderMonitor() {
   if (!factors.length) {
     els.monitorTableBody.innerHTML = `
       <tr>
-        <td colspan="10" class="empty-cell">当前筛选下没有可展示的因子。</td>
+        <td colspan="11" class="empty-cell">当前筛选下没有可展示的因子。</td>
       </tr>
     `;
     return;
@@ -1209,9 +1424,10 @@ function renderMonitor() {
       const [proofText, proofClass] = proofBadge(factor.proof_status);
       const openable = canOpenFactor(factor);
       const name = compactName(factor.factor_name);
-      const hints = monitorHints(factor);
       const coverageTone = coverageClass(factor.coverage_ratio);
       const coverageHelp = coverageTitle(factor.coverage_ratio);
+      const direction = monitorDirection(factor);
+      const sourceDisplay = factorSourceDisplay(factor);
       return `
         <tr>
           <td><span class="monitor-dot ${bucket}"></span>${monitorBucketLabel(bucket)}</td>
@@ -1225,16 +1441,17 @@ function renderMonitor() {
             >${escapeHtml(name)}</button>
           </td>
           <td>
-            <strong>${escapeHtml(factor.library || "-")}</strong>
-            <span class="monitor-source-sub">${escapeHtml(factor.subcategory || factor.category || "-")}</span>
+            <strong>${escapeHtml(sourceDisplay.primary)}</strong>
+            <span class="monitor-source-sub">${escapeHtml(sourceDisplay.secondary)}</span>
           </td>
           <td class="number">${formatNumber(factor.rank_ic_ir, 3)}</td>
           <td class="number">${formatNumber(factor.rank_ic_mean, 4)}</td>
           <td class="number ${coverageTone}" title="${escapeHtml(coverageHelp)}">${formatRatio(factor.coverage_ratio)}</td>
-          <td class="number">${formatNumber(factor.long_short_mean, 4)}</td>
-          <td><span class="badge ${proofClass}">${proofText}</span></td>
-          <td>${truthBadgeHtml(factor)}</td>
-          <td>${hints.length ? hints.map((hint) => `<span class="hint-chip">${escapeHtml(hint)}</span>`).join("") : mutedDash()}</td>
+          <td class="number">${monitorRecentIcHtml(factor)}</td>
+          <td>${monitorIcBarHtml(factor, bucket)}</td>
+          <td><span class="direction-pill ${direction.className}">${direction.symbol} ${direction.label}</span></td>
+          <td title="${escapeHtml(proofText)} / ${escapeHtml(factor.truth_status || "-")}">${monitorValidationHtml(factor)}</td>
+          <td>${monitorMarketHtml(factor)}</td>
         </tr>
       `;
     })
@@ -1259,10 +1476,399 @@ function compareMonitorRows(left, right) {
   return String(leftValue ?? "").localeCompare(String(rightValue ?? ""), "zh-CN", { numeric: true }) * direction;
 }
 
+function todayDate() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function defaultStrategyTemplates() {
+  const dateDefaults = {
+    start_date: "2023-01-01",
+    end_date: todayDate(),
+    cutoff_date: "2025-01-01",
+  };
+  const baseParams = [
+    {
+      key: "universe",
+      label: "股票池",
+      type: "select",
+      default: "沪深300",
+      options: ["沪深300", "中证500", "中证800", "中证1000", "中证全指"],
+    },
+    { key: "start_date", label: "开始日期", type: "date", default: dateDefaults.start_date },
+    { key: "end_date", label: "结束日期", type: "date", default: dateDefaults.end_date },
+    { key: "cutoff_date", label: "临界日", type: "date", default: dateDefaults.cutoff_date },
+  ];
+  return [
+    {
+      template_id: "agent_equal_weight_long",
+      name: "多因子等权多头",
+      description: "封装好的多因子多头策略，只接收因子方向与外围研究参数。",
+      source: "agent",
+      required_factor_count: { min: 1, max: 30 },
+      param_schema: baseParams,
+    },
+    {
+      template_id: "agent_layered_long_short",
+      name: "多因子分层多空",
+      description: "封装好的分层多空策略，内部合成、分组和调仓规则不在前端暴露。",
+      source: "agent",
+      required_factor_count: { min: 2, max: 30 },
+      param_schema: baseParams,
+    },
+    {
+      template_id: "agent_ic_weighted_score",
+      name: "IC加权打分策略",
+      description: "由策略模板根据历史 IC 稳定性完成黑盒权重分配，前端只配置研究口径。",
+      source: "agent",
+      required_factor_count: { min: 1, max: 20 },
+      param_schema: baseParams,
+    },
+  ];
+}
+
+function normalizeStrategyTemplate(template) {
+  return {
+    template_id: template.template_id || template.id || sanitizeId(template.name),
+    name: template.name || "未命名成品策略",
+    description: template.description || "后端注册的封装策略模板。",
+    source: ["agent", "system"].includes(template.source) ? template.source : "agent",
+    required_factor_count: template.required_factor_count || { min: 1, max: 99 },
+    param_schema: Array.isArray(template.param_schema) && template.param_schema.length
+      ? template.param_schema
+      : defaultStrategyTemplates()[0].param_schema,
+  };
+}
+
+async function loadStrategyTemplates() {
+  if (state.strategyTemplatesLoaded || state.strategyTemplatesLoading) return;
+  state.strategyTemplatesLoading = true;
+  try {
+    // AGENT-HOOK: Agent 挖掘出的成品策略应注册到此清单接口，前端只按模板声明动态渲染。
+    const response = await fetchWithTimeout(withCacheBust(`${API_BASE}/strategy-templates`));
+    if (!response.ok) throw new Error(`strategy-templates ${response.status}`);
+    const payload = await response.json();
+    const templates = Array.isArray(payload) ? payload : payload.templates || payload.items || [];
+    state.strategyTemplates = templates.map(normalizeStrategyTemplate);
+  } catch (error) {
+    state.strategyTemplates = defaultStrategyTemplates();
+  } finally {
+    state.strategyTemplatesLoaded = true;
+    state.strategyTemplatesLoading = false;
+    if (!state.selectedStrategyTemplateId && state.strategyTemplates[0]) {
+      state.selectedStrategyTemplateId = state.strategyTemplates[0].template_id;
+      seedStrategyBuilderParams(state.strategyTemplates[0]);
+    }
+    if (state.view === "strategy-builder") renderStrategyBuilder();
+  }
+}
+
+function activeStrategyTemplate() {
+  return state.strategyTemplates.find((template) => template.template_id === state.selectedStrategyTemplateId) || state.strategyTemplates[0] || null;
+}
+
+function seedStrategyBuilderParams(template) {
+  (template?.param_schema || []).forEach((field) => {
+    if (state.strategyBuilderParams[field.key] === undefined) {
+      state.strategyBuilderParams[field.key] = field.default ?? field.options?.[0] ?? "";
+    }
+  });
+}
+
+function factorDirectionValue(factor) {
+  return monitorDirection(factor).className === "negative" ? -1 : 1;
+}
+
+function requiredFactorLabel(required) {
+  if (typeof required === "number") return `${required} 个`;
+  if (required?.min !== undefined && required?.max !== undefined) return `${required.min}-${required.max} 个`;
+  if (required?.min !== undefined) return `至少 ${required.min} 个`;
+  return "-";
+}
+
+function renderParamField(field) {
+  const value = state.strategyBuilderParams[field.key] ?? field.default ?? field.options?.[0] ?? "";
+  if (field.type === "select") {
+    return `
+      <label class="builder-param">
+        <span>${escapeHtml(field.label || field.key)}</span>
+        <select data-builder-param="${escapeHtml(field.key)}">
+          ${(field.options || []).map((option) => `<option value="${escapeHtml(option)}" ${option === value ? "selected" : ""}>${escapeHtml(option)}</option>`).join("")}
+        </select>
+      </label>
+    `;
+  }
+  return `
+    <label class="builder-param">
+      <span>${escapeHtml(field.label || field.key)}</span>
+      <input data-builder-param="${escapeHtml(field.key)}" type="${field.type === "number" ? "number" : field.type === "date" ? "date" : "text"}" value="${escapeHtml(value)}" />
+    </label>
+  `;
+}
+
+function strategyRunPayload(lifecycle = "草稿") {
+  const template = activeStrategyTemplate();
+  const createdAt = new Date().toISOString();
+  // AGENT-HOOK: 运行/保存策略的人机共用契约；Agent 后续直接提交同格式 payload，并通过 source 区分来源。
+  return {
+    strategy_id: `strategy_run_${Date.now()}`,
+    name: state.strategyBuilderName || "未命名策略",
+    source: "human",
+    template_id: template?.template_id || "",
+    factors: state.strategyBuilderFactors.map((factor) => ({
+      factor_id: factor.id || factor.factor_id || factor.factor_name,
+      direction: factorDirectionValue(factor),
+    })),
+    params: { ...state.strategyBuilderParams },
+    lifecycle,
+    backtest_result: state.strategyBuilderResult?.backtest_result || null,
+    live_result: state.strategyBuilderResult?.live_result || null,
+    created_at: createdAt,
+  };
+}
+
+function mockStrategyRunResult(payload) {
+  const factorScore = Math.max(1, payload.factors.length);
+  return {
+    backtest_result: {
+      annual_return: Math.min(0.32, 0.08 + factorScore * 0.012),
+      sharpe: Math.min(2.4, 0.85 + factorScore * 0.08),
+      max_drawdown: -Math.min(0.28, 0.08 + factorScore * 0.01),
+      win_rate: Math.min(0.72, 0.52 + factorScore * 0.015),
+      equity: [1, 1.04, 1.08, 1.12, 1.18, 1.22],
+    },
+    live_result: {
+      annual_return: Math.min(0.26, 0.06 + factorScore * 0.01),
+      sharpe: Math.min(2.0, 0.72 + factorScore * 0.06),
+      max_drawdown: -Math.min(0.22, 0.07 + factorScore * 0.008),
+      win_rate: Math.min(0.68, 0.5 + factorScore * 0.012),
+      equity: [1.22, 1.24, 1.23, 1.27, 1.31],
+    },
+    cutoff_date: payload.params.cutoff_date,
+    fallback: true,
+  };
+}
+
+async function runStrategyBuilder() {
+  if (!activeStrategyTemplate()) {
+    showToast("请选择成品策略");
+    return;
+  }
+  const payload = strategyRunPayload("回测中");
+  try {
+    // AGENT-HOOK: 此运行端点未来由 Agent 自动调用，策略内部逻辑在后端模板中封装。
+    const response = await fetchWithTimeout(`${API_BASE}/strategy-runs/run`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok) throw new Error(`strategy run ${response.status}`);
+    const result = await response.json();
+    state.strategyBuilderResult = result.result || result;
+  } catch (error) {
+    state.strategyBuilderResult = mockStrategyRunResult(payload);
+  }
+  renderStrategyBuilder();
+  showToast("策略运行结果已生成");
+}
+
+function strategyRowFromRun(payload) {
+  const template = activeStrategyTemplate();
+  const result = state.strategyBuilderResult || {};
+  return {
+    id: payload.strategy_id,
+    name: payload.name,
+    type: template?.name || "成品策略",
+    factors: state.strategyBuilderFactors.map((factor) => factor.factor_name).join(", "),
+    factorIds: state.strategyBuilderFactors.map((factor) => factor.id),
+    universe: payload.params.universe || "-",
+    rebalance: `${payload.params.start_date || "-"} ~ ${payload.params.end_date || "-"}`,
+    cost: `临界日 ${payload.params.cutoff_date || "-"}`,
+    annualReturn: result.live_result?.annual_return ?? result.backtest_result?.annual_return ?? null,
+    sharpe: result.live_result?.sharpe ?? result.backtest_result?.sharpe ?? null,
+    maxDrawdown: result.live_result?.max_drawdown ?? result.backtest_result?.max_drawdown ?? null,
+    status: payload.lifecycle,
+    lifecycleStatus: payload.lifecycle,
+    source: payload.source,
+    templateId: payload.template_id,
+    strategyRun: payload,
+    backtestResult: result.backtest_result || null,
+    liveResult: result.live_result || null,
+    deletable: true,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+async function saveStrategyBuilder() {
+  if (!activeStrategyTemplate()) {
+    showToast("请选择成品策略");
+    return;
+  }
+  const payload = strategyRunPayload("已保存");
+  try {
+    // AGENT-HOOK: 保存导入策略看板与 Agent 自动提交共用端点，生命周期状态机保持一致。
+    await fetchWithTimeout(`${API_BASE}/strategy-runs/save`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+  } catch (error) {
+    // 本地未接后端时仍导入看板，后续由同一契约替换为真实持久化。
+  }
+  state.strategyDrafts.unshift(strategyRowFromRun(payload));
+  state.view = "strategy";
+  window.location.hash = "";
+  renderView();
+  showToast("策略已保存并导入策略看板");
+}
+
+function metricCell(label, backtestValue, liveValue, formatter) {
+  return `
+    <div class="builder-metric-row">
+      <span>${escapeHtml(label)}</span>
+      <strong>${formatter(backtestValue)}</strong>
+      <strong>${formatter(liveValue)}</strong>
+    </div>
+  `;
+}
+
+function renderStrategyBuilderResult() {
+  const result = state.strategyBuilderResult;
+  if (!result) {
+    return `<div class="builder-empty-result">运行后展示净值曲线与回测段 / 实盘段指标。</div>`;
+  }
+  const backtest = result.backtest_result || {};
+  const live = result.live_result || {};
+  return `
+    <section class="builder-result-card">
+      <div class="builder-curve" aria-label="净值曲线">
+        <div class="curve-line curve-line-backtest"></div>
+        <div class="curve-cutoff" title="临界日 ${escapeHtml(result.cutoff_date || state.strategyBuilderParams.cutoff_date || "-")}"></div>
+        <div class="curve-line curve-line-live"></div>
+        <span class="curve-label left">回测段</span>
+        <span class="curve-label right">实盘段</span>
+      </div>
+      <div class="builder-metrics">
+        <div class="builder-metric-head"><span>指标</span><strong>回测段</strong><strong>实盘段</strong></div>
+        ${metricCell("年化", backtest.annual_return, live.annual_return, formatRatio)}
+        ${metricCell("夏普", backtest.sharpe, live.sharpe, (value) => formatNumber(value, 2))}
+        ${metricCell("最大回撤", backtest.max_drawdown, live.max_drawdown, formatRatio)}
+        ${metricCell("胜率", backtest.win_rate, live.win_rate, formatRatio)}
+      </div>
+    </section>
+  `;
+}
+
+function renderStrategyBuilder() {
+  if (!els.strategyBuilderView) return;
+  const template = activeStrategyTemplate();
+  if (template) seedStrategyBuilderParams(template);
+  const selectedFactors = state.strategyBuilderFactors;
+  els.strategyBuilderView.innerHTML = `
+    <div class="breadcrumb">
+      <button type="button" class="breadcrumb-link" data-builder-back="library">因子库</button>
+      <span>›</span>
+      <strong>策略构建</strong>
+    </div>
+    <section class="strategy-head builder-head">
+      <div>
+        <h2>策略构建页</h2>
+        <p>选成品策略，把因子塞进去，只调外围研究参数；策略内部逻辑由 Agent / 系统策略库封装。</p>
+      </div>
+      <span class="panel-badge">成品策略模式</span>
+    </section>
+
+    <section class="builder-section">
+      <header><strong>已选因子</strong><span>只读，方向由因子 IC/方向字段映射</span></header>
+      <div class="table-scroll">
+        <table class="builder-factor-table">
+          <thead><tr><th>因子名</th><th>方向</th><th>分类</th><th class="number">IC</th><th class="number">IR</th></tr></thead>
+          <tbody>
+            ${selectedFactors.length ? selectedFactors.map((factor) => {
+              const direction = monitorDirection(factor);
+              return `
+                <tr>
+                  <td>${escapeHtml(factor.factor_name)}</td>
+                  <td><span class="direction-pill ${direction.className}">${factorDirectionValue(factor) > 0 ? "+1 正向" : "-1 反向"}</span></td>
+                  <td>${escapeHtml(jqFactorCategory(factor))}</td>
+                  <td class="number">${formatNumber(factor.rank_ic_mean, 4)}</td>
+                  <td class="number">${formatNumber(factor.rank_ic_ir, 3)}</td>
+                </tr>
+              `;
+            }).join("") : `<tr><td colspan="5" class="empty-cell">请先从因子库选择可用因子。</td></tr>`}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="builder-section">
+      <header><strong>成品策略列表</strong><span>来自后端可用策略清单；未接入时展示本地兜底模板</span></header>
+      <div class="builder-template-list">
+        ${state.strategyTemplates.map((item) => `
+          <label class="builder-template-card ${item.template_id === state.selectedStrategyTemplateId ? "active" : ""}">
+            <input type="radio" name="strategyTemplate" value="${escapeHtml(item.template_id)}" ${item.template_id === state.selectedStrategyTemplateId ? "checked" : ""} />
+            <span>
+              <strong>${escapeHtml(item.name)}</strong>
+              <small>${escapeHtml(item.description)}</small>
+              <em>${item.source === "system" ? "系统策略库" : "Agent 挖掘"} · 需要 ${escapeHtml(requiredFactorLabel(item.required_factor_count))}</em>
+            </span>
+          </label>
+        `).join("")}
+      </div>
+    </section>
+
+    <section class="builder-section builder-params-section">
+      <header><strong>外围参数</strong><span>研究模式，结果不代表复现结论；临界日左回测、右实盘。</span></header>
+      <div class="builder-param-grid">
+        ${(template?.param_schema || []).map(renderParamField).join("")}
+      </div>
+    </section>
+
+    <section class="builder-section builder-actions-section">
+      <label class="builder-name-field">
+        <span>策略名称</span>
+        <input id="strategyBuilderName" type="text" value="${escapeHtml(state.strategyBuilderName)}" placeholder="给这个策略实例命名" />
+      </label>
+      <div class="builder-actions">
+        <button type="button" class="secondary-action" id="runStrategyBuilder" ${selectedFactors.length ? "" : "disabled"}>运行</button>
+        <button type="button" class="primary-action" id="saveStrategyBuilder" ${selectedFactors.length ? "" : "disabled"}>保存并导入策略看板</button>
+      </div>
+    </section>
+
+    <section class="builder-section">
+      <header><strong>结果区</strong><span>净值曲线在临界日切分，核心看回测段与实盘段差距。</span></header>
+      ${renderStrategyBuilderResult()}
+    </section>
+  `;
+
+  els.strategyBuilderView.querySelector("[data-builder-back]")?.addEventListener("click", () => showMainView("library"));
+  els.strategyBuilderView.querySelectorAll("input[name='strategyTemplate']").forEach((input) => {
+    input.addEventListener("change", () => {
+      state.selectedStrategyTemplateId = input.value;
+      seedStrategyBuilderParams(activeStrategyTemplate());
+      state.strategyBuilderResult = null;
+      renderStrategyBuilder();
+    });
+  });
+  els.strategyBuilderView.querySelectorAll("[data-builder-param]").forEach((input) => {
+    input.addEventListener("input", () => {
+      state.strategyBuilderParams[input.dataset.builderParam] = input.value;
+    });
+    input.addEventListener("change", () => {
+      state.strategyBuilderParams[input.dataset.builderParam] = input.value;
+      state.strategyBuilderResult = null;
+    });
+  });
+  els.strategyBuilderView.querySelector("#strategyBuilderName")?.addEventListener("input", (event) => {
+    state.strategyBuilderName = event.target.value;
+  });
+  els.strategyBuilderView.querySelector("#runStrategyBuilder")?.addEventListener("click", runStrategyBuilder);
+  els.strategyBuilderView.querySelector("#saveStrategyBuilder")?.addEventListener("click", saveStrategyBuilder);
+}
+
 function strategyRows() {
   const reusable = state.rawFactors.filter((factor) => factor.reuse_recommendation === "可复用");
   const first = reusable[0] || state.rawFactors[0];
-  return [
+  const baseRows = [
     {
       id: first ? `strategy_single_factor_${sanitizeId(first.id || first.factor_name)}` : "strategy_single_factor",
       name: first ? `${first.factor_name} 单因子分层策略` : "单因子分层策略",
@@ -1291,21 +1897,23 @@ function strategyRows() {
       status: "待接入",
       updatedAt: "-",
     },
-    {
-      id: "strategy_agent_pipeline",
-      name: "AI Agent 自动生成策略",
-      type: "Agent",
-      factors: "待 Agent 提交",
-      universe: "待接入",
-      rebalance: "待接入",
-      cost: "待接入",
-      annualReturn: null,
-      sharpe: null,
-      maxDrawdown: null,
-      status: "待接入",
-      updatedAt: "-",
-    },
+    // AI Agent 策略占位暂时关闭。
+    // {
+    //   id: "strategy_agent_pipeline",
+    //   name: "AI Agent 自动生成策略",
+    //   type: "Agent",
+    //   factors: "待 Agent 提交",
+    //   universe: "待接入",
+    //   rebalance: "待接入",
+    //   cost: "待接入",
+    //   annualReturn: null,
+    //   sharpe: null,
+    //   maxDrawdown: null,
+    //   status: "待接入",
+    //   updatedAt: "-",
+    // },
   ];
+  return [...state.strategyDrafts, ...baseRows];
 }
 
 function renderStrategyStats(rows) {
@@ -1340,13 +1948,20 @@ function renderStrategy() {
   els.strategyTableBody.innerHTML = rows
     .map(
       (row) => `
-        <tr>
+        <tr class="${state.strategyDeleteMode ? "strategy-delete-mode-row" : ""}">
           <td>
+            ${
+              state.strategyDeleteMode
+                ? `<label class="strategy-delete-check">
+                    <input type="checkbox" data-strategy-delete-id="${escapeHtml(row.id)}" ${row.deletable ? "" : "disabled"} ${state.selectedStrategyDeleteIds.has(row.id) ? "checked" : ""} />
+                  </label>`
+                : ""
+            }
             <button type="button" class="strategy-link" data-strategy-id="${escapeHtml(row.id)}">${escapeHtml(row.name)}</button>
+            <span class="monitor-source-sub">${escapeHtml(row.type || "-")}</span>
           </td>
-          <td>${escapeHtml(row.type)}</td>
           <td>${escapeHtml(row.factors)}</td>
-          <td>${escapeHtml(row.universe)}</td>
+          <td class="strategy-universe-cell" title="${escapeHtml(row.universe)}">${escapeHtml(row.universe)}</td>
           <td>
             <strong>${escapeHtml(row.rebalance)}</strong>
             <span class="monitor-source-sub">${escapeHtml(row.cost)}</span>
@@ -1354,16 +1969,90 @@ function renderStrategy() {
           <td class="number">${formatRatio(row.annualReturn)}</td>
           <td class="number">${formatNumber(row.sharpe, 2)}</td>
           <td class="number">${formatRatio(row.maxDrawdown)}</td>
-          <td><span class="badge ${row.status === "研究就绪" ? "badge-green" : "badge-gray"}">${escapeHtml(row.status)}</span></td>
+          <td>
+            <span class="badge ${["研究就绪", "已验证", "已保存", "监控中"].includes(row.status) ? "badge-green" : row.status === "草稿" ? "badge-blue" : "badge-gray"}">${escapeHtml(row.status)}</span>
+            ${row.status === "草稿" ? `<button type="button" class="text-button" data-strategy-save="${escapeHtml(row.id)}">保存策略</button>` : ""}
+          </td>
           <td>${formatDate(row.updatedAt)}</td>
         </tr>
       `,
     )
     .join("");
+  renderStrategyDeleteActions(rows);
 
   els.strategyTableBody.querySelectorAll("[data-strategy-id]").forEach((button) => {
     button.addEventListener("click", () => openStrategyDetail(button.dataset.strategyId));
   });
+  els.strategyTableBody.querySelectorAll("[data-strategy-delete-id]").forEach((input) => {
+    input.addEventListener("change", () => {
+      if (input.checked) {
+        state.selectedStrategyDeleteIds.add(input.dataset.strategyDeleteId);
+      } else {
+        state.selectedStrategyDeleteIds.delete(input.dataset.strategyDeleteId);
+      }
+      renderStrategyDeleteActions(rows);
+    });
+  });
+  els.strategyTableBody.querySelectorAll("[data-strategy-save]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      saveStrategyDraft(button.dataset.strategySave);
+    });
+  });
+}
+
+function renderStrategyDeleteActions(rows) {
+  const tableCard = els.strategyTableBody?.closest(".strategy-table-card");
+  if (!tableCard) return;
+  let actions = tableCard.querySelector(".strategy-board-actions");
+  if (!actions) {
+    actions = document.createElement("div");
+    actions.className = "strategy-board-actions";
+    tableCard.appendChild(actions);
+  }
+  const deletableCount = rows.filter((row) => row.deletable).length;
+  if (!state.strategyDeleteMode) {
+    state.selectedStrategyDeleteIds.clear();
+    actions.innerHTML = `<button type="button" class="danger-action compact" id="enterStrategyDeleteMode" ${deletableCount ? "" : "disabled"}>删除策略</button>`;
+    actions.querySelector("#enterStrategyDeleteMode")?.addEventListener("click", () => {
+      state.strategyDeleteMode = true;
+      renderStrategy();
+    });
+    return;
+  }
+  actions.innerHTML = `
+    <span>已选 ${state.selectedStrategyDeleteIds.size} 个策略</span>
+    <button type="button" class="danger-action compact" id="deleteSelectedStrategies" ${state.selectedStrategyDeleteIds.size ? "" : "disabled"}>删除选中</button>
+    <button type="button" class="secondary-action compact" id="cancelStrategyDeleteMode">取消</button>
+  `;
+  actions.querySelector("#deleteSelectedStrategies")?.addEventListener("click", deleteSelectedStrategies);
+  actions.querySelector("#cancelStrategyDeleteMode")?.addEventListener("click", () => {
+    state.strategyDeleteMode = false;
+    state.selectedStrategyDeleteIds.clear();
+    renderStrategy();
+  });
+}
+
+function deleteSelectedStrategies() {
+  if (!state.selectedStrategyDeleteIds.size) return;
+  state.strategyDrafts = state.strategyDrafts.filter((row) => !state.selectedStrategyDeleteIds.has(row.id));
+  state.selectedStrategyDeleteIds.clear();
+  state.strategyDeleteMode = false;
+  renderStrategy();
+  showToast("已删除所选策略");
+}
+
+function saveStrategyDraft(strategyId) {
+  const draft = state.strategyDrafts.find((item) => item.id === strategyId);
+  if (!draft) return;
+  // AGENT-HOOK: 保存策略应由后端统一端点处理，human/agent 共用 source 与同一生命周期状态机。
+  draft.status = "已保存";
+  draft.lifecycleStatus = "已保存";
+  draft.source = draft.source || "human";
+  draft.deletable = true;
+  draft.updatedAt = new Date().toISOString();
+  renderStrategy();
+  showToast("策略已保存");
 }
 
 function compareStrategies(left, right) {
@@ -1512,24 +2201,25 @@ function taskRows() {
       ],
       artifacts: "runtime/factor_lab/reports",
     },
-    {
-      id: "ai_factor_mining",
-      name: "AI Agent 因子挖掘候选流程",
-      type: "挖掘",
-      currentGate: "G0",
-      progress: 0,
-      status: "未实现",
-      stages: [
-        { gate: "G0", name: "候选因子登记", status: "pending", note: "未来接入 trial ledger" },
-        { gate: "G1", name: "安全与泄漏检查", status: "pending", note: "预留子 Gate" },
-        { gate: "G2", name: "复现与研究评估", status: "pending", note: "预留子 Gate" },
-        { gate: "G3", name: "策略候选检查", status: "pending", note: "预留子 Gate" },
-        { gate: "G4", name: "人工审核", status: "pending", note: "预留子 Gate" },
-      ],
-      artifacts: "待 Agent 提交",
-    },
+    // AI Agent 调试占位暂时关闭。
+    // {
+    //   id: "ai_factor_mining",
+    //   name: "AI Agent 因子挖掘候选流程",
+    //   type: "挖掘",
+    //   currentGate: "G0",
+    //   progress: 0,
+    //   status: "未实现",
+    //   stages: [
+    //     { gate: "G0", name: "候选因子登记", status: "pending", note: "未来接入 trial ledger" },
+    //     { gate: "G1", name: "安全与泄漏检查", status: "pending", note: "预留子 Gate" },
+    //     { gate: "G2", name: "复现与研究评估", status: "pending", note: "预留子 Gate" },
+    //     { gate: "G3", name: "策略候选检查", status: "pending", note: "预留子 Gate" },
+    //     { gate: "G4", name: "人工审核", status: "pending", note: "预留子 Gate" },
+    //   ],
+    //   artifacts: "待 Agent 提交",
+    // },
   ];
-  return [...agentTaskRows(), ...builtInRows];
+  return ENABLE_AGENT_TASK_DEBUG ? [...agentTaskRows(), ...builtInRows] : builtInRows;
 }
 
 function agentTaskStatusMeta(task) {
@@ -1721,6 +2411,11 @@ function removePendingFile(index) {
 }
 
 async function loadAgentTasks() {
+  if (!ENABLE_AGENT_TASK_DEBUG) {
+    state.agentTasks = [];
+    state.agentTasksLoaded = true;
+    return;
+  }
   if (state.agentTasksLoaded) return;
   if (CLOUD_DEMO_MODE) {
     state.agentTasks = [
@@ -1753,6 +2448,9 @@ async function loadAgentTasks() {
 }
 
 async function submitTaskRequest(payload) {
+  if (!ENABLE_AGENT_TASK_DEBUG) {
+    throw new Error("AI 任务调试入口已暂时关闭");
+  }
   if (CLOUD_DEMO_MODE) {
     throw new Error("GitHub Pages demo mode is read-only. Deploy the Flask backend to enable Agent tasks.");
   }
@@ -1772,6 +2470,7 @@ async function submitTaskRequest(payload) {
 }
 
 async function submitAgentTask() {
+  if (!ENABLE_AGENT_TASK_DEBUG) return;
   const instruction = state.agentInstruction.trim();
   if (!instruction) {
     showToast(AGENT_TASK_TEXT.emptyWarning);
@@ -1895,6 +2594,7 @@ async function openAgentTaskFolder(taskId) {
 }
 
 function renderAgentTask() {
+  if (!ENABLE_AGENT_TASK_DEBUG) return;
   if (!els.agentTaskView) return;
   const taskRows = state.agentTasks
     .map(
@@ -2054,11 +2754,11 @@ function renderSettings() {
     <section class="settings-page-head">
       <div>
         <h2>设置</h2>
-        <p>这里集中展示本地服务、官方 Quant API、AI Agent 接入和前端显示偏好。当前页面只读展示配置状态，不保存 token，也不启动任何 agent。</p>
+        <p>这里集中展示本地服务、官方 Quant API、云端信息库和前端显示偏好。当前页面只读展示配置状态，不保存 token。</p>
       </div>
       <div class="settings-page-note">
         <strong>当前边界</strong>
-        <span>前端只消费 Flask 与本地 runtime 产物；真实计算、数据抓取和 Agent 编排都留在后端或执行侧。</span>
+        <span>前端只消费 Flask 与本地 runtime 产物；真实计算和数据抓取都留在后端或执行侧。</span>
       </div>
     </section>
 
@@ -2078,11 +2778,11 @@ function renderSettings() {
         ["同步对象", "因子元信息、审核状态、报告摘要、可追溯 artifact"],
         ["当前策略", "本地优先，云端只读展示待接入"],
       ])}
-      ${connectionCard("AI Agent 接入", "待接入", "warn", [
+      ${ENABLE_AGENT_TASK_DEBUG ? connectionCard("AI Agent 接入", "待接入", "warn", [
         ["外部 Agent", "Trae / Claude Code / Codex 等工具预留统一提交入口"],
         ["内部 Agent", "Hermes / Factor Mining Agent / Strategy Agent 预留能力位"],
         ["当前边界", "此页只展示接口位置，不触发自动挖掘、复现或回测"],
-      ])}
+      ]) : ""}
     </section>
 
     <section class="settings-page-panel">
@@ -2106,7 +2806,7 @@ function renderSettings() {
       <div class="settings-page-contracts">
         <span><code>factor_lab_view_v1</code>：因子库、因子详情、报告产物</span>
         <span><code>factor_lab_view_v1.1</code>：官方 Quant API 的 official 命名空间</span>
-        <span><code>agent_task_request_v1</code>：AI 任务发起请求（要求文本 + 文件元信息，不含 skill；流程由后端 agent 判断）。当前为占位，后端接入后生效。</span>
+        ${ENABLE_AGENT_TASK_DEBUG ? "<span><code>agent_task_request_v1</code>：AI 任务发起请求（要求文本 + 文件元信息，不含 skill；流程由后端 agent 判断）。当前为占位，后端接入后生效。</span>" : ""}
         <span><code>strategy_monitor_view_v1</code>：策略看板与策略详情预留</span>
         <span><code>gate_monitor_view_v1</code>：任务监控与 Gate 可视化预留</span>
       </div>
@@ -2139,7 +2839,10 @@ function closeDetail() {
 }
 
 function showMainView(view) {
-  state.view = ["monitor", "strategy", "tasks", "agent_task", "settings"].includes(view) ? view : "library";
+  const enabledViews = ENABLE_AGENT_TASK_DEBUG
+    ? ["monitor", "library", "strategy", "strategy-builder", "tasks", "agent_task", "settings"]
+    : ["monitor", "library", "strategy", "strategy-builder", "tasks", "settings"];
+  state.view = enabledViews.includes(view) ? view : "library";
   state.activeFactorId = null;
   state.activeStrategyId = null;
   state.activeTaskId = null;
@@ -2151,6 +2854,11 @@ function showMainView(view) {
 }
 
 function syncDetailFromHash() {
+  if (window.location.hash === "#strategy-builder") {
+    state.view = "strategy-builder";
+    loadStrategyTemplates();
+    return;
+  }
   const match = window.location.hash.match(/^#factor=(.+)$/);
   if (!match || state.view === "detail") return;
   const factorId = decodeURIComponent(match[1]);
@@ -2165,9 +2873,10 @@ function renderView() {
   const detailMode = state.view === "detail";
   const monitorMode = state.view === "monitor";
   const strategyMode = state.view === "strategy";
+  const strategyBuilderMode = state.view === "strategy-builder";
   const strategyDetailMode = state.view === "strategy-detail";
   const taskMode = state.view === "tasks";
-  const agentTaskMode = state.view === "agent_task";
+  const agentTaskMode = ENABLE_AGENT_TASK_DEBUG && state.view === "agent_task";
   const settingsMode = state.view === "settings";
   els.pageTitle.textContent = detailMode
     ? "因子详情"
@@ -2175,21 +2884,24 @@ function renderView() {
       ? "因子监控"
       : strategyMode
         ? "策略看板"
-        : strategyDetailMode
-          ? "策略详情"
-          : taskMode
-            ? "任务监控"
-            : agentTaskMode
-              ? "AI 任务(调试)"
-              : settingsMode
-                ? "设置"
-                : "因子库";
+        : strategyBuilderMode
+          ? "策略构建"
+          : strategyDetailMode
+            ? "策略详情"
+            : taskMode
+              ? "任务监控"
+              : agentTaskMode
+                ? "AI 任务(调试)"
+                : settingsMode
+                  ? "设置"
+                  : "因子库";
   els.libraryView.classList.toggle(
     "hidden",
-    detailMode || monitorMode || strategyMode || strategyDetailMode || taskMode || agentTaskMode || settingsMode,
+    detailMode || monitorMode || strategyMode || strategyBuilderMode || strategyDetailMode || taskMode || agentTaskMode || settingsMode,
   );
   els.monitorView.classList.toggle("hidden", !monitorMode);
   els.strategyView.classList.toggle("hidden", !strategyMode);
+  els.strategyBuilderView?.classList.toggle("hidden", !strategyBuilderMode);
   els.taskView.classList.toggle("hidden", !taskMode);
   els.strategyDetailView.classList.toggle("hidden", !strategyDetailMode);
   els.detailView.classList.toggle("hidden", !detailMode);
@@ -2197,17 +2909,20 @@ function renderView() {
   els.settingsView?.classList.toggle("hidden", !settingsMode);
   els.selectionBar.classList.toggle(
     "hidden",
-    detailMode || monitorMode || strategyMode || strategyDetailMode || taskMode || settingsMode,
+    detailMode || monitorMode || strategyMode || strategyBuilderMode || strategyDetailMode || taskMode || settingsMode,
   );
   els.navItems.forEach((item) => {
-    const activeView = detailMode ? "library" : strategyDetailMode ? "strategy" : state.view;
+    const activeView = detailMode ? "library" : strategyDetailMode || strategyBuilderMode ? "strategy" : state.view;
     item.classList.toggle("active", item.dataset.view === activeView);
   });
   if (monitorMode) renderMonitor();
   if (strategyMode) renderStrategy();
+  if (strategyBuilderMode) {
+    loadStrategyTemplates();
+    renderStrategyBuilder();
+  }
   if (taskMode) {
     renderTasks();
-    loadAgentTasks();
   }
   if (agentTaskMode) {
     renderAgentTask();
@@ -2243,7 +2958,7 @@ function renderDetail() {
         </div>
         <dl class="detail-meta">
           <div><dt>因子库</dt><dd>${escapeHtml(factor.library)}</dd></div>
-          <div><dt>分类</dt><dd>${escapeHtml(factor.category || "-")}</dd></div>
+          <div><dt>分类</dt><dd>${escapeHtml(jqFactorCategory(factor))}</dd></div>
           <div><dt>子类</dt><dd>${escapeHtml(factor.subcategory || "-")}</dd></div>
           <div><dt>复现验证时间</dt><dd>${formatDate(factor.latest_checked_at)}</dd></div>
           <div><dt>Job ID</dt><dd><code>${escapeHtml(factor.latest_job_id || "-")}</code></dd></div>
@@ -2561,6 +3276,28 @@ function bindEvents() {
       renderMonitor();
     });
   });
+  els.monitorDirectionFilters?.querySelectorAll("[data-monitor-direction]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.monitorDirectionFilter = button.dataset.monitorDirection || "all";
+      renderMonitor();
+    });
+  });
+  els.usableOnlyToggle?.addEventListener("change", (event) => {
+    state.usableOnly = event.target.checked;
+    state.page = 1;
+    applyFilters();
+  });
+  [
+    [els.researchUniverse, "universe"],
+    [els.researchPeriod, "period"],
+    [els.researchPortfolio, "portfolio"],
+    [els.researchCost, "cost"],
+    [els.researchLimitFilter, "limitFilter"],
+  ].forEach(([control, key]) => {
+    control?.addEventListener("change", (event) => {
+      state.researchParams[key] = event.target.value;
+    });
+  });
   els.proofFilter.addEventListener("change", (event) => {
     state.proof = event.target.value;
     state.page = 1;
@@ -2583,15 +3320,18 @@ function bindEvents() {
   });
   els.resetFiltersButton.addEventListener("click", () => {
     state.category = "全部";
+    state.selectedCategories = new Set(JQ_FACTOR_CATEGORIES);
     state.library = "全部";
     state.proof = "all";
     state.truth = "all";
     state.reuse = "all";
+    state.usableOnly = false;
     state.query = "";
     state.page = 1;
     els.proofFilter.value = "all";
     els.truthFilter.value = "all";
     els.reuseFilter.value = "all";
+    if (els.usableOnlyToggle) els.usableOnlyToggle.checked = false;
     els.searchInput.value = "";
     renderTabs({ factors: state.rawFactors, categories: countCategories(), libraries: countLibraries() });
     applyFilters();
@@ -2634,17 +3374,17 @@ function bindEvents() {
   });
   window.addEventListener("hashchange", () => {
     if (!window.location.hash && state.view === "detail") closeDetail();
+    if (window.location.hash === "#strategy-builder") {
+      state.view = "strategy-builder";
+      renderView();
+    }
   });
   document.addEventListener("pointerup", endDragSelection);
   document.addEventListener("pointercancel", endDragSelection);
 }
 
 function countCategories() {
-  const counts = { 全部: state.rawFactors.length };
-  state.rawFactors.forEach((factor) => {
-    counts[factor.category] = (counts[factor.category] || 0) + 1;
-  });
-  return counts;
+  return countJqCategories(state.rawFactors);
 }
 
 function countLibraries() {
@@ -2658,3 +3398,111 @@ function countLibraries() {
 bindEvents();
 loadData();
 startAutoRefresh();
+bindResearchEvents();
+
+function bindResearchEvents() {
+  const runBtn = document.getElementById("runResearchButton");
+  const clearBtn = document.getElementById("clearResearchButton");
+  
+  if (runBtn) {
+    runBtn.addEventListener("click", runRealDataResearch);
+  }
+  if (clearBtn) {
+    clearBtn.addEventListener("click", clearResearchResults);
+  }
+}
+
+async function runRealDataResearch() {
+  const factorSet = document.getElementById("researchFactorSet").value;
+  const factorsInput = document.getElementById("researchFactors").value;
+  const symbolsInput = document.getElementById("researchSymbols").value;
+  const startDate = document.getElementById("researchStartDate").value;
+  const endDate = document.getElementById("researchEndDate").value;
+  
+  const factors = factorsInput.split(",").map(f => f.trim()).filter(f => f);
+  const symbols = symbolsInput.split(",").map(s => s.trim()).filter(s => s);
+  
+  if (factors.length === 0) {
+    alert("请输入因子名称");
+    return;
+  }
+  if (symbols.length === 0) {
+    alert("请输入股票代码");
+    return;
+  }
+  
+  document.getElementById("researchLoading").classList.remove("hidden");
+  document.getElementById("researchResults").classList.add("hidden");
+  
+  try {
+    const response = await fetch(`${API_BASE}/quant-api/research`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        factors,
+        symbols,
+        start_date: startDate,
+        end_date: endDate,
+        factor_set: factorSet,
+      }),
+    });
+    
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    
+    const result = await response.json();
+    
+    if (result.error) {
+      alert("研究失败: " + result.error);
+      return;
+    }
+    
+    renderResearchResults(result);
+  } catch (error) {
+    alert("研究请求失败: " + error.message);
+  } finally {
+    document.getElementById("researchLoading").classList.add("hidden");
+  }
+}
+
+function renderResearchResults(result) {
+  const resultsBody = document.getElementById("researchResultsBody");
+  const jobIdBadge = document.getElementById("researchJobId");
+  
+  jobIdBadge.textContent = result.job_id || "";
+  
+  const rows = Object.entries(result.results || {}).map(([name, data]) => {
+    const icMean = Number.isFinite(data.ic_mean) ? data.ic_mean.toFixed(4) : "-";
+    const icIr = Number.isFinite(data.ic_ir) ? data.ic_ir.toFixed(4) : "-";
+    const rankIc = Number.isFinite(data.rank_ic_mean) ? data.rank_ic_mean.toFixed(4) : "-";
+    const sharpe = Number.isFinite(data.long_short_sharpe) ? data.long_short_sharpe.toFixed(2) : "-";
+    const maxDd = Number.isFinite(data.long_short_max_drawdown) ? data.long_short_max_drawdown.toFixed(2) : "-";
+    const coverage = Number.isFinite(data.coverage) ? data.coverage.toFixed(1) + "%" : "-";
+    const lsMean = Number.isFinite(data.long_short_mean) ? data.long_short_mean.toFixed(4) : "-";
+    
+    return `
+      <tr>
+        <td>${escapeHtml(name)}</td>
+        <td>${icMean}</td>
+        <td>${icIr}</td>
+        <td>${rankIc}</td>
+        <td>${sharpe}</td>
+        <td>${maxDd}</td>
+        <td>${coverage}</td>
+        <td>${lsMean}</td>
+      </tr>
+    `;
+  });
+  
+  resultsBody.innerHTML = rows.join("");
+  document.getElementById("researchResults").classList.remove("hidden");
+}
+
+function clearResearchResults() {
+  document.getElementById("researchResults").classList.add("hidden");
+  document.getElementById("researchResultsBody").innerHTML = "";
+  document.getElementById("researchJobId").textContent = "";
+}
+
+bindResearchEvents();

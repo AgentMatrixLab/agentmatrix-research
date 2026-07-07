@@ -229,6 +229,8 @@ def _display_library(library: str) -> str:
         return "WQ101"
     if normalized in {"gtja191", "alpha191"}:
         return "GTJA191"
+    if normalized in {"quantapi33", "quantapi", "quant_api", "quant api"}:
+        return "QuantAPI"
     if not library:
         return "User Custom"
     return library

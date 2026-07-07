@@ -17,6 +17,21 @@ project_root = Path(__file__).resolve().parents[1]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
+
+def _load_local_env() -> None:
+    for env_path in (project_root / ".env.local", project_root / ".env"):
+        if not env_path.is_file():
+            continue
+        for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+
+_load_local_env()
+
 from research_core.factor_lab import (  # noqa: E402
     FactorLabWorkspaceConfig,
     get_alpha101_factor_detail,
@@ -24,6 +39,7 @@ from research_core.factor_lab import (  # noqa: E402
     get_factor_lab_overview,
     list_alpha101_factors,
     list_factor_lab_jobs,
+    run_factor_set_real_data_job,
     run_alpha101_research_job,
 )
 from research_core.factor_lab_web import (  # noqa: E402
@@ -203,6 +219,42 @@ def factor_lab_quant_api_factor_ic():
 def factor_lab_quant_api_kline_1d():
     params = _quant_api_params("symbol", "date", "factor", "top", "order", "order_by", "limit", "offset", "with_total")
     return _quant_api_json(lambda: _quant_api_client().kline_1d(params))
+
+
+def _convert_nan_to_null(obj):
+    if isinstance(obj, dict):
+        return {k: _convert_nan_to_null(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [_convert_nan_to_null(v) for v in obj]
+    elif isinstance(obj, float) and (math.isnan(obj) or math.isinf(obj)):
+        return None
+    else:
+        return obj
+
+@app.route("/api/agents/factor-lab/quant-api/research", methods=["POST"])
+def factor_lab_quant_api_research():
+    payload = request.get_json(silent=True) or {}
+    
+    factors = payload.get("factors", ["alpha1", "alpha2", "alpha3"])
+    if isinstance(factors, str):
+        factors = [f.strip() for f in factors.split(",") if f.strip()]
+    
+    symbols = payload.get("symbols", ["000001.SZ", "000002.SZ"])
+    if isinstance(symbols, str):
+        symbols = [s.strip() for s in symbols.split(",") if s.strip()]
+    
+    start_date = payload.get("start_date", "2023-01-01")
+    end_date = payload.get("end_date", "2024-01-01")
+    factor_set = payload.get("factor_set", "alpha101")
+    
+    try:
+        from scripts.quant_api_research import run_research
+        
+        result = run_research(factors, symbols, start_date, end_date, factor_set)
+        result_clean = _convert_nan_to_null(result)
+        return jsonify(result_clean)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/api/agents/factor-lab/factors/<path:factor_id>/view", methods=["GET"])
@@ -402,7 +454,10 @@ def factor_lab_jobs():
 def factor_lab_create_job():
     payload = request.get_json(silent=True) or {}
     try:
-        job = run_alpha101_research_job(payload, _workspace())
+        if payload.get("data_source") in {"quant_api", "real"}:
+            job = run_factor_set_real_data_job(payload, _workspace())
+        else:
+            job = run_alpha101_research_job(payload, _workspace())
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
     return jsonify(job), 201

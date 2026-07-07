@@ -1,10 +1,18 @@
 <!doctype html>
+<!--
+  本次修改点：
+  1. 调整左侧导航展示顺序为：因子监控 → 因子库 → 策略看板 → 任务监控 → 设置。
+  2. 默认首屏静态可见态切到因子监控，避免进入应用时先闪因子库。
+  3. 子库筛选暂时隐藏，保留 DOM 便于后续恢复。
+  4. 新增监控页筛选条、因子库研究口径选择器和可用因子开关。
+  5. 新增独立策略构建页容器，策略看板保留为导入后展示与删除入口。
+-->
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Factor Lab 因子库</title>
-    <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./styles.css?v=20260707-real-data-ui" />
   </head>
   <body>
     <div class="app-shell">
@@ -18,13 +26,13 @@
         </div>
 
         <nav class="nav-list" aria-label="主导航">
-          <button class="nav-item active" type="button" data-view="library">
-            <span class="nav-icon">⌁</span>
-            <span>因子库</span>
-          </button>
-          <button class="nav-item" type="button" data-view="monitor">
+          <button class="nav-item active" type="button" data-view="monitor">
             <span class="nav-icon">△</span>
             <span>因子监控</span>
+          </button>
+          <button class="nav-item" type="button" data-view="library">
+            <span class="nav-icon">⌁</span>
+            <span>因子库</span>
           </button>
           <button class="nav-item" type="button" data-view="strategy">
             <span class="nav-icon">▣</span>
@@ -34,10 +42,12 @@
             <span class="nav-icon">G</span>
             <span>任务监控</span>
           </button>
+          <!-- AI 任务调试入口暂时关闭，后续后端流程稳定后再恢复。
           <button class="nav-item" type="button" data-view="agent_task">
             <span class="nav-icon">AI</span>
             <span>AI 任务(调试)</span>
           </button>
+          -->
           <button class="nav-item" type="button" data-view="settings">
             <span class="nav-icon">⚙</span>
             <span>设置</span>
@@ -55,7 +65,7 @@
       <main class="main">
         <header class="topbar">
           <div class="page-heading">
-            <h1 id="pageTitle">因子库</h1>
+            <h1 id="pageTitle">因子监控</h1>
             <span class="divider"></span>
             <span id="localStatus" class="status-pill status-warn">本地 Flask：检测中</span>
             <span id="cloudStatus" class="status-pill status-warn">云端信息库：未同步</span>
@@ -68,33 +78,42 @@
           </div>
         </header>
 
-        <section id="libraryView" class="content">
+        <section id="libraryView" class="content hidden">
           <section class="category-panel" aria-label="因子分类">
             <div class="filter-row">
-              <div class="filter-label">因子大类：</div>
+              <div class="filter-label">分类：</div>
               <div id="categoryTabs" class="tabs"></div>
             </div>
-            <div class="filter-row sub-filter-row">
+            <div class="filter-row sub-filter-row hidden">
               <div class="filter-label">子库：</div>
               <div id="libraryTabs" class="tabs tabs-sub"></div>
             </div>
           </section>
 
-          <section class="research-period-panel" aria-label="研究时间段">
-            <div class="period-main">
-              <span class="toolbar-label">研究时间段：</span>
-              <span class="period-pill active">当前复现样本区间</span>
-              <button class="period-option" type="button" disabled>近3个月</button>
-              <button class="period-option" type="button" disabled>近1年</button>
-              <button class="period-option" type="button" disabled>近3年</button>
-              <button class="period-option" type="button" disabled>自定义</button>
+          <section class="research-scope-panel" aria-label="研究口径">
+            <div class="scope-readonly">
+              <strong>复现口径</strong>
+              <span>固定读取已生成 proof / evaluation 产物，不随下方研究口径变化。</span>
             </div>
-            <div class="period-note">当前 IC / IR / 覆盖率来自已生成的复现样本；接入研究分析数据后可切换不同时间段。</div>
+            <div class="scope-editable">
+              <header>
+                <strong>研究口径</strong>
+                <span>研究模式，结果不代表复现结论</span>
+              </header>
+              <div class="scope-grid">
+                <label>股票池<select id="researchUniverse"><option>沪深300</option><option>中证500</option><option>中证800</option><option>中证1000</option><option>中证全指</option></select></label>
+                <label>回测周期<select id="researchPeriod"><option>近3个月</option><option selected>近1年</option><option>近3年</option><option>近10年</option></select></label>
+                <label>组合构建<select id="researchPortfolio"><option selected>纯多头</option><option>多空组合Ⅰ</option><option>多空组合Ⅱ</option></select></label>
+                <label>手续费及滑点<select id="researchCost"><option selected>无</option><option>3‰佣金+1‰印花税+无滑点</option><option>3‰佣金+1‰印花税+1‰滑点</option></select></label>
+                <label>过滤涨停及停牌股<select id="researchLimitFilter"><option selected>是</option><option>否</option></select></label>
+              </div>
+            </div>
           </section>
 
           <section class="toolbar" aria-label="快速筛选">
             <div class="toolbar-left">
               <span class="toolbar-label">快速筛选：</span>
+              <label class="inline-toggle"><input id="usableOnlyToggle" type="checkbox" />只看可用因子</label>
               <select id="proofFilter">
                 <option value="all">复现状态：全部</option>
                 <option value="passed">复现状态：已通过</option>
@@ -139,7 +158,7 @@
                     <th class="select-col">选择</th>
                     <th class="sortable" data-sort="factor_name">因子名称</th>
                     <th>所属库</th>
-                    <th>二级分类</th>
+                    <th>分类</th>
                     <th>复现状态</th>
                     <th>真值校验</th>
                     <th class="number sortable" data-sort="coverage_ratio">覆盖率</th>
@@ -160,7 +179,7 @@
           </section>
         </section>
 
-        <section id="monitorView" class="content monitor-view hidden" aria-label="因子监控">
+        <section id="monitorView" class="content monitor-view" aria-label="因子监控">
           <section class="monitor-head">
             <div>
               <h2>因子监控面板</h2>
@@ -174,15 +193,30 @@
 
           <section id="monitorStats" class="monitor-stats" aria-label="监控统计"></section>
 
+          <section class="monitor-filter-panel" aria-label="监控筛选条件">
+            <div class="monitor-filter-row">
+              <span class="monitor-filter-label">分类</span>
+              <div id="monitorCategoryFilters" class="monitor-category-filters"></div>
+            </div>
+            <div class="monitor-filter-row compact">
+              <span class="monitor-filter-label">方向</span>
+              <div class="segmented-filter" id="monitorDirectionFilters">
+                <button class="active" type="button" data-monitor-direction="all">全部</button>
+                <button type="button" data-monitor-direction="positive">正向</button>
+                <button type="button" data-monitor-direction="negative">反向</button>
+              </div>
+            </div>
+          </section>
+
           <section class="monitor-toolbar" aria-label="监控筛选">
             <div class="monitor-filter-group">
               <button class="monitor-filter active" type="button" data-monitor-filter="all">全部</button>
-              <button class="monitor-filter" type="button" data-monitor-filter="strong">强有效</button>
-              <button class="monitor-filter" type="button" data-monitor-filter="medium">中等</button>
-              <button class="monitor-filter" type="button" data-monitor-filter="weak">弱或失效</button>
+              <button class="monitor-filter" type="button" data-monitor-filter="strong">IR&gt;0.3</button>
+              <button class="monitor-filter" type="button" data-monitor-filter="medium">IR 0.1-0.3</button>
+              <button class="monitor-filter" type="button" data-monitor-filter="weak">IR&lt;0.1</button>
               <button class="monitor-filter" type="button" data-monitor-filter="missing">待数据</button>
             </div>
-            <span class="monitor-toolbar-note">分层仅按当前已有 IC/IR 与验证状态做临时巡检，不代表投资有效性。</span>
+            <span class="monitor-toolbar-note">绿色 IR&gt;0.3，黄色 IR 0.1-0.3，红色 IR&lt;0.1；↑ 正向，↓ 反向。</span>
           </section>
 
           <section class="table-card monitor-table-card" aria-label="因子监控列表">
@@ -196,10 +230,11 @@
                     <th class="number monitor-sortable" data-monitor-sort="rank_ic_ir">IC_IR</th>
                     <th class="number monitor-sortable" data-monitor-sort="rank_ic_mean">IC均值</th>
                     <th class="number monitor-sortable" data-monitor-sort="coverage_ratio">覆盖率</th>
-                    <th class="number monitor-sortable" data-monitor-sort="long_short_mean">多空均值</th>
-                    <th class="monitor-sortable" data-monitor-sort="proof_status">复现</th>
-                    <th class="monitor-sortable" data-monitor-sort="truth_status">真值</th>
-                    <th>监控提示</th>
+                    <th class="number monitor-sortable" data-monitor-sort="long_short_mean">近期IC</th>
+                    <th>IC柱</th>
+                    <th>方向</th>
+                    <th class="monitor-sortable" data-monitor-sort="proof_status">验证</th>
+                    <th>市值相关</th>
                   </tr>
                 </thead>
                 <tbody id="monitorTableBody"></tbody>
@@ -218,6 +253,66 @@
               <summary>查看接口契约</summary>
               <span>strategy_monitor_view_v1：strategy_id、factors[]、universe、rebalance、cost_model、metrics、status、updated_at。</span>
             </details>
+          </section>
+
+          <section id="realDataResearchPanel" class="panel-card" aria-label="真实数据研究">
+            <div class="panel-header">
+              <h3>真实数据研究（Quant API）</h3>
+              <span class="panel-badge">实时计算</span>
+            </div>
+            <div class="research-form">
+              <div class="form-row">
+                <label class="form-label">因子集：</label>
+                <select id="researchFactorSet" class="form-select">
+                  <option value="quant_api">Quant API 月频因子</option>
+                  <option value="alpha101">Alpha101</option>
+                  <option value="gtja191">GTJA191</option>
+                </select>
+              </div>
+              <div class="form-row">
+                <label class="form-label">因子名称：</label>
+                <input id="researchFactors" class="form-input" type="text" placeholder="ret_1m,roe_ttm,momentum_12_1" value="ret_1m,roe_ttm,momentum_12_1" />
+              </div>
+              <div class="form-row">
+                <label class="form-label">股票代码：</label>
+                <input id="researchSymbols" class="form-input" type="text" placeholder="000001.SZ,000002.SZ" value="000001.SZ,000002.SZ,000004.SZ" />
+              </div>
+              <div class="form-row">
+                <label class="form-label">日期范围：</label>
+                <input id="researchStartDate" class="form-input" type="date" value="2023-01-01" />
+                <span class="form-separator">至</span>
+                <input id="researchEndDate" class="form-input" type="date" value="2024-01-01" />
+              </div>
+              <div class="form-actions">
+                <button id="runResearchButton" class="btn btn-primary" type="button">运行研究</button>
+                <button id="clearResearchButton" class="btn btn-secondary" type="button">清空结果</button>
+              </div>
+            </div>
+            <div id="researchLoading" class="loading-overlay hidden">
+              <div class="loading-spinner"></div>
+              <span>正在计算因子...请稍候</span>
+            </div>
+            <div id="researchResults" class="research-results hidden">
+              <div class="results-header">
+                <span>研究结果</span>
+                <span id="researchJobId" class="job-id-badge"></span>
+              </div>
+              <table class="research-table">
+                <thead>
+                  <tr>
+                    <th>因子名称</th>
+                    <th>IC均值</th>
+                    <th>IC IR</th>
+                    <th>Rank IC</th>
+                    <th>Sharpe</th>
+                    <th>最大回撤</th>
+                    <th>覆盖率</th>
+                    <th>多空收益</th>
+                  </tr>
+                </thead>
+                <tbody id="researchResultsBody"></tbody>
+              </table>
+            </div>
           </section>
 
           <section id="strategyStats" class="monitor-stats" aria-label="策略统计"></section>
@@ -243,6 +338,8 @@
             </div>
           </section>
         </section>
+
+        <section id="strategyBuilderView" class="content strategy-builder-view hidden" aria-label="策略构建页"></section>
 
         <section id="taskView" class="content task-view hidden" aria-label="任务监控">
           <section class="task-head">
@@ -288,7 +385,9 @@
 
         <section id="detailView" class="content detail-view hidden" aria-label="单因子详情"></section>
 
+        <!-- AI 任务调试窗口暂时关闭。
         <section id="agentTaskView" class="content agent-task-view hidden" aria-label="AI 任务调试入口"></section>
+        -->
 
         <section id="settingsView" class="content settings-view hidden" aria-label="设置"></section>
 
@@ -302,7 +401,7 @@
         </footer>
       </main>
     </div>
-    <script src="./config.js?v=20260706-cloud-api"></script>
-    <script src="./app.js?v=20260706-cloud-api"></script>
+    <script src="./config.js?v=20260707-strategy-builder"></script>
+    <script src="./app.js?v=20260707-strategy-builder"></script>
   </body>
 </html>
