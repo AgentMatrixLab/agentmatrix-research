@@ -4,6 +4,11 @@
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
+## Pages Portal
+
+- GitHub Pages portal: [agentmatrixlab.github.io/agentmatrix-research](https://agentmatrixlab.github.io/agentmatrix-research/)
+- Use the portal for repo navigation, docs entry, workflow links, and common test commands.
+
 ## What Is This?
 
 `agentmatrix-research` is the research backbone of [AgentMatrixLab](https://agentmatrixlab.com). It provides:
