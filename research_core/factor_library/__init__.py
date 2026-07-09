@@ -17,6 +17,7 @@ from .operators import (
 
 from .wq101_alpha_1_10 import compute_all_alphas as compute_wq101_alphas
 from .gtja191_alpha_1_10 import compute_all_alphas as compute_gtja191_alphas
+from .alpha158_compute import compute_all_alphas as compute_alpha158_alphas
 from .batch_compute import compute_factor_set
 
 __all__ = [
@@ -34,5 +35,6 @@ __all__ = [
     # Factor compute
     'compute_wq101_alphas',
     'compute_gtja191_alphas',
+    'compute_alpha158_alphas',
     'compute_factor_set',
 ]

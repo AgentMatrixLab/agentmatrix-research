@@ -29,7 +29,7 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser("overview", help="Show factor_lab overview")
     subparsers.add_parser("list-alpha101", help="List Alpha101 factor specs and proof status")
     list_factor_set_parser = subparsers.add_parser("list-factor-set", help="List WQ101 or GTJA191 factor specs and proof status")
-    list_factor_set_parser.add_argument("--factor-set", choices=["wq101", "gtja191"], required=True)
+    list_factor_set_parser.add_argument("--factor-set", choices=["wq101", "gtja191", "alpha158"], required=True)
 
     catalog_parser = subparsers.add_parser("export-alpha101", help="Export Alpha101 catalog and spec payload")
     catalog_parser.add_argument("--proof-factor", default="alpha1", help="Also export one proof template for the selected factor")
@@ -87,7 +87,7 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--truth-tolerance", type=float, default=1e-12, help="Absolute tolerance for truth comparison")
 
     factor_set_parser = subparsers.add_parser("run-factor-set-demo", help="Run deterministic WQ101/GTJA191 factor_lab demo")
-    factor_set_parser.add_argument("--factor-set", choices=["wq101", "gtja191"], required=True)
+    factor_set_parser.add_argument("--factor-set", choices=["wq101", "gtja191", "alpha158"], required=True)
     factor_set_parser.add_argument(
         "--factors",
         default="",
@@ -195,7 +195,13 @@ def main() -> None:
         return
 
     if args.command == "run-factor-set-demo":
-        default_factors = WQ101_ALPHA_1_10 if args.factor_set == "wq101" else IMPLEMENTED_GTJA191_FACTORS
+        if args.factor_set == "wq101":
+            default_factors = WQ101_ALPHA_1_10
+        elif args.factor_set == "gtja191":
+            default_factors = IMPLEMENTED_GTJA191_FACTORS
+        else:
+            from research_core.factor_lab.libraries.factor_sets import ALPHA158_ALL_FACTORS
+            default_factors = ALPHA158_ALL_FACTORS
         factor_names = [item.strip() for item in args.factors.split(",") if item.strip()] if args.factors else list(default_factors)
         payload = run_factor_set_research_job(
             {

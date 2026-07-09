@@ -15,9 +15,9 @@ def compute_factor_set(df: pd.DataFrame, factor_set: str, factors: list[str] | N
     df:
         OHLCV input with date, code, open, high, low, close, volume, amount.
     factor_set:
-        Either ``"wq101"`` or ``"gtja191"``.
+        One of ``"wq101"``, ``"gtja191"``, or ``"alpha158"``.
     factors:
-        Optional list such as ``["alpha1", "alpha3"]``.
+        Optional list such as ``["alpha1", "alpha3"]`` or ``["KMID", "ROC5"]``.
     """
     result = compute_factor_lab_set(df.copy(), factor_set, factor_names=factors)
 
@@ -30,7 +30,7 @@ def batch_compute_factors(df, factor_sets=None):
 
     参数:
         df: DataFrame, 输入数据
-        factor_sets: list, 要计算的因子集合 ['wq101', 'gtja191']
+        factor_sets: list, 要计算的因子集合 ['wq101', 'gtja191', 'alpha158']
 
     返回:
         DataFrame, 包含所有因子结果
