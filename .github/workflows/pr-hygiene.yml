@@ -1,0 +1,150 @@
+name: PR Hygiene
+
+on:
+  pull_request:
+    paths:
+      - ".github/**"
+      - "backend/**"
+      - "common/**"
+      - "contracts/**"
+      - "pages/**"
+      - "research_core/**"
+      - "scripts/**"
+      - "submissions/**"
+      - "tests/**"
+      - "README.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  hygiene:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Detect changed files
+        id: changed
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --name-only origin/${{ github.base_ref }}...HEAD | tee /tmp/changed_files.txt
+          echo "changed_count=$(wc -l < /tmp/changed_files.txt | tr -d ' ')" >> "$GITHUB_OUTPUT"
+
+      - name: Validate PR body completeness
+        shell: bash
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os
+          import sys
+
+          body = os.environ.get("PR_BODY", "") or ""
+          required_sections = [
+              "# Summary",
+              "# AI Assistance Record",
+              "# Prompt / Instruction Record",
+              "# Validation Evidence",
+              "# Risk Checklist",
+              "# Reviewer Focus",
+          ]
+          missing = [item for item in required_sections if item not in body]
+          placeholder_hits = [
+              "List files, functions, or code blocks that were primarily written or heavily modified by AI.",
+              "Main prompt or instruction used:",
+              "Paste the exact commands you ran and the key output.",
+              "List anything you did not run, did not check, or are not confident about.",
+              "Describe the specific risk and the exact verification you ran.",
+              "Suggested reviewer focus areas:",
+          ]
+          unresolved = [item for item in placeholder_hits if item in body]
+          if missing or unresolved:
+              if missing:
+                  print("Missing required PR template sections:")
+                  for item in missing:
+                      print(f" - {item}")
+              if unresolved:
+                  print("PR body still contains placeholder text:")
+                  for item in unresolved:
+                      print(f" - {item}")
+              sys.exit(1)
+          print("PR body completeness check passed.")
+          PY
+
+      - name: Compile changed Python files
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import pathlib
+          import py_compile
+          import sys
+
+          changed = pathlib.Path("/tmp/changed_files.txt").read_text(encoding="utf-8").splitlines()
+          py_files = [pathlib.Path(item) for item in changed if item.endswith(".py") and pathlib.Path(item).exists()]
+          failures = []
+          for file_path in py_files:
+              try:
+                  py_compile.compile(str(file_path), doraise=True)
+                  print(f"[ok] {file_path}")
+              except Exception as exc:
+                  failures.append((str(file_path), str(exc)))
+          if failures:
+              print("\nPython compile failures detected:")
+              for file_name, error in failures:
+                  print(f" - {file_name}: {error}")
+              sys.exit(1)
+          print(f"Compiled {len(py_files)} changed Python files successfully.")
+          PY
+
+      - name: Block local absolute paths and machine-specific references
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import pathlib
+          import re
+          import sys
+
+          changed = pathlib.Path("/tmp/changed_files.txt").read_text(encoding="utf-8").splitlines()
+          targets = []
+          for item in changed:
+              path = pathlib.Path(item)
+              if not path.exists() or path.suffix.lower() not in {".py", ".yml", ".yaml", ".json", ".txt", ".md"}:
+                  continue
+              targets.append(path)
+
+          patterns = [
+              re.compile(r"[A-Za-z]:\\\\"),
+              re.compile(r"/Users/"),
+              re.compile(r"/home/"),
+              re.compile(r'Path\.home\(\)\s*/\s*"Desktop"'),
+              re.compile(r'Path\.home\(\)\s*/\s*"Downloads"'),
+          ]
+
+          violations = []
+          for path in targets:
+              for line_no, line in enumerate(path.read_text(encoding="utf-8", errors="ignore").splitlines(), start=1):
+                  if "https://" in line or "http://" in line:
+                      continue
+                  if any(pattern.search(line) for pattern in patterns):
+                      violations.append((str(path), line_no, line.strip()))
+
+          if violations:
+              print("Found machine-specific path references in changed files:")
+              for path, line_no, content in violations:
+                  print(f" - {path}:{line_no}: {content}")
+              sys.exit(1)
+          print("No machine-specific path references found.")
+          PY
