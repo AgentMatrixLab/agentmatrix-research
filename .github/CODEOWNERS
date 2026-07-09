@@ -1,0 +1,21 @@
+# Default owner for all changes.
+* @samzhang8
+
+# High-risk research and execution paths.
+/research_core/factor_lab/ @samzhang8
+/research_core/qlib_lab/ @samzhang8
+/research_core/backtest_adapter/ @samzhang8
+/research_core/strategy_engine/ @samzhang8
+/research_core/data_loader/ @samzhang8
+/contracts/ @samzhang8
+/backend/ @samzhang8
+
+# Governance and deployment.
+/.github/workflows/ @samzhang8
+/.github/PULL_REQUEST_TEMPLATE.md @samzhang8
+/.github/CODEOWNERS @samzhang8
+
+# Lower-risk but still public-facing content.
+/pages/ @samzhang8
+/docs/ @samzhang8
+/README.md @samzhang8
