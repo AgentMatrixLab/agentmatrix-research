@@ -40,6 +40,43 @@ jobs:
           git diff --name-only origin/${{ github.base_ref }}...HEAD | tee /tmp/changed_files.txt
           echo "changed_count=$(wc -l < /tmp/changed_files.txt | tr -d ' ')" >> "$GITHUB_OUTPUT"
 
+      - name: Highlight high-risk paths for reviewer focus
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import pathlib
+
+          changed = pathlib.Path("/tmp/changed_files.txt").read_text(encoding="utf-8").splitlines()
+          risk_rules = {
+              "research_core/factor_lab/": "Factor formulas, validation, proof pipeline, and factor-set behavior",
+              "research_core/qlib_lab/": "Qlib mining, backtest, and Alpha158 workflow behavior",
+              "research_core/backtest_adapter/": "Backtest adapter compatibility and execution assumptions",
+              "research_core/strategy_engine/": "Target weights, strategy logic, and execution semantics",
+              "research_core/data_loader/": "Data loading, market universe, and point-in-time behavior",
+              "contracts/": "API / contract compatibility and downstream payload shape",
+              "backend/": "Public API behavior and response compatibility",
+              ".github/workflows/": "CI / deployment behavior and repository automation",
+          }
+
+          hits = []
+          for prefix, description in risk_rules.items():
+              matched = [item for item in changed if item.startswith(prefix)]
+              if matched:
+                  hits.append((prefix, description, matched))
+
+          if not hits:
+              print("No high-risk directories changed.")
+          else:
+              print("Reviewer focus: high-risk directories were changed in this PR.")
+              for prefix, description, matched in hits:
+                  print(f"\n[{prefix}] {description}")
+                  for item in matched[:10]:
+                      print(f" - {item}")
+                  if len(matched) > 10:
+                      print(f" - ... and {len(matched) - 10} more file(s)")
+          PY
+
       - name: Validate PR body completeness
         shell: bash
         env:
@@ -62,11 +99,8 @@ jobs:
           missing = [item for item in required_sections if item not in body]
           placeholder_hits = [
               "List files, functions, or code blocks that were primarily written or heavily modified by AI.",
-              "Main prompt or instruction used:",
               "Paste the exact commands you ran and the key output.",
               "List anything you did not run, did not check, or are not confident about.",
-              "Describe the specific risk and the exact verification you ran.",
-              "Suggested reviewer focus areas:",
           ]
           unresolved = [item for item in placeholder_hits if item in body]
           if missing or unresolved:
