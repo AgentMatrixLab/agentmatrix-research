@@ -153,8 +153,13 @@ jobs:
 
           changed = pathlib.Path("/tmp/changed_files.txt").read_text(encoding="utf-8").splitlines()
           targets = []
+          excluded = {
+              pathlib.Path(".github/workflows/pr-hygiene.yml").as_posix(),
+          }
           for item in changed:
               path = pathlib.Path(item)
+              if path.as_posix() in excluded:
+                  continue
               if not path.exists() or path.suffix.lower() not in {".py", ".yml", ".yaml", ".json", ".txt", ".md"}:
                   continue
               targets.append(path)
