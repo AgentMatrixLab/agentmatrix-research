@@ -249,6 +249,24 @@ def analyze_factor(factor_name: str, panel: pd.DataFrame, factor_df: pd.DataFram
     valid_factor = df["factor"].notna()
     coverage = valid_factor.sum() / len(df) if len(df) > 0 else 0
     
+    ic_time_series = []
+    for i in range(len(dates)):
+        ic_time_series.append({
+            "date": dates[i].strftime("%Y-%m-%d") if hasattr(dates[i], "strftime") else str(dates[i]),
+            "ic": float(ic_values.iloc[i]),
+            "rank_ic": float(rank_ic_values.iloc[i]),
+        })
+    
+    group_returns_data = {}
+    if not group_returns.empty:
+        for group in group_returns.columns:
+            group_returns_data[str(group)] = []
+            for date, val in group_returns[group].items():
+                group_returns_data[str(group)].append({
+                    "date": date.strftime("%Y-%m-%d") if hasattr(date, "strftime") else str(date),
+                    "return": float(val),
+                })
+    
     results = {
         "factor_name": factor_name,
         "coverage_ratio": float(coverage),
@@ -262,6 +280,8 @@ def analyze_factor(factor_name: str, panel: pd.DataFrame, factor_df: pd.DataFram
         "pearson_ic_mean": float(ic_values.mean()),
         "long_short_mean": float(group_returns["long_short"].mean()) if not group_returns.empty and "long_short" in group_returns.columns else np.nan,
         "cross_section_count": int(len(dates)),
+        "ic_time_series": ic_time_series,
+        "group_returns": group_returns_data,
     }
     
     return results
@@ -332,13 +352,20 @@ def build_strategy_report(panel: pd.DataFrame, factor_frame: pd.DataFrame, facto
         mean = float(returns.mean()) if len(returns) else float("nan")
         std = float(returns.std(ddof=1)) if len(returns) > 1 else float("nan")
         
+        if len(daily_rows) >= 2:
+            dates = pd.to_datetime([row["date"] for row in daily_rows])
+            avg_interval_days = (dates[-1] - dates[0]).days / (len(dates) - 1)
+            freq_multiplier = 252 / avg_interval_days if avg_interval_days > 0 else 12
+        else:
+            freq_multiplier = 12
+        
         results[factor_name] = {
             "daily": daily_rows,
             "summary": {
                 "days": len(daily_rows),
                 "mean_daily_return": mean,
-                "annualized_return": float((1.0 + mean) ** 252 - 1.0) if pd.notna(mean) else float("nan"),
-                "sharpe": float(np.sqrt(252) * mean / std) if pd.notna(std) and std != 0 else float("nan"),
+                "annualized_return": float((1.0 + mean) ** freq_multiplier - 1.0) if pd.notna(mean) else float("nan"),
+                "sharpe": float(np.sqrt(freq_multiplier) * mean / std) if pd.notna(std) and std != 0 else float("nan"),
                 "max_drawdown": float(drawdown.min()) if len(drawdown) else float("nan"),
                 "mean_turnover": float(np.mean(turnovers)) if turnovers else float("nan"),
                 "final_equity": float(equity.iloc[-1]) if len(equity) else float("nan"),

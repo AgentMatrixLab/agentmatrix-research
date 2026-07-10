@@ -1845,6 +1845,81 @@ code {
   color: var(--red);
 }
 
+.metric-card.live {
+  border-color: #93c5fd;
+  background: #eff6ff;
+}
+
+.metric-card.live span {
+  color: #1d4ed8;
+}
+
+.live-metrics {
+  margin-top: 12px;
+  border-top: 1px dashed var(--line);
+  padding-top: 16px;
+}
+
+.chart-legend {
+  display: flex;
+  justify-content: flex-end;
+  gap: 20px;
+  padding: 8px 18px 14px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.legend-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-right: 6px;
+}
+
+.legend-dot.backtest {
+  background: #9ca3af;
+}
+
+.legend-dot.live {
+  background: #3b82f6;
+}
+
+.research-input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.research-svg {
+  width: 100%;
+  height: 100%;
+}
+
+.metrics-group {
+  margin-bottom: 16px;
+}
+
+.metrics-group-title {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 8px;
+  padding-left: 8px;
+  border-left: 3px solid;
+}
+
+.metrics-group-title.backtest-title {
+  color: #374151;
+  border-color: #9ca3af;
+}
+
+.metrics-group-title.live-title {
+  color: #1d4ed8;
+  border-color: #3b82f6;
+}
+
 .summary-card {
   overflow: hidden;
 }
@@ -1920,6 +1995,22 @@ code {
     linear-gradient(90deg, #e7edf7 1px, transparent 1px),
     #fbfdff;
   background-size: 40px 40px;
+}
+
+.chart-rendered {
+  box-sizing: border-box;
+  display: block;
+  padding: 14px 18px 10px;
+  background: #ffffff;
+}
+
+.chart-rendered.chart-large {
+  height: 430px;
+  padding: 8px 10px 6px;
+}
+
+.chart-rendered:not(.chart-large) {
+  height: 250px;
 }
 
 .chart-large {
@@ -2099,6 +2190,20 @@ code {
 
 .strategy-universe-cell {
   max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.strategy-name-cell {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.strategy-factors-cell {
+  max-width: 250px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2413,8 +2518,73 @@ code {
 
 .strategy-detail-grid {
   display: grid;
-  grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr);
-  gap: 16px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  align-items: start;
+}
+
+.risk-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  padding: 16px;
+}
+
+.risk-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: var(--surface-soft);
+  font-size: 14px;
+}
+
+.risk-item span {
+  color: var(--muted);
+}
+
+.risk-item strong {
+  color: var(--primary);
+}
+
+.equity-svg {
+  width: 100%;
+  height: clamp(560px, 64vh, 760px);
+  display: block;
+  background: #ffffff;
+}
+
+.strategy-equity-chart {
+  padding: 18px 18px 6px;
+  background: #ffffff;
+}
+
+.chart-toggle {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.toggle-btn {
+  padding: 4px 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  background: #f9fafb;
+  color: #6b7280;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.toggle-btn:hover {
+  background: #f3f4f6;
+}
+
+.toggle-btn.active {
+  background: #3b82f6;
+  color: white;
+  border-color: #3b82f6;
 }
 
 .chart-card {
@@ -2425,7 +2595,7 @@ code {
 }
 
 .chart-card.large-chart {
-  grid-row: span 2;
+  grid-column: 1 / -1;
 }
 
 .chart-card header {
@@ -2436,6 +2606,14 @@ code {
   border-bottom: 1px solid var(--line);
   padding: 0 18px;
   background: #eef4ff;
+}
+
+.chart-card.large-chart header {
+  min-height: 56px;
+}
+
+.chart-card.large-chart header strong {
+  font-size: 18px;
 }
 
 .chart-card header span {
@@ -3186,11 +3364,27 @@ code {
 
   .detail-meta,
   .metric-grid,
+  .strategy-detail-grid,
   .settings-head dl,
   .settings-grid,
   .settings-page-grid,
   .settings-page-kv-grid {
     grid-template-columns: 1fr;
+  }
+
+  .equity-svg {
+    height: 420px;
+  }
+
+  .chart-card header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+    padding: 14px 18px;
+  }
+
+  .chart-toggle {
+    margin-left: 0;
   }
 
   .settings-head,

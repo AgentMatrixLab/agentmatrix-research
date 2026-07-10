@@ -143,8 +143,10 @@ const state = {
   agentInstruction: "",
   agentTaskSubmitting: false,
   usableOnly: false,
-  strategyDrafts: [],
+  strategyDrafts: loadSavedStrategies(),
   strategyBuilderFactors: [],
+  factorDetailData: {},
+  factorDetailLoading: {},
   strategyTemplates: [],
   strategyTemplatesLoaded: false,
   strategyTemplatesLoading: false,
@@ -154,6 +156,10 @@ const state = {
   strategyBuilderResult: null,
   strategyDeleteMode: false,
   selectedStrategyDeleteIds: new Set(),
+  strategyDetailLoading: {},
+  strategies: [],
+  strategiesLoaded: false,
+  strategiesLoading: false,
   researchParams: {
     universe: "沪深300",
     period: "近1年",
@@ -698,8 +704,7 @@ async function loadData() {
       els.errorPanel.classList.add("hidden");
       renderTabs(normalizedPayload);
       applyFilters();
-      syncDetailFromHash();
-      if (state.view === "detail") renderDetail();
+      await syncDetailFromHash();
       if (state.view === "monitor") renderMonitor();
       if (state.view === "strategy") renderStrategy();
       if (state.view === "strategy-detail") renderStrategyDetail();
@@ -718,8 +723,9 @@ async function loadData() {
     els.errorPanel.classList.add("hidden");
     renderTabs(normalizedPayload);
     applyFilters();
-    syncDetailFromHash();
-    if (state.view === "detail") renderDetail();
+    await syncDetailFromHash();
+    loadStrategies();
+    loadStrategyTemplates();
     if (state.view === "monitor") renderMonitor();
     if (state.view === "strategy") renderStrategy();
     if (state.view === "strategy-detail") renderStrategyDetail();
@@ -859,6 +865,7 @@ function jqFactorCategory(factor) {
   if (category.includes("财务")) return "基础科目及衍生类因子";
   if (category.includes("价值") || category.includes("规模")) return "风险因子-风格因子";
   if (library.includes("barra")) return "风险因子-新风格因子";
+  if (category.includes("量价") || category.includes("技术")) return "动量类因子";
   return "技术指标因子";
 }
 
@@ -1566,6 +1573,40 @@ function activeStrategyTemplate() {
   return state.strategyTemplates.find((template) => template.template_id === state.selectedStrategyTemplateId) || state.strategyTemplates[0] || null;
 }
 
+function loadSavedStrategies() {
+  try {
+    const saved = localStorage.getItem("factor_lab_strategies");
+    return saved ? JSON.parse(saved) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveStrategies() {
+  try {
+    localStorage.setItem("factor_lab_strategies", JSON.stringify(state.strategyDrafts));
+  } catch {
+    console.error("Failed to save strategies to localStorage");
+  }
+}
+
+async function loadStrategies() {
+  if (state.strategiesLoaded || state.strategiesLoading) return;
+  state.strategiesLoading = true;
+  try {
+    const response = await fetchWithTimeout(withCacheBust(`${API_BASE}/strategies`));
+    if (!response.ok) throw new Error(`strategies ${response.status}`);
+    const payload = await response.json();
+    state.strategies = payload.items || [];
+  } catch (error) {
+    state.strategies = [];
+  } finally {
+    state.strategiesLoading = false;
+    state.strategiesLoaded = true;
+    if (state.view === "strategy") renderStrategy();
+  }
+}
+
 function seedStrategyBuilderParams(template) {
   (template?.param_schema || []).forEach((field) => {
     if (state.strategyBuilderParams[field.key] === undefined) {
@@ -1655,15 +1696,14 @@ async function runStrategyBuilder() {
   }
   const payload = strategyRunPayload("回测中");
   try {
-    // AGENT-HOOK: 此运行端点未来由 Agent 自动调用，策略内部逻辑在后端模板中封装。
-    const response = await fetchWithTimeout(`${API_BASE}/strategy-runs/run`, {
+    const response = await fetchWithTimeout(`${API_BASE}/strategy-run`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
     if (!response.ok) throw new Error(`strategy run ${response.status}`);
     const result = await response.json();
-    state.strategyBuilderResult = result.result || result;
+    state.strategyBuilderResult = result;
   } catch (error) {
     state.strategyBuilderResult = mockStrategyRunResult(payload);
   }
@@ -1715,6 +1755,7 @@ async function saveStrategyBuilder() {
     // 本地未接后端时仍导入看板，后续由同一契约替换为真实持久化。
   }
   state.strategyDrafts.unshift(strategyRowFromRun(payload));
+  saveStrategies();
   state.view = "strategy";
   window.location.hash = "";
   renderView();
@@ -1738,8 +1779,43 @@ function renderStrategyBuilderResult() {
   }
   const backtest = result.backtest_result || {};
   const live = result.live_result || {};
-  return `
-    <section class="builder-result-card">
+  const backtestEquity = backtest.equity_curve || [];
+  const liveEquity = live.equity_curve || [];
+  
+  let curveHtml = "";
+  if (backtestEquity.length > 0 || liveEquity.length > 0) {
+    const allEquity = [...backtestEquity, ...liveEquity];
+    const minVal = Math.min(...allEquity.filter(v => !isNaN(v)), 0.8);
+    const maxVal = Math.max(...allEquity.filter(v => !isNaN(v)), 1.2);
+    const range = maxVal - minVal || 0.4;
+    const totalLen = backtestEquity.length + liveEquity.length;
+    
+    const backtestPath = backtestEquity.length > 0 ? generatePathFromEquity(backtestEquity, minVal, maxVal, 0, totalLen) : "";
+    const livePath = liveEquity.length > 0 ? generatePathFromEquity(liveEquity, minVal, maxVal, backtestEquity.length, totalLen) : "";
+    const cutoffX = backtestEquity.length > 0 ? (backtestEquity.length / totalLen) * 600 : 450;
+    
+    curveHtml = `
+      <svg viewBox="0 0 600 120" class="equity-svg" style="height:120px">
+        <defs>
+          <linearGradient id="builderBacktestGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" style="stop-color:#94a3b8;stop-opacity:0.2" />
+            <stop offset="100%" style="stop-color:#94a3b8;stop-opacity:0" />
+          </linearGradient>
+          <linearGradient id="builderLiveGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" style="stop-color:#3b82f6;stop-opacity:0.3" />
+            <stop offset="100%" style="stop-color:#3b82f6;stop-opacity:0" />
+          </linearGradient>
+        </defs>
+        ${backtestPath ? `<path d="${backtestPath}" fill="none" stroke="#94a3b8" stroke-width="1.8" stroke-dasharray="5,4" stroke-linejoin="round" stroke-linecap="round" /><path d="${backtestPath} L 600,100 L 0,100 Z" fill="url(#builderBacktestGradient)" />` : ""}
+        ${livePath ? `<path d="${livePath}" fill="none" stroke="#3b82f6" stroke-width="1.9" stroke-linejoin="round" stroke-linecap="round" /><path d="${livePath} L 600,100 L ${cutoffX},100 Z" fill="url(#builderLiveGradient)" />` : ""}
+        <line x1="${cutoffX}" y1="10" x2="${cutoffX}" y2="100" stroke="#94a3b8" stroke-width="0.9" stroke-dasharray="4,4" />
+        <text x="${cutoffX + 5}" y="20" fill="#6b7280" font-size="10">临界日</text>
+        <text x="10" y="115" fill="#6b7280" font-size="10">回测段</text>
+        <text x="550" y="115" fill="#6b7280" font-size="10">实盘段</text>
+      </svg>
+    `;
+  } else {
+    curveHtml = `
       <div class="builder-curve" aria-label="净值曲线">
         <div class="curve-line curve-line-backtest"></div>
         <div class="curve-cutoff" title="临界日 ${escapeHtml(result.cutoff_date || state.strategyBuilderParams.cutoff_date || "-")}"></div>
@@ -1747,10 +1823,16 @@ function renderStrategyBuilderResult() {
         <span class="curve-label left">回测段</span>
         <span class="curve-label right">实盘段</span>
       </div>
+    `;
+  }
+  
+  return `
+    <section class="builder-result-card">
+      ${curveHtml}
       <div class="builder-metrics">
         <div class="builder-metric-head"><span>指标</span><strong>回测段</strong><strong>实盘段</strong></div>
         ${metricCell("年化", backtest.annual_return, live.annual_return, formatRatio)}
-        ${metricCell("夏普", backtest.sharpe, live.sharpe, (value) => formatNumber(value, 2))}
+        ${metricCell("夏普", backtest.sharpe_ratio || backtest.sharpe, live.sharpe_ratio || live.sharpe, (value) => formatNumber(value, 2))}
         ${metricCell("最大回撤", backtest.max_drawdown, live.max_drawdown, formatRatio)}
         ${metricCell("胜率", backtest.win_rate, live.win_rate, formatRatio)}
       </div>
@@ -1866,64 +1948,45 @@ function renderStrategyBuilder() {
 }
 
 function strategyRows() {
-  const reusable = state.rawFactors.filter((factor) => factor.reuse_recommendation === "可复用");
-  const first = reusable[0] || state.rawFactors[0];
-  const baseRows = [
-    {
-      id: first ? `strategy_single_factor_${sanitizeId(first.id || first.factor_name)}` : "strategy_single_factor",
-      name: first ? `${first.factor_name} 单因子分层策略` : "单因子分层策略",
-      type: "单因子",
-      factors: first ? `${first.library}:${first.factor_name}` : "待选择",
-      universe: "当前样本股票池",
-      rebalance: "待策略层接入",
-      cost: "待策略层接入",
-      annualReturn: null,
-      sharpe: null,
-      maxDrawdown: null,
-      status: first ? "研究就绪" : "待接入",
-      updatedAt: first?.latest_checked_at || "-",
-    },
-    {
-      id: "strategy_multi_factor_candidate",
-      name: "多因子合成候选",
-      type: "多因子",
-      factors: "待选择",
-      universe: "待接入",
-      rebalance: "待接入",
-      cost: "待接入",
-      annualReturn: null,
-      sharpe: null,
-      maxDrawdown: null,
-      status: "待接入",
-      updatedAt: "-",
-    },
-    // AI Agent 策略占位暂时关闭。
-    // {
-    //   id: "strategy_agent_pipeline",
-    //   name: "AI Agent 自动生成策略",
-    //   type: "Agent",
-    //   factors: "待 Agent 提交",
-    //   universe: "待接入",
-    //   rebalance: "待接入",
-    //   cost: "待接入",
-    //   annualReturn: null,
-    //   sharpe: null,
-    //   maxDrawdown: null,
-    //   status: "待接入",
-    //   updatedAt: "-",
-    // },
-  ];
-  return [...state.strategyDrafts, ...baseRows];
+  const apiRows = state.strategies.map((s) => ({
+    id: s.id,
+    name: s.name,
+    type: s.type,
+    factors: s.factors,
+    universe: s.universe,
+    rebalance: s.rebalance || "月频调仓",
+    cost: s.cost || "0.1%",
+    annualReturn: s.annualReturn,
+    sharpe: s.sharpe,
+    maxDrawdown: s.maxDrawdown,
+    status: s.status || "研究就绪",
+    updatedAt: s.updatedAt || "-",
+    rank_ic_mean: s.rank_ic_mean,
+    rank_ic_ir: s.rank_ic_ir,
+    cutoff_date: s.cutoff_date,
+    equity_curve: s.equity_curve,
+    nav_history: s.nav_history,
+    metrics_backtest: s.metrics_backtest,
+    metrics_live: s.metrics_live,
+    params: s.params,
+    data_source: s.data_source,
+    debug: s.debug,
+    backtest_result: s.backtest_result,
+    live_result: s.live_result,
+  }));
+  return [...state.strategyDrafts, ...apiRows];
 }
 
 function renderStrategyStats(rows) {
   if (!els.strategyStats) return;
   const ready = rows.filter((row) => row.status === "研究就绪").length;
+  const avgSharpe = rows.length ? rows.reduce((sum, r) => sum + (r.sharpe || 0), 0) / rows.length : 0;
+  const avgReturn = rows.length ? rows.reduce((sum, r) => sum + (r.annualReturn || 0), 0) / rows.length : 0;
   els.strategyStats.innerHTML = [
     ["策略条目", rows.length, "含已接入和预留流程"],
     ["已有研究基础", ready, "可从因子研究结果继续推进"],
-    ["正式回测", 0, "等待策略层与真实交易参数接入"],
-    ["数据状态", "占位", "当前不触发计算"],
+    ["平均夏普", formatNumber(avgSharpe, 2), "基于因子IC/IR估算"],
+    ["平均年化", formatRatio(avgReturn), "基于因子IC/IR估算"],
   ]
     .map(
       ([label, value, note]) => `
@@ -1938,6 +2001,9 @@ function renderStrategyStats(rows) {
 }
 
 function renderStrategy() {
+  if (!state.strategiesLoaded && !state.strategiesLoading) {
+    loadStrategies();
+  }
   const rows = strategyRows();
   if (state.strategySortKey && state.strategySortDirection !== "default") {
     rows.sort(compareStrategies);
@@ -1949,7 +2015,7 @@ function renderStrategy() {
     .map(
       (row) => `
         <tr class="${state.strategyDeleteMode ? "strategy-delete-mode-row" : ""}">
-          <td>
+          <td class="strategy-name-cell" title="${escapeHtml(row.name)}">
             ${
               state.strategyDeleteMode
                 ? `<label class="strategy-delete-check">
@@ -1960,7 +2026,7 @@ function renderStrategy() {
             <button type="button" class="strategy-link" data-strategy-id="${escapeHtml(row.id)}">${escapeHtml(row.name)}</button>
             <span class="monitor-source-sub">${escapeHtml(row.type || "-")}</span>
           </td>
-          <td>${escapeHtml(row.factors)}</td>
+          <td class="strategy-factors-cell" title="${escapeHtml(row.factors)}">${escapeHtml(row.factors)}</td>
           <td class="strategy-universe-cell" title="${escapeHtml(row.universe)}">${escapeHtml(row.universe)}</td>
           <td>
             <strong>${escapeHtml(row.rebalance)}</strong>
@@ -2036,6 +2102,7 @@ function renderStrategyDeleteActions(rows) {
 function deleteSelectedStrategies() {
   if (!state.selectedStrategyDeleteIds.size) return;
   state.strategyDrafts = state.strategyDrafts.filter((row) => !state.selectedStrategyDeleteIds.has(row.id));
+  saveStrategies();
   state.selectedStrategyDeleteIds.clear();
   state.strategyDeleteMode = false;
   renderStrategy();
@@ -2077,18 +2144,419 @@ function activeStrategy() {
   return strategyRows().find((row) => row.id === state.activeStrategyId);
 }
 
-function openStrategyDetail(strategyId) {
+function normalizeRowEquityCurve(row) {
+  const params = row.params || {};
+  const cutoffDate = params.cutoff_date || row.cutoff_date || "2024-06-01";
+  const sourcePoints = Array.isArray(row.equity_curve) && row.equity_curve.length
+    ? row.equity_curve
+    : Array.isArray(row.nav_history)
+      ? row.nav_history
+      : [];
+  return sourcePoints
+    .map((point) => {
+      const nav = Number(point.nav);
+      if (!point.date || !Number.isFinite(nav)) return null;
+      return {
+        date: point.date,
+        nav,
+        phase: point.phase || (point.date <= cutoffDate ? "backtest" : "live"),
+      };
+    })
+    .filter(Boolean);
+}
+
+function detailDataFromStrategyRow(row) {
+  const factorText = Array.isArray(row.factors) ? row.factors.join(", ") : String(row.factors || "");
+  const factors = factorText
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .map((factor_id) => ({ factor_id, direction: 1 }));
+  return {
+    strategy_id: row.id,
+    name: row.name,
+    type: row.type,
+    factors,
+    params: row.params || {
+      universe: row.universe,
+      cutoff_date: row.cutoff_date,
+      rebalance: row.rebalance,
+      cost: row.cost,
+    },
+    equity_curve: normalizeRowEquityCurve(row),
+    metrics_backtest: row.metrics_backtest || {},
+    metrics_live: row.metrics_live || {},
+    data_source: row.data_source,
+    debug: row.debug,
+  };
+}
+
+async function loadStrategyDetailData(strategyId) {
+  if (state.strategyDetailLoading[strategyId]) return;
+  state.strategyDetailLoading[strategyId] = true;
+  try {
+    const response = await fetchWithTimeout(withCacheBust(`${API_BASE}/strategy/${strategyId}`));
+    if (response.ok) {
+      const data = await response.json();
+      state.strategyDetailData[strategyId] = data;
+    }
+  } catch (error) {
+    console.error("获取策略详情失败:", error);
+  } finally {
+    state.strategyDetailLoading[strategyId] = false;
+    if (state.view === "strategy-detail" && state.activeStrategyId === strategyId) {
+      renderStrategyDetail();
+    }
+  }
+}
+
+async function openStrategyDetail(strategyId) {
   const row = strategyRows().find((item) => item.id === strategyId);
   if (!row) return;
+  
+  if (state.autoRefreshTimer) {
+    window.clearInterval(state.autoRefreshTimer);
+    state.autoRefreshTimer = null;
+  }
+  
   state.view = "strategy-detail";
   state.activeStrategyId = strategyId;
+  
+  if (!state.strategyDetailData) {
+    state.strategyDetailData = {};
+  }
+
+  const rowDetailData = detailDataFromStrategyRow(row);
+  if (rowDetailData.equity_curve.length) {
+    state.strategyDetailData[strategyId] = rowDetailData;
+    renderStrategyDetail();
+    return;
+  }
+  
+  if (!state.strategyDetailData[strategyId]) {
+    await loadStrategyDetailData(strategyId);
+    return;
+    try {
+      const response = await fetchWithTimeout(withCacheBust(`${API_BASE}/strategy/${strategyId}`));
+      if (response.ok) {
+        const data = await response.json();
+        state.strategyDetailData[strategyId] = data;
+        renderStrategyDetail();
+        return;
+      }
+    } catch (error) {
+      console.error("获取策略详情失败:", error);
+    }
+  }
+  
   renderStrategyDetail();
 }
 
 function closeStrategyDetail() {
+  startAutoRefresh();
   state.view = "strategy";
   state.activeStrategyId = null;
   renderView();
+}
+
+function normalizeEquityValues(series) {
+  if (!Array.isArray(series)) return [];
+  return series
+    .map((point) => {
+      const value = typeof point === "number" ? point : point?.nav ?? point?.equity ?? point?.value;
+      return Number(value);
+    })
+    .filter((value) => Number.isFinite(value) && value > 0);
+}
+
+function normalizeEquityDates(series, fallbackDates = []) {
+  if (!Array.isArray(series)) return fallbackDates;
+  const dates = series.map((point, index) => (
+    typeof point === "object" && point !== null ? point.date || fallbackDates[index] || "" : fallbackDates[index] || ""
+  ));
+  return dates.length ? dates : fallbackDates;
+}
+
+function previewEquitySeries() {
+  const dates = [
+    "2019-01-31", "2019-04-30", "2019-07-31", "2019-10-31",
+    "2020-01-31", "2020-04-30", "2020-07-31", "2020-10-31",
+    "2021-01-31", "2021-04-30", "2021-07-31", "2021-10-31",
+    "2022-01-31", "2022-04-30", "2022-07-31", "2022-10-31",
+    "2023-01-31", "2023-04-30", "2023-07-31", "2023-10-31",
+    "2024-01-31", "2024-04-30", "2024-07-31", "2024-10-31",
+  ];
+  const equity = [
+    1.00, 1.02, 1.01, 1.04,
+    1.05, 1.03, 1.08, 1.12,
+    1.15, 1.18, 1.16, 1.22,
+    1.20, 1.24, 1.28, 1.27,
+    1.31, 1.38, 1.35, 1.42,
+    1.48, 1.45, 1.56, 1.62,
+  ];
+  const split = 15;
+  return {
+    backtestEquity: equity.slice(0, split),
+    liveEquity: equity.slice(split - 1),
+    backtestDates: dates.slice(0, split),
+    liveDates: dates.slice(split - 1),
+  };
+}
+
+const EQUITY_CHART = {
+  left: 64,
+  right: 1540,
+  top: 38,
+  bottom: 370,
+  tickBottom: 398,
+  dateY: 424,
+  labelX: 802,
+  labelY: 464,
+};
+
+function equityX(index, totalLength) {
+  return EQUITY_CHART.left + (index / Math.max(1, totalLength - 1)) * (EQUITY_CHART.right - EQUITY_CHART.left);
+}
+
+function equityY(value, minVal, maxVal, logScale = false) {
+  const height = EQUITY_CHART.bottom - EQUITY_CHART.top;
+  let normalized;
+  if (logScale) {
+    const logMin = Math.log10(Math.max(minVal, 0.01));
+    const logMax = Math.log10(Math.max(maxVal, 0.01));
+    const logRange = logMax - logMin || 1;
+    const logVal = Math.log10(Math.max(value, 0.01));
+    normalized = (logVal - logMin) / logRange;
+  } else {
+    const range = maxVal - minVal || 0.4;
+    normalized = (value - minVal) / range;
+  }
+  return EQUITY_CHART.bottom - normalized * height;
+}
+
+function equityTickIndexes(dates, maxTicks = 9) {
+  if (!Array.isArray(dates) || dates.length === 0) return [];
+  const total = dates.length;
+  const count = Math.min(maxTicks, total);
+  if (count <= 1) return [0];
+  return [...new Set(
+    Array.from({ length: count }, (_, tick) => Math.round((tick * (total - 1)) / (count - 1)))
+  )].sort((a, b) => a - b);
+}
+
+function renderEquityCurve(row, logScale = false) {
+  const backtest = row.backtestResult || row.backtest_result || {};
+  const live = row.liveResult || row.live_result || {};
+  let backtestEquity = normalizeEquityValues(backtest.equity_curve || backtest.equity || []);
+  let liveEquity = normalizeEquityValues(live.equity_curve || live.equity || []);
+  let backtestDates = normalizeEquityDates(backtest.equity_curve, backtest.dates || []);
+  let liveDates = normalizeEquityDates(live.equity_curve, live.dates || []);
+  let previewOnly = false;
+  if (backtestEquity.length === 0 && liveEquity.length === 0) {
+    const preview = previewEquitySeries();
+    backtestEquity = preview.backtestEquity;
+    liveEquity = preview.liveEquity;
+    backtestDates = preview.backtestDates;
+    liveDates = preview.liveDates;
+    previewOnly = true;
+  }
+  
+  if (backtestEquity.length > 0 || liveEquity.length > 0) {
+    const allEquity = [...backtestEquity, ...liveEquity];
+    const allDates = [...backtestDates, ...liveDates];
+    const validEquity = allEquity.filter(v => !isNaN(v) && v > 0);
+    const minVal = Math.min(...validEquity, 0.8);
+    const maxVal = Math.max(...validEquity, 1.2);
+    const range = maxVal - minVal || 0.4;
+    const totalLength = backtestEquity.length + liveEquity.length;
+    
+    const backtestPath = backtestEquity.length > 0 ? generatePathFromEquity(backtestEquity, minVal, maxVal, 0, totalLength, logScale) : "";
+    const livePath = liveEquity.length > 0 ? generatePathFromEquity(liveEquity, minVal, maxVal, backtestEquity.length, totalLength, logScale) : "";
+    const cutoffIndex = backtestEquity.length > 0 ? Math.min(totalLength - 1, backtestEquity.length) : Math.floor(totalLength * 0.75);
+    const cutoffX = equityX(cutoffIndex, totalLength);
+    
+    let html = "";
+    
+    html += `<line x1="${EQUITY_CHART.left}" y1="${EQUITY_CHART.top}" x2="${EQUITY_CHART.left}" y2="${EQUITY_CHART.bottom}" stroke="#e2e8f0" stroke-width="1" />`;
+    html += `<line x1="${EQUITY_CHART.left}" y1="${EQUITY_CHART.bottom}" x2="${EQUITY_CHART.right}" y2="${EQUITY_CHART.bottom}" stroke="#e2e8f0" stroke-width="1" />`;
+    
+    let yTicks, yMin, yMax;
+    if (logScale) {
+      const logMin = Math.log10(Math.max(minVal, 0.01));
+      const logMax = Math.log10(Math.max(maxVal, 0.01));
+      yMin = Math.pow(10, Math.floor(logMin));
+      yMax = Math.pow(10, Math.ceil(logMax));
+      yTicks = [];
+      let val = yMin;
+      while (val <= yMax) {
+        yTicks.push(val);
+        val *= 2;
+        if (val > yMax && yTicks.length < 5) val = yMin * 5;
+      }
+      yTicks = [...new Set(yTicks)].sort((a, b) => a - b).slice(0, 5);
+    } else {
+      yTicks = [minVal, minVal + range * 0.25, minVal + range * 0.5, minVal + range * 0.75, maxVal];
+    }
+    
+    yTicks.forEach((val) => {
+      const y = equityY(val, minVal, maxVal, logScale);
+      html += `<line x1="${EQUITY_CHART.left}" y1="${y}" x2="${EQUITY_CHART.right}" y2="${y}" stroke="#f1f5f9" stroke-width="1" />`;
+      html += `<line x1="${EQUITY_CHART.left - 8}" y1="${y}" x2="${EQUITY_CHART.left}" y2="${y}" stroke="#e2e8f0" stroke-width="1" />`;
+      html += `<text x="${EQUITY_CHART.left - 14}" y="${y + 4}" fill="#64748b" font-size="12" text-anchor="end">${logScale ? val.toExponential(1) : val.toFixed(2)}</text>`;
+    });
+    
+    const xTickIndexes = equityTickIndexes(allDates);
+    html += `<line x1="${EQUITY_CHART.left}" y1="${EQUITY_CHART.tickBottom}" x2="${EQUITY_CHART.right}" y2="${EQUITY_CHART.tickBottom}" stroke="#e2e8f0" stroke-width="1" />`;
+    [...new Set(xTickIndexes)].forEach((i) => {
+      const x = equityX(i, totalLength);
+      const date = allDates[i] || "";
+      html += `<line x1="${x}" y1="${EQUITY_CHART.bottom}" x2="${x}" y2="${EQUITY_CHART.tickBottom}" stroke="#e2e8f0" stroke-width="1" />`;
+      html += `<text x="${x}" y="${EQUITY_CHART.dateY}" fill="#64748b" font-size="11" text-anchor="middle">${escapeHtml(date || "-")}</text>`;
+    });
+    html += `<text x="${EQUITY_CHART.labelX}" y="${EQUITY_CHART.labelY}" fill="#64748b" font-size="12" font-weight="600" text-anchor="middle">日期 / Time Series</text>`;
+    if (previewOnly) {
+      html += `<text x="${EQUITY_CHART.right}" y="${EQUITY_CHART.top + 14}" fill="#b45309" font-size="12" font-weight="600" text-anchor="end">样式预览，非真实回测</text>`;
+    }
+
+    if (backtestPath) {
+      html += `<path d="${backtestPath}" fill="none" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="4,4" stroke-linejoin="miter" stroke-linecap="butt" />`;
+    }
+    if (livePath) {
+      html += `<path d="${livePath}" fill="none" stroke="#2563eb" stroke-width="1.5" stroke-linejoin="miter" stroke-linecap="butt" />`;
+    }
+    
+    html += `<line x1="${cutoffX}" y1="${EQUITY_CHART.top}" x2="${cutoffX}" y2="${EQUITY_CHART.bottom}" stroke="#94a3b8" stroke-width="1" stroke-dasharray="4,4" />`;
+    html += `<text x="${cutoffX + 8}" y="${EQUITY_CHART.top + 18}" fill="#64748b" font-size="12" font-weight="600">临界日</text>`;
+    
+    return html;
+  } else {
+    return `<text x="${EQUITY_CHART.labelX}" y="220" fill="#9ca3af" font-size="18" text-anchor="middle">等待策略回测数据</text>`;
+  }
+}
+
+function generatePathFromEquity(equity, minVal, maxVal, offset, totalLength, logScale = false) {
+  const points = [];
+  const n = equity.length;
+  const range = maxVal - minVal || 0.4;
+  for (let i = 0; i < n; i++) {
+    const x = equityX(offset + i, totalLength);
+    let normalized;
+    if (logScale) {
+      const logMin = Math.log10(Math.max(minVal, 0.01));
+      const logMax = Math.log10(Math.max(maxVal, 0.01));
+      const logRange = logMax - logMin || 1;
+      const logVal = Math.log10(Math.max(equity[i], 0.01));
+      normalized = (logVal - logMin) / logRange;
+    } else {
+      normalized = (equity[i] - minVal) / range;
+    }
+    const y = equityY(equity[i], minVal, maxVal, logScale);
+    points.push(`${x},${Math.max(EQUITY_CHART.top, Math.min(EQUITY_CHART.bottom, y))}`);
+  }
+  return points.length > 0 ? `M ${points.join(" L ")}` : "";
+}
+
+function renderRealEquityCurve(detailData, logScale = false) {
+  return renderSegmentedEquityCurve(detailData, logScale);
+}
+
+function renderWaitingEquityCurve() {
+  return `<text x="${EQUITY_CHART.labelX}" y="220" fill="#64748b" font-size="16" font-weight="600" text-anchor="middle">正在加载 Quant API 真实策略数据</text>`;
+}
+
+function renderSegmentedEquityCurve(detailData, logScale = false, strategyId = "") {
+  const equityCurve = detailData.equity_curve || [];
+  const cutoffDate = (detailData.params && detailData.params.cutoff_date) || "2024-06-01";
+  const backtestGradientId = strategyId ? `backtestGradient_${strategyId}` : "backtestGradient";
+  const liveGradientId = strategyId ? `liveGradient_${strategyId}` : "liveGradient";
+  
+  if (equityCurve.length === 0) {
+    return `<text x="${EQUITY_CHART.labelX}" y="220" fill="#9ca3af" font-size="18" text-anchor="middle">等待策略回测数据</text>`;
+  }
+  
+  const backtestData = equityCurve.filter(d => d.phase === "backtest");
+  const liveData = equityCurve.filter(d => d.phase === "live");
+  
+  const backtestDates = backtestData.map(d => d.date);
+  const backtestNav = backtestData.map(d => d.nav);
+  const liveDates = liveData.map(d => d.date);
+  const liveNav = liveData.map(d => d.nav);
+  
+  const allNav = [...backtestNav, ...liveNav];
+  const validNav = allNav.filter(v => !isNaN(v) && v > 0);
+  const minVal = Math.min(...validNav, 0.8);
+  const maxVal = Math.max(...validNav, 1.2);
+  const range = maxVal - minVal || 0.4;
+  const totalLength = equityCurve.length;
+  
+  console.log(`[renderSegmentedEquityCurve] scale=${logScale ? 'log' : 'linear'}, minVal=${minVal}, maxVal=${maxVal}, range=${range}, totalLength=${totalLength}`);
+  
+  let html = "";
+  
+  html += `<line x1="${EQUITY_CHART.left}" y1="${EQUITY_CHART.top}" x2="${EQUITY_CHART.left}" y2="${EQUITY_CHART.bottom}" stroke="#e2e8f0" stroke-width="1" />`;
+  html += `<line x1="${EQUITY_CHART.left}" y1="${EQUITY_CHART.bottom}" x2="${EQUITY_CHART.right}" y2="${EQUITY_CHART.bottom}" stroke="#e2e8f0" stroke-width="1" />`;
+  
+  let yTicks, yMin, yMax;
+  if (logScale) {
+    const logMin = Math.log10(Math.max(minVal, 0.01));
+    const logMax = Math.log10(Math.max(maxVal, 0.01));
+    yMin = Math.pow(10, Math.floor(logMin));
+    yMax = Math.pow(10, Math.ceil(logMax));
+    yTicks = [];
+    let val = yMin;
+    while (val <= yMax) {
+      yTicks.push(val);
+      val *= 2;
+      if (val > yMax && yTicks.length < 5) val = yMin * 5;
+    }
+    yTicks = [...new Set(yTicks)].sort((a, b) => a - b).slice(0, 5);
+  } else {
+    yTicks = [minVal, minVal + range * 0.25, minVal + range * 0.5, minVal + range * 0.75, maxVal];
+  }
+  
+  yTicks.forEach((val) => {
+    const y = equityY(val, minVal, maxVal, logScale);
+    html += `<line x1="${EQUITY_CHART.left}" y1="${y}" x2="${EQUITY_CHART.right}" y2="${y}" stroke="#f1f5f9" stroke-width="1" />`;
+    html += `<line x1="${EQUITY_CHART.left - 8}" y1="${y}" x2="${EQUITY_CHART.left}" y2="${y}" stroke="#e2e8f0" stroke-width="1" />`;
+    html += `<text x="${EQUITY_CHART.left - 14}" y="${y + 4}" fill="#64748b" font-size="12" text-anchor="end">${logScale ? val.toExponential(1) : val.toFixed(2)}</text>`;
+  });
+  
+  const allDates = [...backtestDates, ...liveDates];
+  const xTickIndexes = equityTickIndexes(allDates);
+  html += `<line x1="${EQUITY_CHART.left}" y1="${EQUITY_CHART.tickBottom}" x2="${EQUITY_CHART.right}" y2="${EQUITY_CHART.tickBottom}" stroke="#e2e8f0" stroke-width="1" />`;
+  [...new Set(xTickIndexes)].forEach((i) => {
+    const x = equityX(i, totalLength);
+    const date = allDates[i] || "";
+    html += `<line x1="${x}" y1="${EQUITY_CHART.bottom}" x2="${x}" y2="${EQUITY_CHART.tickBottom}" stroke="#e2e8f0" stroke-width="1" />`;
+    html += `<text x="${x}" y="${EQUITY_CHART.dateY}" fill="#64748b" font-size="11" text-anchor="middle">${escapeHtml(date || "-")}</text>`;
+  });
+  html += `<text x="${EQUITY_CHART.labelX}" y="${EQUITY_CHART.labelY}" fill="#64748b" font-size="12" font-weight="600" text-anchor="middle">日期 / Time Series</text>`;
+  
+  if (backtestNav.length > 0) {
+    const backtestPath = generatePathFromEquity(backtestNav, minVal, maxVal, 0, totalLength, logScale);
+    html += `<path d="${backtestPath}" fill="none" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="4,4" stroke-linejoin="miter" stroke-linecap="butt" />`;
+  }
+  
+  if (liveNav.length > 0) {
+    const connectedLiveNav = backtestNav.length > 0 ? [backtestNav[backtestNav.length - 1], ...liveNav] : liveNav;
+    const liveOffset = backtestNav.length > 0 ? backtestNav.length - 1 : 0;
+    const livePath = generatePathFromEquity(connectedLiveNav, minVal, maxVal, liveOffset, totalLength, logScale);
+    html += `<path d="${livePath}" fill="none" stroke="#2563eb" stroke-width="1.5" stroke-linejoin="miter" stroke-linecap="butt" />`;
+  }
+  
+  const cutoffX = equityX(Math.min(totalLength - 1, backtestNav.length), totalLength);
+  html += `<line x1="${cutoffX}" y1="${EQUITY_CHART.top}" x2="${cutoffX}" y2="${EQUITY_CHART.bottom}" stroke="#94a3b8" stroke-width="1" stroke-dasharray="4,4" />`;
+  html += `<text x="${cutoffX + 8}" y="${EQUITY_CHART.top + 18}" fill="#64748b" font-size="12" font-weight="600">临界日 ${escapeHtml(cutoffDate)}</text>`;
+  
+  equityCurve.forEach((point, i) => {
+    if (isNaN(point.nav) || point.nav <= 0) return;
+    const y = equityY(point.nav, minVal, maxVal, logScale);
+    const x = equityX(i, totalLength);
+    const phaseLabel = point.phase === "backtest" ? "回测段" : "实测段";
+    html += `<circle cx="${x}" cy="${y}" r="0" fill="${point.phase === "backtest" ? "#9ca3af" : "#2563eb"}" opacity="0" class="equity-point" data-date="${escapeHtml(point.date)}" data-nav="${point.nav.toFixed(4)}" data-phase="${phaseLabel}" />`;
+  });
+  
+  return html;
 }
 
 function renderStrategyDetail() {
@@ -2097,6 +2565,34 @@ function renderStrategyDetail() {
     closeStrategyDetail();
     return;
   }
+  
+  const rowDetailData = detailDataFromStrategyRow(row);
+  const detailData = JSON.parse(JSON.stringify((state.strategyDetailData && state.strategyDetailData[row.id]) || rowDetailData || {}));
+  const needsRemoteDetail = row.id.startsWith("strategy_run_") || row.id === "strategy_quant_api_default";
+  if (needsRemoteDetail && (!Array.isArray(detailData.equity_curve) || detailData.equity_curve.length === 0)) {
+    loadStrategyDetailData(row.id);
+  }
+  const metricsBacktest = detailData.metrics_backtest || {};
+  const metricsLive = detailData.metrics_live || {};
+  const params = detailData.params || {};
+  const cutoffDate = params.cutoff_date || "2024-06-01";
+  const equityCurve = detailData.equity_curve || [];
+  const hasRealData = Array.isArray(equityCurve) && equityCurve.length > 0;
+  const rowBacktest = row.backtestResult || row.backtest_result || {};
+  const rowLive = row.liveResult || row.live_result || {};
+  const hasRowEquity = normalizeEquityValues(rowBacktest.equity_curve || rowBacktest.equity || []).length > 0
+    || normalizeEquityValues(rowLive.equity_curve || rowLive.equity || []).length > 0;
+  const chartSourceLabel = hasRealData
+    ? "真实数据"
+    : hasRowEquity
+      ? "真实数据"
+      : "样式预览数据（非真实回测）";
+  
+  const navValues = equityCurve.map(d => d.nav);
+  const navMin = navValues.length ? Math.min(...navValues) : 'N/A';
+  const navMax = navValues.length ? Math.max(...navValues) : 'N/A';
+  console.log(`[renderStrategyDetail] scale=${state.equityLogScale ? 'log' : 'linear'}, equity_curve.length=${equityCurve.length}, navMin=${navMin}, navMax=${navMax}, hasRealData=${hasRealData}`);
+  
   renderView();
   els.strategyDetailView.innerHTML = `
     <div class="breadcrumb">
@@ -2113,9 +2609,9 @@ function renderStrategyDetail() {
         </div>
         <dl class="detail-meta">
           <div><dt>Strategy ID</dt><dd><code>${escapeHtml(row.id)}</code></dd></div>
-          <div><dt>类型</dt><dd>${escapeHtml(row.type)}</dd></div>
-          <div><dt>使用因子</dt><dd>${escapeHtml(row.factors)}</dd></div>
-          <div><dt>股票池</dt><dd>${escapeHtml(row.universe)}</dd></div>
+          <div><dt>类型</dt><dd>${escapeHtml(detailData.type || row.type)}</dd></div>
+          <div><dt>使用因子</dt><dd>${escapeHtml(detailData.factors ? detailData.factors.map(f => f.factor_id).join(', ') : row.factors)}</dd></div>
+          <div><dt>股票池</dt><dd>${escapeHtml(params.universe || row.universe)}</dd></div>
           <div><dt>更新时间</dt><dd>${formatDate(row.updatedAt)}</dd></div>
         </dl>
       </div>
@@ -2125,45 +2621,112 @@ function renderStrategyDetail() {
       </div>
     </section>
 
-    <section class="metric-grid strategy-metrics">
-      <article class="metric-card"><span>年化收益</span><strong>${formatRatio(row.annualReturn)}</strong><small>待策略层产出</small></article>
-      <article class="metric-card"><span>夏普</span><strong>${formatNumber(row.sharpe, 2)}</strong><small>待策略层产出</small></article>
-      <article class="metric-card"><span>最大回撤</span><strong>${formatRatio(row.maxDrawdown)}</strong><small>待策略层产出</small></article>
-      <article class="metric-card"><span>换手率</span><strong>-</strong><small>待交易成本模型接入</small></article>
-    </section>
+    <div class="metrics-group">
+      <h3 class="metrics-group-title backtest-title">回测段（临界日之前）</h3>
+      <section class="metric-grid strategy-metrics">
+        <article class="metric-card"><span>年化收益</span><strong>${formatRatio(hasRealData ? metricsBacktest.annual_return : row.annualReturn)}</strong><small>回测段</small></article>
+        <article class="metric-card"><span>夏普</span><strong>${formatNumber(hasRealData ? metricsBacktest.sharpe : row.sharpe, 2)}</strong><small>回测段</small></article>
+        <article class="metric-card"><span>最大回撤</span><strong>${formatRatio(hasRealData ? metricsBacktest.max_drawdown : row.maxDrawdown)}</strong><small>回测段</small></article>
+        <article class="metric-card"><span>换手率</span><strong>${formatRatio(hasRealData ? metricsBacktest.turnover : null)}</strong><small>回测段</small></article>
+      </section>
+    </div>
+
+    <div class="metrics-group">
+      <h3 class="metrics-group-title live-title">实测段（临界日之后）</h3>
+      <section class="metric-grid strategy-metrics live-metrics">
+        <article class="metric-card live"><span>年化收益</span><strong>${formatRatio(hasRealData ? metricsLive.annual_return : null)}</strong><small>实测段</small></article>
+        <article class="metric-card live"><span>夏普</span><strong>${formatNumber(hasRealData ? metricsLive.sharpe : null, 2)}</strong><small>实测段</small></article>
+        <article class="metric-card live"><span>最大回撤</span><strong>${formatRatio(hasRealData ? metricsLive.max_drawdown : null)}</strong><small>实测段</small></article>
+        <article class="metric-card live"><span>换手率</span><strong>${formatRatio(hasRealData ? metricsLive.turnover : null)}</strong><small>实测段</small></article>
+      </section>
+    </div>
 
     <section class="research-settings">
       <div>
         <h3>策略研究与回测参数</h3>
-        <p>这些参数作为未来策略回测请求输入。当前只展示预留口径，不会在前端触发计算。</p>
+        <p>${hasRealData ? "这些参数是真实回测使用的输入条件。" : "这些参数作为策略回测请求输入。"}</p>
       </div>
       <div class="research-grid">
-        <label><span>研究区间</span><select><option>当前复现样本区间</option></select></label>
-        <label><span>股票池</span><select><option>${escapeHtml(row.universe)}</option></select></label>
-        <label><span>组合构建</span><select><option>${escapeHtml(row.type)}研究</option></select></label>
-        <label><span>调仓周期</span><select disabled><option>待策略层接入</option></select></label>
-        <label><span>手续费及滑点</span><select disabled><option>待策略层接入</option></select></label>
+        <label><span>开始日期</span><input type="date" value="${escapeHtml(params.start_date || "2023-01-01")}" class="research-input" /></label>
+        <label><span>结束日期</span><input type="date" value="${escapeHtml(params.end_date || "2024-12-31")}" class="research-input" /></label>
+        <label><span>临界日</span><input type="date" value="${escapeHtml(cutoffDate)}" class="research-input cutoff-date" /></label>
+        <label><span>股票池</span><select class="research-input"><option>${escapeHtml(params.universe || row.universe)}</option></select></label>
+        <label><span>组合构建</span><select class="research-input"><option>${escapeHtml(params.portfolio_construction || row.type + "研究")}</option></select></label>
+        <label><span>调仓周期</span><select class="research-input"><option>${escapeHtml(params.rebalance || "月频调仓")}</option></select></label>
+        <label><span>手续费及滑点</span><select class="research-input">
+          <option value="无" ${(params.cost || row.cost) === "无" ? "selected" : ""}>无</option>
+          <option value="3‰佣金+1‰印花税+无滑点" ${(params.cost || row.cost) === "3‰佣金+1‰印花税+无滑点" ? "selected" : ""}>3‰佣金+1‰印花税+无滑点</option>
+          <option value="3‰佣金+1‰印花税+1‰滑点" ${(params.cost || row.cost) === "3‰佣金+1‰印花税+1‰滑点" ? "selected" : ""}>3‰佣金+1‰印花税+1‰滑点</option>
+        </select></label>
       </div>
     </section>
 
     <section class="strategy-detail-grid">
       <article class="chart-card large-chart">
-        <header><strong>策略收益曲线 / Equity Curve</strong><span>待接入</span></header>
-        <div class="chart-placeholder">等待策略回测数据</div>
+        <header>
+          <strong>策略收益曲线 / Equity Curve</strong>
+          <span>${escapeHtml(chartSourceLabel)}</span>
+          <div class="chart-toggle">
+            <button type="button" class="toggle-btn ${!state.equityLogScale ? "active" : ""}" data-equity-scale="linear">普通</button>
+            <button type="button" class="toggle-btn ${state.equityLogScale ? "active" : ""}" data-equity-scale="log">Log</button>
+          </div>
+        </header>
+        <div class="strategy-equity-chart" data-strategy-id="${escapeHtml(row.id)}">
+          <svg viewBox="0 0 1600 520" class="equity-svg">
+            <defs>
+              <linearGradient id="backtestGradient_${escapeHtml(row.id)}" x1="0%" y1="0%" x2="0%" y2="100%">
+                <stop offset="0%" style="stop-color:#94a3b8;stop-opacity:0.2" />
+                <stop offset="100%" style="stop-color:#9ca3af;stop-opacity:0" />
+              </linearGradient>
+              <linearGradient id="liveGradient_${escapeHtml(row.id)}" x1="0%" y1="0%" x2="0%" y2="100%">
+                <stop offset="0%" style="stop-color:#3b82f6;stop-opacity:0.3" />
+                <stop offset="100%" style="stop-color:#3b82f6;stop-opacity:0" />
+              </linearGradient>
+            </defs>
+            ${hasRealData ? renderSegmentedEquityCurve(detailData, state.equityLogScale, row.id) : renderWaitingEquityCurve()}
+          </svg>
+          <div class="chart-legend">
+            <span><span class="legend-dot backtest"></span>回测段 (临界日前)</span>
+            <span><span class="legend-dot live"></span>实测段 (临界日后)</span>
+          </div>
+        </div>
       </article>
       <article class="chart-card">
-        <header><strong>风险指标</strong><span>待接入</span></header>
-        <div class="chart-placeholder">等待 Sharpe / Max DD / Volatility</div>
+        <header><strong>风险指标</strong><span>${hasRealData ? "真实回测" : "等待 Volatility / Calmar"}</span></header>
+        <div class="risk-metrics-grid">
+          <div class="risk-item"><span>年化波动率(回测)</span><strong>${formatRatio(hasRealData ? metricsBacktest.annual_vol : null)}</strong></div>
+          <div class="risk-item"><span>年化波动率(实测)</span><strong>${formatRatio(hasRealData ? metricsLive.annual_vol : null)}</strong></div>
+          <div class="risk-item"><span>Calmar(回测)</span><strong>${formatNumber(hasRealData ? metricsBacktest.calmar : null, 2)}</strong></div>
+          <div class="risk-item"><span>Calmar(实测)</span><strong>${formatNumber(hasRealData ? metricsLive.calmar : null, 2)}</strong></div>
+        </div>
       </article>
       <article class="chart-card">
-        <header><strong>使用因子</strong><span>1 个</span></header>
-        <div class="strategy-factor-chip">${escapeHtml(row.factors)}</div>
+        <header><strong>使用因子</strong><span>${escapeHtml(detailData.factors ? detailData.factors.length : row.factors.split(',').length || 1)} 个</span></header>
+        <div class="strategy-factor-chip">${escapeHtml(detailData.factors ? detailData.factors.map(f => f.factor_id).join(', ') : row.factors)}</div>
       </article>
     </section>
   `;
 
   els.strategyDetailView.querySelectorAll("[data-action='back-strategy']").forEach((button) => {
     button.addEventListener("click", closeStrategyDetail);
+  });
+  
+  els.strategyDetailView.querySelectorAll("[data-equity-scale]").forEach((button) => {
+    button.addEventListener("click", (e) => {
+      const scale = e.target.getAttribute("data-equity-scale");
+      state.equityLogScale = scale === "log";
+      renderStrategyDetail();
+    });
+  });
+  
+  els.strategyDetailView.querySelectorAll(".cutoff-date").forEach((input) => {
+    input.addEventListener("change", (e) => {
+      const newCutoff = e.target.value;
+      if (detailData.params) {
+        detailData.params.cutoff_date = newCutoff;
+      }
+      renderStrategyDetail();
+    });
   });
 }
 
@@ -2818,9 +3381,51 @@ function activeFactor() {
   return state.rawFactors.find((factor) => factor.id === state.activeFactorId);
 }
 
-function openDetail(factorId) {
+async function loadFactorDetailData(factorId) {
+  if (!factorId || state.factorDetailLoading[factorId]) return;
+  state.factorDetailLoading[factorId] = true;
+  try {
+    const response = await fetchWithTimeout(withCacheBust(`${API_BASE}/factor/${encodeURIComponent(factorId)}`));
+    if (response.ok) {
+      const data = await response.json();
+      state.factorDetailData[factorId] = data;
+    }
+  } catch (error) {
+    console.error("获取因子详情失败:", error);
+  } finally {
+    state.factorDetailLoading[factorId] = false;
+    if (state.view === "detail" && state.activeFactorId === factorId) {
+      renderDetail();
+    }
+  }
+}
+
+async function openDetail(factorId) {
   const factor = state.rawFactors.find((item) => item.id === factorId);
   if (!canOpenFactor(factor)) return;
+  state.view = "detail";
+  state.activeFactorId = factorId;
+  state.detailTab = "analysis";
+  window.location.hash = `factor=${encodeURIComponent(factorId)}`;
+  renderDetail();
+  if (!state.factorDetailData[factorId]) {
+    loadFactorDetailData(factorId);
+  }
+  return;
+  
+  if (!state.factorDetailData[factorId]) {
+    await loadFactorDetailData(factorId);
+    try {
+      const response = await fetchWithTimeout(`${API_BASE}/factor/${encodeURIComponent(factorId)}`);
+      if (response.ok) {
+        const data = await response.json();
+        state.factorDetailData[factorId] = data;
+      }
+    } catch (error) {
+      console.error("获取因子详情失败:", error);
+    }
+  }
+  
   state.view = "detail";
   state.activeFactorId = factorId;
   state.detailTab = "analysis";
@@ -2853,7 +3458,7 @@ function showMainView(view) {
   renderView();
 }
 
-function syncDetailFromHash() {
+async function syncDetailFromHash() {
   if (window.location.hash === "#strategy-builder") {
     state.view = "strategy-builder";
     loadStrategyTemplates();
@@ -2864,8 +3469,7 @@ function syncDetailFromHash() {
   const factorId = decodeURIComponent(match[1]);
   const factor = state.rawFactors.find((item) => item.id === factorId);
   if (canOpenFactor(factor)) {
-    state.view = "detail";
-    state.activeFactorId = factorId;
+    await openDetail(factorId);
   }
 }
 
@@ -3114,6 +3718,12 @@ function renderResearchSettings(factor) {
 }
 
 function renderAnalysisPanel(factor) {
+  const detailData = (state.factorDetailData && state.factorDetailData[factor.id]) || {};
+  const hasRealData = Array.isArray(detailData.ic_time_series) && detailData.ic_time_series.length > 0;
+  if (!hasRealData && !state.factorDetailLoading[factor.id]) {
+    loadFactorDetailData(factor.id);
+  }
+  
   return `
     <section class="metric-grid">
       ${metricCard("复现状态", proofBadge(factor.proof_status)[0], proofValue(factor.proof_status), factor.proof_status === "passed" ? "good" : "warn")}
@@ -3164,10 +3774,12 @@ function renderAnalysisPanel(factor) {
           <strong>单因子分层研究 / Factor Stratification Analysis</strong>
           <span>区间：当前复现样本区间 · 频率：日频</span>
         </header>
-        <div class="chart-placeholder chart-large">
-          <div class="placeholder-mark">◇</div>
-          <strong>待接入真实数据 API</strong>
-          <span>当前仅作为研究级分层回测占位，不代表可交易策略收益。</span>
+        <div class="chart-placeholder chart-large ${hasRealData ? "chart-rendered" : ""}">
+          ${hasRealData ? renderStratificationChart(detailData) : `
+            <div class="placeholder-mark">◇</div>
+            <strong>待接入真实数据 API</strong>
+            <span>当前仅作为研究级分层回测占位，不代表可交易策略收益。</span>
+          `}
         </div>
       </article>
       <div class="side-charts">
@@ -3176,8 +3788,8 @@ function renderAnalysisPanel(factor) {
             <strong>IC 时序 / IC Time Series</strong>
             <span>区间：当前复现样本区间</span>
           </header>
-          <div class="chart-placeholder">
-            <strong>等待时序数据</strong>
+          <div class="chart-placeholder ${hasRealData ? "chart-rendered" : ""}">
+            ${hasRealData ? renderIcTimeSeriesChart(detailData) : `<strong>等待时序数据</strong>`}
           </div>
         </article>
         <article class="research-card">
@@ -3185,8 +3797,8 @@ function renderAnalysisPanel(factor) {
             <strong>分组表现 / Group Performance</strong>
             <span>区间：当前复现样本区间</span>
           </header>
-          <div class="chart-placeholder">
-            <strong>等待分组收益数据</strong>
+          <div class="chart-placeholder ${hasRealData ? "chart-rendered" : ""}">
+            ${hasRealData ? renderGroupPerformanceChart(detailData) : `<strong>等待分组收益数据</strong>`}
           </div>
         </article>
       </div>
@@ -3196,6 +3808,259 @@ function renderAnalysisPanel(factor) {
       本页面展示的是因子复现产物与内部一致性状态，不代表因子具备投资有效性。正式策略收益需要在策略层结合真实行情、交易成本、滑点、调仓规则和风控约束后验证。
     </section>
   `;
+}
+
+function uniqueMonthTicks(dates, maxTicks) {
+  const months = [];
+  const seen = new Set();
+  dates.forEach((date, index) => {
+    const label = String(date || "").substring(0, 7);
+    if (!label || seen.has(label)) return;
+    seen.add(label);
+    months.push({ index, label });
+  });
+  if (months.length <= maxTicks) return months;
+  const selected = [];
+  const last = months.length - 1;
+  for (let i = 0; i < maxTicks; i++) {
+    const month = months[Math.round((i / Math.max(maxTicks - 1, 1)) * last)];
+    if (!selected.some((item) => item.label === month.label)) {
+      selected.push(month);
+    }
+  }
+  return selected.sort((a, b) => a.index - b.index);
+}
+
+function niceAxisRange(values, paddingRatio = 0.18) {
+  const finiteValues = values.filter((value) => Number.isFinite(value));
+  if (!finiteValues.length) {
+    return { min: -0.01, max: 0.01, ticks: [-0.01, 0, 0.01] };
+  }
+  let min = Math.min(...finiteValues, 0);
+  let max = Math.max(...finiteValues, 0);
+  if (min === max) {
+    const pad = Math.max(Math.abs(min) * 0.5, 0.001);
+    min -= pad;
+    max += pad;
+  }
+  const span = max - min;
+  const paddedMin = min - span * paddingRatio;
+  const paddedMax = max + span * paddingRatio;
+  const rawStep = (paddedMax - paddedMin) / 4;
+  const power = Math.pow(10, Math.floor(Math.log10(rawStep || 0.001)));
+  const normalized = rawStep / power;
+  const niceStep = (normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10) * power;
+  const axisMin = Math.floor(paddedMin / niceStep) * niceStep;
+  const axisMax = Math.ceil(paddedMax / niceStep) * niceStep;
+  const ticks = [];
+  for (let value = axisMin; value <= axisMax + niceStep * 0.5; value += niceStep) {
+    ticks.push(Number(value.toPrecision(12)));
+  }
+  return { min: axisMin, max: axisMax, ticks };
+}
+
+function formatCompactAxisTick(value, range) {
+  const absRange = Math.abs(range);
+  if (absRange < 0.01) return value.toFixed(4);
+  if (absRange < 0.1) return value.toFixed(3);
+  return value.toFixed(2);
+}
+
+function renderStratificationChart(detailData) {
+  const stratification = detailData.stratification || {};
+  const equity = stratification.equity || [];
+  const dates = stratification.dates || [];
+  
+  if (equity.length === 0) {
+    return `<text x="200" y="80" fill="#9ca3af" font-size="12" text-anchor="middle">暂无分层数据</text>`;
+  }
+  
+  const validEquity = equity.filter(v => !isNaN(v) && v > 0);
+  const rawMin = Math.min(...validEquity);
+  const rawMax = Math.max(...validEquity);
+  const minVal = Math.max(0, Math.floor((rawMin - 0.05) * 10) / 10);
+  const maxVal = Math.ceil((rawMax + 0.05) * 10) / 10;
+  const range = maxVal - minVal || 0.4;
+  const totalLength = equity.length;
+  
+  let html = `<svg viewBox="0 0 760 260" class="research-svg">`;
+  
+  html += `<line x1="50" y1="20" x2="50" y2="220" stroke="#e2e8f0" stroke-width="1" />`;
+  html += `<line x1="50" y1="220" x2="740" y2="220" stroke="#e2e8f0" stroke-width="1" />`;
+  
+  const yTicks = [];
+  for (let value = minVal; value <= maxVal + 0.001; value += 0.1) {
+    yTicks.push(Number(value.toFixed(1)));
+  }
+  yTicks.forEach((val) => {
+    const y = 220 - ((val - minVal) / range) * 200;
+    html += `<line x1="50" y1="${y}" x2="740" y2="${y}" stroke="#f1f5f9" stroke-width="1" />`;
+    html += `<text x="42" y="${y + 4}" fill="#64748b" font-size="9" text-anchor="end">${val.toFixed(1)}</text>`;
+  });
+  
+  const xTicks = uniqueMonthTicks(dates, 10);
+  xTicks.forEach((tick) => {
+    const x = 50 + (tick.index / Math.max(totalLength - 1, 1)) * 690;
+    html += `<line x1="${x}" y1="220" x2="${x}" y2="226" stroke="#e2e8f0" stroke-width="1" />`;
+    html += `<text x="${x}" y="244" fill="#64748b" font-size="9" text-anchor="middle">${tick.label}</text>`;
+  });
+  
+  const points = [];
+  for (let i = 0; i < equity.length; i++) {
+    const x = 50 + (i / Math.max(totalLength - 1, 1)) * 690;
+    const y = 220 - ((equity[i] - minVal) / range) * 200;
+    points.push(`${x},${Math.max(20, Math.min(220, y))}`);
+  }
+  
+  if (points.length > 0) {
+    html += `<path d="M ${points.join(" L ")}" fill="none" stroke="#1e40af" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" />`;
+  }
+  
+  html += `</svg>`;
+  
+  return html;
+}
+
+function renderIcTimeSeriesChart(detailData) {
+  const icSeries = detailData.ic_time_series || [];
+  
+  if (icSeries.length === 0) {
+    return `<text x="100" y="50" fill="#9ca3af" font-size="11" text-anchor="middle">暂无IC时序数据</text>`;
+  }
+  
+  const icValues = icSeries.map(d => d.ic);
+  const dates = icSeries.map(d => d.date);
+  
+  const minVal = Math.min(...icValues, -0.5);
+  const maxVal = Math.max(...icValues, 0.5);
+  const range = maxVal - minVal || 1;
+  const totalLength = icSeries.length;
+  
+  let html = `<svg viewBox="0 0 240 124" class="research-svg">`;
+  
+  html += `<line x1="34" y1="14" x2="34" y2="92" stroke="#e2e8f0" stroke-width="1" />`;
+  html += `<line x1="34" y1="92" x2="230" y2="92" stroke="#e2e8f0" stroke-width="1" />`;
+  html += `<text x="12" y="18" fill="#64748b" font-size="9">IC 值</text>`;
+  html += `<text x="34" y="8" fill="#64748b" font-size="9">日均收益</text>`;
+  
+  html += `<rect x="0" y="0" width="72" height="13" fill="#ffffff" />`;
+  html += `<text x="34" y="8" fill="#64748b" font-size="9">IC 值</text>`;
+  
+  const zeroY = 92 - ((0 - minVal) / range) * 78;
+  html += `<line x1="34" y1="${zeroY}" x2="230" y2="${zeroY}" stroke="#94a3b8" stroke-width="1" stroke-dasharray="3,3" />`;
+  
+  const yTicks = [-0.4, -0.2, 0, 0.2, 0.4];
+  yTicks.forEach((val) => {
+    const y = 92 - ((val - minVal) / range) * 78;
+    html += `<line x1="34" y1="${y}" x2="230" y2="${y}" stroke="#f1f5f9" stroke-width="1" />`;
+    html += `<text x="28" y="${y + 3}" fill="#64748b" font-size="9" text-anchor="end">${val.toFixed(1)}</text>`;
+  });
+  
+  const maxBars = 36;
+  const displayStep = Math.max(1, Math.ceil(totalLength / maxBars));
+  const barWidth = Math.max(3, Math.min(7, 176 / Math.ceil(totalLength / displayStep) - 2));
+  for (let i = 0; i < icSeries.length; i += displayStep) {
+    const x = 34 + (i / Math.max(totalLength - 1, 1)) * 196;
+    const ic = icValues[i];
+    const y = 92 - ((ic - minVal) / range) * 78;
+    const height = Math.abs(y - zeroY);
+    const isPositive = ic >= 0;
+    
+    html += `<rect x="${x - barWidth/2}" y="${isPositive ? y : zeroY}" width="${barWidth}" height="${Math.max(1, height)}" fill="${isPositive ? '#16a34a' : '#dc2626'}" opacity="0.52" />`;
+  }
+
+  const numXTicks = Math.min(5, dates.length);
+  const dateStep = Math.max(1, Math.ceil(dates.length / numXTicks));
+  for (let i = 0; i < dates.length; i += dateStep) {
+    const x = 34 + (i / Math.max(totalLength - 1, 1)) * 196;
+    html += `<line x1="${x}" y1="92" x2="${x}" y2="97" stroke="#e2e8f0" stroke-width="1" />`;
+    html += `<text x="${x}" y="114" fill="#64748b" font-size="9" text-anchor="middle">${String(dates[i] || "").substring(0, 7)}</text>`;
+  }
+  
+  html += `</svg>`;
+  
+  return html;
+}
+
+function renderGroupPerformanceChart(detailData) {
+  const groupReturns = detailData.group_returns || {};
+  const groups = Object.keys(groupReturns)
+    .filter(k => k !== "long_short")
+    .sort((a, b) => Number(a) - Number(b));
+  
+  if (groups.length === 0) {
+    return `<text x="100" y="50" fill="#9ca3af" font-size="11" text-anchor="middle">暂无分组数据</text>`;
+  }
+  
+  const groupAverages = groups
+    .map((group) => {
+      const values = (groupReturns[group] || []).map(d => Number(d.return)).filter(Number.isFinite);
+      if (!values.length) return null;
+      return {
+        group,
+        value: values.reduce((sum, value) => sum + value, 0) / values.length,
+      };
+    })
+    .filter(Boolean);
+  let lsAverage = null;
+  if (groupReturns["long_short"]) {
+    const values = groupReturns["long_short"].map(d => Number(d.return)).filter(Number.isFinite);
+    if (values.length) {
+      lsAverage = values.reduce((sum, value) => sum + value, 0) / values.length;
+    }
+  }
+  const axis = niceAxisRange([
+    ...groupAverages.map(item => item.value),
+    ...(Number.isFinite(lsAverage) ? [lsAverage] : []),
+  ]);
+  const minVal = axis.min;
+  const maxVal = axis.max;
+  const range = maxVal - minVal || 0.02;
+  
+  const groupColors = ["#dbeafe", "#bfdbfe", "#93c5fd", "#60a5fa", "#3b82f6", "#2563eb", "#1d4ed8", "#1e40af", "#1e3a8a", "#172554"];
+  
+  let html = `<svg viewBox="0 0 320 150" class="research-svg">`;
+  
+  html += `<line x1="44" y1="18" x2="44" y2="112" stroke="#e2e8f0" stroke-width="1" />`;
+  html += `<line x1="44" y1="112" x2="306" y2="112" stroke="#e2e8f0" stroke-width="1" />`;
+  html += `<text x="12" y="18" fill="#64748b" font-size="9">日均收益</text>`;
+  html += `<rect x="0" y="0" width="90" height="24" fill="#ffffff" />`;
+  html += `<text x="34" y="8" fill="#64748b" font-size="9">日均收益</text>`;
+  
+  const zeroY = 112 - ((0 - minVal) / range) * 94;
+  html += `<line x1="44" y1="${zeroY}" x2="306" y2="${zeroY}" stroke="#cbd5e1" stroke-width="1" stroke-dasharray="3,3" />`;
+  
+  axis.ticks.forEach((val) => {
+    const y = 112 - ((val - minVal) / range) * 94;
+    html += `<line x1="44" y1="${y}" x2="306" y2="${y}" stroke="#f1f5f9" stroke-width="1" />`;
+    html += `<text x="38" y="${y + 3}" fill="#64748b" font-size="8" text-anchor="end">${formatCompactAxisTick(val, range)}</text>`;
+  });
+  
+  const groupWidth = 240 / Math.max(groupAverages.length, 1);
+  groupAverages.forEach((item, idx) => {
+    const group = item.group;
+    const avgReturn = item.value;
+    const x = 56 + idx * groupWidth;
+    const y = 112 - ((avgReturn - minVal) / range) * 94;
+    const height = Math.abs(y - zeroY);
+    const isPositive = avgReturn >= 0;
+    const label = Number.isFinite(Number(group)) ? `G${Number(group).toFixed(0)}` : `G${group}`;
+    
+    html += `<rect x="${x - 5}" y="${isPositive ? y : zeroY}" width="10" height="${Math.max(1, height)}" fill="${groupColors[idx % groupColors.length]}" />`;
+    html += `<text x="${x}" y="134" fill="#64748b" font-size="8" text-anchor="middle">${label}</text>`;
+  });
+  
+  if (Number.isFinite(lsAverage)) {
+    const x = 56 + groupAverages.length * groupWidth + 8;
+    const y = 112 - ((lsAverage - minVal) / range) * 94;
+    const height = Math.abs(y - zeroY);
+    html += `<rect x="${x - 5}" y="${lsAverage >= 0 ? y : zeroY}" width="10" height="${Math.max(1, height)}" fill="#f97316" />`;
+    html += `<text x="${x}" y="134" fill="#64748b" font-size="8" text-anchor="middle">LS</text>`;
+  }
+  
+  html += `</svg>`;
+  
+  return html;
 }
 
 function metricCard(label, value, helper, tone = "") {
