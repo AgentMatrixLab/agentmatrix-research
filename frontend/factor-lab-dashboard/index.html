@@ -80,6 +80,10 @@
 
         <section id="libraryView" class="content hidden">
           <section class="category-panel" aria-label="因子分类">
+            <div class="filter-row market-filter-row">
+              <div class="filter-label">市场：</div>
+              <div id="marketTabs" class="tabs market-tabs"></div>
+            </div>
             <div class="filter-row">
               <div class="filter-label">分类：</div>
               <div id="categoryTabs" class="tabs"></div>
@@ -158,6 +162,7 @@
                     <th class="select-col">选择</th>
                     <th class="sortable" data-sort="factor_name">因子名称</th>
                     <th>所属库</th>
+                    <th>市场/口径</th>
                     <th>分类</th>
                     <th>复现状态</th>
                     <th>真值校验</th>
@@ -194,6 +199,10 @@
           <section id="monitorStats" class="monitor-stats" aria-label="监控统计"></section>
 
           <section class="monitor-filter-panel" aria-label="监控筛选条件">
+            <div class="monitor-filter-row compact">
+              <span class="monitor-filter-label">市场</span>
+              <div class="segmented-filter market-segmented" id="monitorMarketFilters"></div>
+            </div>
             <div class="monitor-filter-row">
               <span class="monitor-filter-label">分类</span>
               <div id="monitorCategoryFilters" class="monitor-category-filters"></div>
@@ -234,7 +243,7 @@
                     <th>IC柱</th>
                     <th>方向</th>
                     <th class="monitor-sortable" data-monitor-sort="proof_status">验证</th>
-                    <th>市值相关</th>
+                    <th>市场/提示</th>
                   </tr>
                 </thead>
                 <tbody id="monitorTableBody"></tbody>

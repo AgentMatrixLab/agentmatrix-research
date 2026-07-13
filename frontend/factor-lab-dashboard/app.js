@@ -46,6 +46,27 @@ const JQ_FACTOR_CATEGORIES = [
   "风险因子-风格因子",
   "技术指标因子",
 ];
+const MARKET_BUCKETS = [
+  {
+    key: "ashare",
+    label: "A股",
+    shortLabel: "A股",
+    hint: "A股口径：Quant API / RQData / 聚宽等中国股票池",
+  },
+  {
+    key: "us",
+    label: "美股",
+    shortLabel: "美股",
+    hint: "美股口径：yfinance / Yahoo / US universe",
+  },
+  {
+    key: "other",
+    label: "其他",
+    shortLabel: "其他",
+    hint: "暂未识别或混合口径",
+  },
+];
+const MARKET_LABEL_BY_KEY = Object.fromEntries(MARKET_BUCKETS.map((bucket) => [bucket.key, bucket.shortLabel]));
 const JQ_CATEGORY_BY_FACTOR = {
   roe_ttm: "质量类因子",
   roa_ttm: "质量类因子",
@@ -107,6 +128,8 @@ const state = {
   category: "全部",
   selectedCategories: new Set(JQ_FACTOR_CATEGORIES),
   library: "全部",
+  market: "ashare",
+  monitorMarket: "ashare",
   proof: "all",
   truth: "all",
   reuse: "all",
@@ -185,6 +208,7 @@ const els = {
   settingsView: document.querySelector("#settingsView"),
   navItems: document.querySelectorAll(".nav-item[data-view]"),
   categoryTabs: document.querySelector("#categoryTabs"),
+  marketTabs: document.querySelector("#marketTabs"),
   libraryTabs: document.querySelector("#libraryTabs"),
   libraryRow: document.querySelector("#libraryTabs")?.closest(".sub-filter-row"),
   proofFilter: document.querySelector("#proofFilter"),
@@ -211,6 +235,7 @@ const els = {
   monitorTableBody: document.querySelector("#monitorTableBody"),
   monitorFilters: document.querySelectorAll("[data-monitor-filter]"),
   monitorCategoryFilters: document.querySelector("#monitorCategoryFilters"),
+  monitorMarketFilters: document.querySelector("#monitorMarketFilters"),
   monitorDirectionFilters: document.querySelector("#monitorDirectionFilters"),
   strategyStats: document.querySelector("#strategyStats"),
   strategyTableBody: document.querySelector("#strategyTableBody"),
@@ -489,6 +514,8 @@ function categoryCheckbox(label, checked, onChange, disabled = false, count = un
 function renderTabs(payload) {
   const categories = payload.categories || {};
   const libraries = payload.libraries || {};
+  ensureMarketSelections();
+  renderMarketTabs();
   if (state.library !== "全部" && (libraries[state.library] ?? 0) === 0) {
     state.library = "全部";
   }
@@ -812,6 +839,129 @@ function countBy(items, key, initial = {}) {
   );
 }
 
+function marketBucket(factor) {
+  const raw = [
+    factor.market,
+    factor.universe,
+    factor.data_source,
+    factor.source,
+    factor.source_id,
+    factor.raw_library,
+    factor.library,
+    factor.metadata?.market,
+    factor.metadata?.universe,
+    factor.metadata?.mining_run,
+    factor.metadata?.official_source,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  if (!raw.trim()) return "other";
+  if (
+    raw.includes("wq101") ||
+    raw.includes("alpha101") ||
+    raw.includes("worldquant") ||
+    raw.includes("gtja191") ||
+    raw.includes("alpha191") ||
+    raw.includes("ashare") ||
+    raw.includes("a-share") ||
+    raw.includes("quant api") ||
+    raw.includes("quantapi") ||
+    raw.includes("rqdata") ||
+    raw.includes("沪深") ||
+    raw.includes("中证") ||
+    raw.includes("聚宽")
+  ) {
+    return "ashare";
+  }
+  if (
+    raw.includes("yfinance") ||
+    raw.includes("yahoo") ||
+    raw.includes("us_") ||
+    raw.includes(" us ") ||
+    raw.includes("nyse") ||
+    raw.includes("nasdaq")
+  ) {
+    return "us";
+  }
+  if (raw.includes("static_demo") || raw.includes("demo")) return "ashare";
+  return "other";
+}
+
+function marketCounts(factors = state.rawFactors) {
+  const counts = Object.fromEntries(MARKET_BUCKETS.map((bucket) => [bucket.key, 0]));
+  factors.forEach((factor) => {
+    counts[marketBucket(factor)] = (counts[marketBucket(factor)] || 0) + 1;
+  });
+  return counts;
+}
+
+function firstAvailableMarket(counts) {
+  return MARKET_BUCKETS.find((bucket) => (counts[bucket.key] || 0) > 0)?.key || "other";
+}
+
+function ensureMarketSelections(factors = state.rawFactors) {
+  const counts = marketCounts(factors);
+  if (!counts[state.market]) state.market = firstAvailableMarket(counts);
+  if (!counts[state.monitorMarket]) state.monitorMarket = state.market;
+}
+
+function marketLabel(factorOrKey) {
+  const key = typeof factorOrKey === "string" ? factorOrKey : marketBucket(factorOrKey);
+  return MARKET_LABEL_BY_KEY[key] || "其他";
+}
+
+function marketDetail(factor) {
+  return factor.universe || factor.metadata?.universe || factor.data_source || factor.source || "-";
+}
+
+function marketChipHtml(factor) {
+  const key = marketBucket(factor);
+  return `
+    <span class="market-chip market-${key}" title="${escapeHtml(marketDetail(factor))}">
+      ${escapeHtml(marketLabel(key))}
+    </span>
+  `;
+}
+
+function renderMarketTabs() {
+  const counts = marketCounts();
+  const renderButton = (bucket, active, onClick) => {
+    const count = counts[bucket.key] || 0;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = active ? "tab active" : "tab";
+    button.textContent = `${bucket.label} (${count})`;
+    button.title = bucket.hint;
+    button.disabled = count === 0;
+    if (!button.disabled) button.addEventListener("click", onClick);
+    return button;
+  };
+
+  els.marketTabs?.replaceChildren();
+  MARKET_BUCKETS.forEach((bucket) => {
+    els.marketTabs?.appendChild(
+      renderButton(bucket, state.market === bucket.key, () => {
+        state.market = bucket.key;
+        state.page = 1;
+        applyFilters();
+        renderMarketTabs();
+      }),
+    );
+  });
+
+  els.monitorMarketFilters?.replaceChildren();
+  MARKET_BUCKETS.forEach((bucket) => {
+    const button = renderButton(bucket, state.monitorMarket === bucket.key, () => {
+      state.monitorMarket = bucket.key;
+      renderMonitor();
+      renderMarketTabs();
+    });
+    button.classList.add("market-filter");
+    els.monitorMarketFilters?.appendChild(button);
+  });
+}
+
 function countJqCategories(factors) {
   const counts = { 全部: factors.length };
   JQ_FACTOR_CATEGORIES.forEach((label) => {
@@ -827,6 +977,7 @@ function countJqCategories(factors) {
 function applyFilters() {
   const query = state.query.trim().toLowerCase();
   state.filteredFactors = state.rawFactors
+    .filter((factor) => marketBucket(factor) === state.market)
     .filter((factor) => state.selectedCategories.has(jqFactorCategory(factor)))
     .filter((factor) => !state.usableOnly || factorAdmission(factor).agentReadable)
     .filter((factor) => state.library === "全部" || factor.library === state.library)
@@ -835,7 +986,7 @@ function applyFilters() {
     .filter((factor) => state.reuse === "all" || factor.reuse_recommendation === state.reuse)
     .filter((factor) => {
       if (!query) return true;
-      return [factor.factor_name, factor.raw_factor_name, factor.library, factor.subcategory, jqFactorCategory(factor)]
+      return [factor.factor_name, factor.raw_factor_name, factor.library, marketLabel(factor), marketDetail(factor), factor.subcategory, jqFactorCategory(factor)]
         .join(" ")
         .toLowerCase()
         .includes(query);
@@ -857,6 +1008,7 @@ function jqFactorCategory(factor) {
   const subcategory = String(factor.subcategory || "").toLowerCase();
   const category = String(factor.category || "").toLowerCase();
   const library = String(factor.library || factor.raw_library || "").toLowerCase();
+  if (category.includes("技术")) return "技术指标因子";
   if (subcategory.includes("成长")) return "成长类因子";
   if (subcategory.includes("盈利") || subcategory.includes("营运")) return "质量类因子";
   if (subcategory.includes("偿债") || subcategory.includes("波动") || subcategory.includes("振幅")) return "风险类因子";
@@ -865,7 +1017,7 @@ function jqFactorCategory(factor) {
   if (category.includes("财务")) return "基础科目及衍生类因子";
   if (category.includes("价值") || category.includes("规模")) return "风险因子-风格因子";
   if (library.includes("barra")) return "风险因子-新风格因子";
-  if (category.includes("量价") || category.includes("技术")) return "动量类因子";
+  if (category.includes("量价")) return "动量类因子";
   return "技术指标因子";
 }
 
@@ -1067,6 +1219,7 @@ function renderTable() {
         </button>
       </td>
       <td>${escapeHtml(factor.library)}</td>
+      <td>${marketChipHtml(factor)}<span class="factor-subcategory">${escapeHtml(marketDetail(factor))}</span></td>
       <td>${escapeHtml(jqFactorCategory(factor))}<span class="factor-subcategory">${escapeHtml(factor.subcategory || "")}</span></td>
       <td><span class="badge ${proofClass}">${proofText}</span></td>
       <td>${truthBadgeHtml(factor)}</td>
@@ -1319,10 +1472,15 @@ function monitorValidationHtml(factor) {
 
 function monitorMarketHtml(factor) {
   const hints = monitorHints(factor);
-  if (hints.includes("覆盖率过低")) {
-    return `<span class="hint-chip">覆盖率过低</span>`;
-  }
-  return mutedDash();
+  const hint = hints.includes("覆盖率过低") ? `<span class="hint-chip">覆盖率过低</span>` : "";
+  const detail = marketDetail(factor);
+  return `
+    <span class="market-cell">
+      ${marketChipHtml(factor)}
+      ${hint}
+      <span class="monitor-source-sub">${escapeHtml(detail)}</span>
+    </span>
+  `;
 }
 
 function factorSourceDisplay(factor) {
@@ -1340,18 +1498,19 @@ function factorSourceDisplay(factor) {
 }
 
 function renderMonitorStats() {
-  const total = state.rawFactors.length;
-  const withMetric = state.rawFactors.filter(
+  const currentFactors = state.rawFactors.filter((factor) => marketBucket(factor) === state.monitorMarket);
+  const total = currentFactors.length;
+  const withMetric = currentFactors.filter(
     (factor) => toFiniteNumber(factor.rank_ic_mean) !== null || toFiniteNumber(factor.rank_ic_ir) !== null,
   ).length;
-  const reusable = state.rawFactors.filter((factor) => factor.reuse_recommendation === "可复用").length;
-  const review = state.rawFactors.filter((factor) => monitorBucket(factor) === "weak").length;
+  const reusable = currentFactors.filter((factor) => factor.reuse_recommendation === "可复用").length;
+  const review = currentFactors.filter((factor) => monitorBucket(factor) === "weak").length;
 
   const cards = [
-    ["all", "总因子数", total, "来自当前 specs 与 runtime 产物"],
-    ["metric", "有 IC/IR", withMetric, "已有可读研究指标"],
-    ["reusable", "可复用", reusable, "按当前适配层建议"],
-    ["review", "需关注", review, "复现失败、真值异常或弱指标"],
+    ["all", "总因子数", total, `${marketLabel(state.monitorMarket)} 当前分区`],
+    ["metric", "有 IC/IR", withMetric, "同市场内可读研究指标"],
+    ["reusable", "可复用", reusable, "同市场口径下的建议"],
+    ["review", "需关注", review, "同市场内复现或指标风险"],
   ]
     .map(
       ([key, label, value, note]) => `
@@ -1380,12 +1539,15 @@ function renderMonitorFilters() {
 }
 
 function renderMonitor() {
+  ensureMarketSelections();
+  renderMarketTabs();
   renderMonitorStats();
   renderMonitorFilters();
   renderMonitorCategoryFilters();
   renderMonitorDirectionFilters();
   const factors = state.rawFactors
     .map((factor) => ({ factor, bucket: monitorBucket(factor) }))
+    .filter((item) => marketBucket(item.factor) === state.monitorMarket)
     .filter((item) => state.monitorSelectedCategories.has(jqFactorCategory(item.factor)))
     .filter((item) => {
       if (state.monitorDirectionFilter === "all") return true;
@@ -4187,6 +4349,8 @@ function bindEvents() {
     state.category = "全部";
     state.selectedCategories = new Set(JQ_FACTOR_CATEGORIES);
     state.library = "全部";
+    state.market = firstAvailableMarket(marketCounts());
+    state.monitorMarket = state.market;
     state.proof = "all";
     state.truth = "all";
     state.reuse = "all";
