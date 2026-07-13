@@ -93,7 +93,7 @@ jobs:
             --output /tmp/pr_comment.md
 
       - name: Post PR comment
-        if: always() && github.event_name == 'pull_request'
+        if: always() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
         continue-on-error: true
         uses: thollander/actions-comment-pull-request@v3
         with:
