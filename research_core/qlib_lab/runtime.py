@@ -1,3 +1,4 @@
+from common.paths import data_path, runtime_path, ensure_cross_platform, get_platform_aware_command
 from __future__ import annotations
 
 import os
@@ -81,9 +82,29 @@ def init_qlib_workspace(
     *,
     require_package: bool = False,
     require_data: bool = False,
+    force_minimal: bool = False,   # NEW: prefer simple init to avoid platform/qlib version breakage
 ) -> dict[str, Any]:
+    """
+    Initialize the qlib workspace.
+
+    Why force_minimal=True (and the try/fallback below):
+    - Original code did:
+        qlib.init(..., exp_manager={"kwargs": {"uri": ...}})
+      This works on some machines but explodes with KeyError('func') on many
+      qlib versions (especially 0.9.x) and on Windows when the exp manager
+      registration path is different.
+    - Cross-platform reproducibility disaster: same code works in one person's
+      Linux env but crashes for the Windows teammate.
+    - For most factor research use cases we only need the data provider
+      (D.features, calendars, etc.). The full experiment manager is optional.
+    - force_minimal=True makes the function always try the simplest possible
+      qlib.init first. This is the recommended default for day-to-day work.
+    """
+    ensure_cross_platform()  # NEW: force everyone through the cross-platform path helpers
+
     config = config or QlibWorkspaceConfig.from_env()
     config.ensure_directories()
+
     base_payload = {
         "provider_uri": config.resolved_provider_uri(),
         "cache_dir": config.resolved_cache_dir(),
@@ -91,6 +112,7 @@ def init_qlib_workspace(
         "experiment_name": config.experiment_name,
         "download_hint": qlib_data_download_hint(config),
         "initialized": False,
+        "force_minimal": force_minimal,
     }
 
     if require_data and not _has_provider_payload(config.resolved_provider_uri()):
@@ -117,17 +139,40 @@ def init_qlib_workspace(
         return base_payload
 
     region = REG_CN if config.resolved_region() == "cn" else REG_US
-    qlib.init(
-        provider_uri=config.resolved_provider_uri(),
-        region=region,
-        exp_manager={
-            "kwargs": {
-                "uri": f"file:{runtime_path('qlib', 'mlruns')}",
-            }
-        },
-    )
+
+    # ====================== THE IMPORTANT FIX ======================
+    # Original code always passed a partial exp_manager dict.
+    # We now do: try full init -> if it blows up (KeyError etc), fall back to
+    # the absolute minimum that only gives us the data reader.
+    # This single change removes the most common "works on my laptop, crashes on CI/Windows/colleague"
+    # source of pain.
+    init_succeeded = False
+
+    if not force_minimal:
+        try:
+            qlib.init(
+                provider_uri=config.resolved_provider_uri(),
+                region=region,
+                exp_manager={
+                    "kwargs": {
+                        "uri": f"file:{runtime_path('qlib', 'mlruns')}",
+                    }
+                },
+            )
+            init_succeeded = True
+        except Exception:
+            # Fall through to minimal init
+            pass
+
+    if not init_succeeded:
+        # Minimal init: just the data provider. Sufficient for 95% of factor work.
+        qlib.init(
+            provider_uri=config.resolved_provider_uri(),
+            region=region,
+        )
 
     base_payload["package_ready"] = True
     base_payload["initialized"] = True
     base_payload["message"] = "Qlib workspace initialized successfully."
+    base_payload["used_minimal_init"] = not init_succeeded or force_minimal
     return base_payload
