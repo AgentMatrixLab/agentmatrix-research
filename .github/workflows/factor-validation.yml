@@ -51,6 +51,18 @@ jobs:
           set -o pipefail
           python -m pytest research_core/factor_lab/ tests/ -v --tb=short 2>&1 | tee /tmp/unit_test_output.txt
 
+      - name: "Check jq_gm coverage [W6 gate]"
+        shell: bash
+        run: |
+          set -o pipefail
+          python scripts/check_coverage.py 2>&1 | tee /tmp/coverage_output.txt
+
+      - name: "Check jq_gm regression [W6 gate]"
+        shell: bash
+        run: |
+          set -o pipefail
+          PYTHONPATH=. python scripts/check_regression.py 2>&1 | tee /tmp/regression_output.txt
+
       - name: "Run submission tests [Layer 1: Formula]"
         shell: bash
         run: |

@@ -1,0 +1,167 @@
+[
+  {
+    "factor_id": "6ddb4397ebd2c68a",
+    "name": "test_reversal_5",
+    "expression": "Ref($close, 5) / $close - 1",
+    "description": "5-day reversal test",
+    "source": "test",
+    "author": "test",
+    "tags": [],
+    "parameters": {},
+    "metadata": {
+      "registered_at": "2026-06-24T02:41:44Z"
+    },
+    "created_at": "2026-06-24T02:41:28Z",
+    "updated_at": "2026-06-24T02:41:44Z"
+  },
+  {
+    "factor_id": "eac923ea401abefa",
+    "name": "short_term_reversal",
+    "expression": "Ref($close, 5) / $close - 1",
+    "description": "experiment",
+    "source": "experiment",
+    "author": "test",
+    "tags": [],
+    "parameters": {},
+    "metadata": {
+      "registered_at": "2026-06-24T02:49:34Z"
+    },
+    "created_at": "2026-06-24T02:42:53Z",
+    "updated_at": "2026-06-24T02:49:34Z"
+  },
+  {
+    "factor_id": "65cf72554e42b14e",
+    "name": "volume_price_momentum",
+    "expression": "($close / Ref($close, 20) - 1) * Log($volume / Ref($volume, 20))",
+    "description": "experiment",
+    "source": "experiment",
+    "author": "test",
+    "tags": [],
+    "parameters": {},
+    "metadata": {
+      "registered_at": "2026-06-24T02:43:06Z"
+    },
+    "created_at": "2026-06-24T02:43:06Z",
+    "updated_at": "2026-06-24T02:43:06Z"
+  },
+  {
+    "factor_id": "c22cab6e799256a2",
+    "name": "intraday_amplitude_pressure",
+    "expression": "(($high - $low) / $close) * ($close / Ref($close, 10) - 1)",
+    "description": "experiment",
+    "source": "experiment",
+    "author": "test",
+    "tags": [],
+    "parameters": {},
+    "metadata": {
+      "registered_at": "2026-06-24T02:43:17Z"
+    },
+    "created_at": "2026-06-24T02:43:17Z",
+    "updated_at": "2026-06-24T02:43:17Z"
+  },
+  {
+    "factor_id": "5e8e908cc8e4a6c7",
+    "name": "ts_mom_confirm_20d",
+    "expression": "Mean(Ref(Close, -1) / Ref(Close, -21) - 1, 5)",
+    "description": "experiment",
+    "source": "ai",
+    "author": "experiment",
+    "tags": [],
+    "parameters": {},
+    "metadata": {
+      "registered_at": "2026-06-24T03:09:40Z"
+    },
+    "created_at": "2026-06-24T03:09:40Z",
+    "updated_at": "2026-06-24T03:09:40Z"
+  },
+  {
+    "factor_id": "d46c0f898fbca9b1",
+    "name": "volume_turnover_anomaly",
+    "expression": "Volume / Mean(Volume, 20) - Mean(Volume, 60) / Mean(Volume, 20)",
+    "description": "experiment",
+    "source": "ai",
+    "author": "experiment",
+    "tags": [],
+    "parameters": {},
+    "metadata": {
+      "registered_at": "2026-06-24T03:09:48Z"
+    },
+    "created_at": "2026-06-24T03:09:48Z",
+    "updated_at": "2026-06-24T03:09:48Z"
+  },
+  {
+    "factor_id": "f7ac7728728c422d",
+    "name": "volatility_expansion_5d",
+    "expression": "Std(Returns, 5) / Std(Returns, 20)",
+    "description": "experiment",
+    "source": "ai",
+    "author": "experiment",
+    "tags": [],
+    "parameters": {},
+    "metadata": {
+      "registered_at": "2026-06-24T03:09:54Z"
+    },
+    "created_at": "2026-06-24T03:09:54Z",
+    "updated_at": "2026-06-24T03:09:54Z"
+  },
+  {
+    "factor_id": "7a08dfddd9e09959",
+    "name": "price_volume_divergence_3d",
+    "expression": "Corr(Close, Volume, 3)",
+    "description": "experiment",
+    "source": "ai",
+    "author": "experiment",
+    "tags": [],
+    "parameters": {},
+    "metadata": {
+      "registered_at": "2026-06-24T03:10:00Z"
+    },
+    "created_at": "2026-06-24T03:10:00Z",
+    "updated_at": "2026-06-24T03:10:00Z"
+  },
+  {
+    "factor_id": "edbea34727cdafa8",
+    "name": "turnover_std_ratio_20d",
+    "expression": "Std(Turnover, 20) / Mean(Turnover, 20)",
+    "description": "experiment",
+    "source": "ai",
+    "author": "experiment",
+    "tags": [],
+    "parameters": {},
+    "metadata": {
+      "registered_at": "2026-06-24T03:10:07Z"
+    },
+    "created_at": "2026-06-24T03:10:07Z",
+    "updated_at": "2026-06-24T03:10:07Z"
+  },
+  {
+    "factor_id": "c5d3f20581897fc7",
+    "name": "test_rev_5",
+    "expression": "Ref($close, 5) / $close - 1",
+    "description": "5d reversal",
+    "source": "test",
+    "author": "test",
+    "tags": [],
+    "parameters": {},
+    "metadata": {
+      "registered_at": "2026-06-24T05:03:55Z"
+    },
+    "created_at": "2026-06-24T05:03:55Z",
+    "updated_at": "2026-06-24T05:03:55Z"
+  },
+  {
+    "factor_id": "9fb3033625839ff9",
+    "name": "test_rev_20",
+    "expression": "Ref($close, 20) / $close - 1",
+    "description": "20d reversal",
+    "source": "test",
+    "author": "test",
+    "tags": [],
+    "parameters": {},
+    "metadata": {
+      "registered_at": "2026-06-24T05:04:09Z"
+    },
+    "created_at": "2026-06-24T05:04:09Z",
+    "updated_at": "2026-06-24T05:04:09Z"
+  }
+]
