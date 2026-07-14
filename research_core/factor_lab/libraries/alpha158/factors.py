@@ -76,7 +76,6 @@ def _to_wide(series, index_ref):
 def _to_long(wide, index_ref):
     """将 wide matrix 转回 MultiIndex Series，对齐 index_ref"""
     result = wide.stack(future_stack=True)
-    result.index = result.index.swaplevel()
     return result.reindex(index_ref)
 
 
