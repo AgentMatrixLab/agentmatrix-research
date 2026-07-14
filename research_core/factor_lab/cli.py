@@ -13,12 +13,16 @@ from research_core.factor_lab.service import (
     get_factor_lab_overview,
     list_alpha101_factors,
     list_factor_set_factors,
+    list_jq_gm_factors,
     run_factor_set_research_job,
     run_alpha101_research_job,
     run_alpha101_truth_proof_batch,
+    run_jq_gm_research_job,
+    run_jq_gm_truth_proof_batch,
     validate_alpha101_truth_csv,
 )
 from research_core.factor_lab.validation import export_proof_template
+from research_core.factor_lab.libraries.jq_gm import JQ_GM_IMPLEMENTED_FACTORS
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -99,7 +103,88 @@ def build_parser() -> argparse.ArgumentParser:
     factor_set_parser.add_argument("--truth-csv", default="", help="Optional external truth CSV for factor-by-factor comparison")
     factor_set_parser.add_argument("--truth-tolerance", type=float, default=1e-12, help="Absolute tolerance for truth comparison")
 
+    # ── jq_gm subcommands (added Week 2) ──
+    _add_jq_gm_subparsers(subparsers)
+
     return parser
+
+
+def _add_jq_gm_subparsers(subparsers) -> None:
+    """Register jq_gm CLI subcommands.
+
+    Added Week 2 — follows the same argparse pattern as alpha101.
+    Separated into a helper so build_parser() stays readable as more
+    libraries are added.
+    """
+    subparsers.add_parser("list-jq-gm", help="List jq_gm factor specs and proof status")
+
+    export_parser = subparsers.add_parser(
+        "export-jq-gm", help="Export jq_gm catalog and spec payload"
+    )
+    export_parser.add_argument(
+        "--proof-factor",
+        default="market_cap",
+        help="Also export one proof template for the selected factor",
+    )
+
+    demo_parser = subparsers.add_parser(
+        "run-jq-gm-demo", help="Run deterministic jq_gm research demo"
+    )
+    demo_parser.add_argument(
+        "--factors",
+        default=",".join(JQ_GM_IMPLEMENTED_FACTORS),
+        help="Comma separated factor names",
+    )
+    demo_parser.add_argument(
+        "--n-dates", type=int, default=160,
+        help="Number of business dates in demo panel",
+    )
+    demo_parser.add_argument(
+        "--n-codes", type=int, default=8,
+        help="Number of securities in demo panel",
+    )
+    demo_parser.add_argument(
+        "--seed", type=int, default=7,
+        help="Random seed for deterministic demo panel",
+    )
+    demo_parser.add_argument(
+        "--truth-csv", default="",
+        help="Optional external truth CSV for factor-by-factor comparison",
+    )
+    demo_parser.add_argument(
+        "--truth-tolerance", type=float, default=1e-12,
+        help="Absolute tolerance for truth comparison",
+    )
+
+    batch_parser = subparsers.add_parser(
+        "run-jq-gm-proof-batch",
+        help="Run jq_gm full truth/proof batch with an external truth CSV",
+    )
+    batch_parser.add_argument(
+        "--factors",
+        default=",".join(JQ_GM_IMPLEMENTED_FACTORS),
+        help="Comma separated factor names",
+    )
+    batch_parser.add_argument(
+        "--truth-csv", required=True,
+        help="External truth CSV aligned to the requested factors",
+    )
+    batch_parser.add_argument(
+        "--truth-tolerance", type=float, default=1e-12,
+        help="Absolute tolerance for truth comparison",
+    )
+    batch_parser.add_argument(
+        "--n-dates", type=int, default=420,
+        help="Number of business dates in demo panel",
+    )
+    batch_parser.add_argument(
+        "--n-codes", type=int, default=8,
+        help="Number of securities in demo panel",
+    )
+    batch_parser.add_argument(
+        "--seed", type=int, default=29,
+        help="Random seed for deterministic demo panel",
+    )
 
 
 def main() -> None:
@@ -213,6 +298,70 @@ def main() -> None:
                 "data_source": "demo",
                 "truth_csv_path": args.truth_csv,
                 "truth_tolerance": args.truth_tolerance,
+            },
+            config=config,
+        )
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return
+
+    # ── jq_gm handlers (added Week 2) ──
+
+    if args.command == "list-jq-gm":
+        print(json.dumps(
+            {"items": list_jq_gm_factors(config)},
+            ensure_ascii=False, indent=2,
+        ))
+        return
+
+    if args.command == "export-jq-gm":
+        specs = jq_gm_specs()
+        # Reuse the same export flow as export-alpha101.
+        from research_core.factor_lab.libraries.jq_gm import jq_gm_specs as _specs_fn
+        payload = export_library_specs(
+            config=config, library="jq_gm", specs=_specs_fn(),
+        )
+        proof_factor = next(
+            (s for s in _specs_fn() if s.factor_name == args.proof_factor),
+            specs[0],
+        )
+        payload["proof_path"] = export_proof_template(
+            config=config, spec=proof_factor,
+        )
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return
+
+    if args.command == "run-jq-gm-demo":
+        factor_names = [
+            item.strip() for item in args.factors.split(",") if item.strip()
+        ]
+        payload = run_jq_gm_research_job(
+            {
+                "factor_names": factor_names,
+                "n_dates": args.n_dates,
+                "n_codes": args.n_codes,
+                "seed": args.seed,
+                "data_source": "demo",
+                "truth_csv_path": getattr(args, "truth_csv", ""),
+                "truth_tolerance": args.truth_tolerance,
+            },
+            config=config,
+        )
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return
+
+    if args.command == "run-jq-gm-proof-batch":
+        factor_names = [
+            item.strip() for item in args.factors.split(",") if item.strip()
+        ]
+        payload = run_jq_gm_truth_proof_batch(
+            {
+                "factor_names": factor_names,
+                "truth_csv_path": args.truth_csv,
+                "truth_tolerance": args.truth_tolerance,
+                "n_dates": args.n_dates,
+                "n_codes": args.n_codes,
+                "seed": args.seed,
+                "data_source": "demo",
             },
             config=config,
         )
