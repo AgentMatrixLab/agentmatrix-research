@@ -121,9 +121,12 @@ def init_qlib_workspace(
         provider_uri=config.resolved_provider_uri(),
         region=region,
         exp_manager={
+            "class": "MLflowExpManager",
+            "module_path": "qlib.workflow.expm",
             "kwargs": {
                 "uri": f"file:{runtime_path('qlib', 'mlruns')}",
-            }
+                "default_exp_name": config.experiment_name,
+            },
         },
     )
 
