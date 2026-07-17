@@ -27,13 +27,49 @@ const API_HOST = configuredApiHost
 const API_BASE = CLOUD_DEMO_MODE ? "" : `${API_HOST}/api/agents/factor-lab`;
 const DEMO_LIBRARY_URL = "./data/demo-factor-library.json";
 const STATIC_FACTOR_DETAIL_DIR = "./data/factor-details";
+const SUPABASE_URL = (
+  window.FACTOR_LAB_SUPABASE_URL ||
+  urlParams.get("supabaseUrl") ||
+  window.localStorage.getItem("FACTOR_LAB_SUPABASE_URL") ||
+  ""
+).replace(/\/+$/, "");
+const SUPABASE_ANON_KEY =
+  window.FACTOR_LAB_SUPABASE_ANON_KEY ||
+  urlParams.get("supabaseAnonKey") ||
+  window.localStorage.getItem("FACTOR_LAB_SUPABASE_ANON_KEY") ||
+  "";
+const SUPABASE_FACTOR_TABLE =
+  window.FACTOR_LAB_SUPABASE_FACTOR_TABLE ||
+  urlParams.get("supabaseTable") ||
+  window.localStorage.getItem("FACTOR_LAB_SUPABASE_FACTOR_TABLE") ||
+  "public_dashboard_factors";
+const USE_SUPABASE_DASHBOARD = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY && !configuredApiHost);
+const ACCESS_PASSWORD =
+  window.FACTOR_LAB_ACCESS_PASSWORD ||
+  urlParams.get("accessPassword") ||
+  window.localStorage.getItem("FACTOR_LAB_ACCESS_PASSWORD") ||
+  "factorlab2026";
+const ACCESS_SESSION_KEY = "FACTOR_LAB_AUTH_OK";
+if (urlParams.get("supabaseUrl")) {
+  window.localStorage.setItem("FACTOR_LAB_SUPABASE_URL", SUPABASE_URL);
+}
+if (urlParams.get("supabaseAnonKey")) {
+  window.localStorage.setItem("FACTOR_LAB_SUPABASE_ANON_KEY", SUPABASE_ANON_KEY);
+}
+if (urlParams.get("supabaseTable")) {
+  window.localStorage.setItem("FACTOR_LAB_SUPABASE_FACTOR_TABLE", SUPABASE_FACTOR_TABLE);
+}
+if (urlParams.get("accessPassword")) {
+  window.localStorage.setItem("FACTOR_LAB_ACCESS_PASSWORD", ACCESS_PASSWORD);
+}
 const PAGE_SIZE = 50;
 const AUTO_REFRESH_INTERVAL_MS = 10000;
 const REQUEST_TIMEOUT_MS = 1800;
 const COVERAGE_WARN_THRESHOLD = 0.6;
 const COVERAGE_DANGER_THRESHOLD = 0.3;
 const LONG_SHORT_MEAN_HELP = "多空分组收益均值（日频，demo 数据）";
-const ENABLE_AGENT_TASK_DEBUG = false;
+const ENABLE_AGENT_TASK_DEBUG = true;
+const FACTOR_INTAKE_CONTRACT_DOC = "docs/FACTOR_LAB_INTAKE_REPRODUCTION_CONTRACT.md";
 // AI 任务调试入口暂时关闭。恢复时打开 ENABLE_AGENT_TASK_DEBUG，并恢复 index.html 中对应入口。
 const JQ_FACTOR_CATEGORIES = [
   "基础科目及衍生类因子",
@@ -104,21 +140,19 @@ const JQ_CATEGORY_BY_FACTOR = {
   bb_position: "技术指标因子",
 };
 const AGENT_TASK_TEXT = {
-  title: "AI 任务(调试入口)",
+  title: "数据入口（待接入）",
   subtitle:
-    "输入研究要求后,后台 agent 默认使用 Quant API 真实数据判断并执行复现、挖掘或评估。进度在任务监控中查看。",
-  boundaryTitle: "当前边界",
+    "当前先作为 Supabase 只读接入口和 Agent Skill 契约预留。GitHub Pages 只负责读取云端表和展示结果，不在网页内执行复现或入库。",
+  boundaryTitle: "Supabase 接入预留",
   boundary:
-    "前端只提交自然语言要求,不上传文件、不选择 skill。数据默认从后端 Quant API 读取;agent 执行、流程判断与入库均在后端完成。",
-  instructionLabel: "研究要求",
-  instructionPlaceholder: "例如:使用 Quant API 真实数据复现 GTJA191 的 alpha010 并评估;或:挖掘一个低换手量价因子",
-  quarantineHint: "默认数据源: Quant API。agent 产出将进入 quarantine(隔离区),通过校验后才进入正式因子库。",
-  submit: "提交给 Agent",
+    "后续由云端 Agent / 后端写入 Supabase 与对象存储；前端只读取 public dashboard 表。现有上传和运行控件保留为接入占位，不作为 GitHub Pages 执行入口。",
+  quarantineHint: "待接入：Supabase 表存任务、状态、指标和文件路径；大文件放 Storage。GitHub Pages 默认只读。",
+  submit: "接入后运行",
   submitting: "提交中...",
-  emptyWarning: "请输入研究要求",
-  submittedToast: "任务已提交,已生成 Trae 交接文件",
-  recentTitle: "最近提交",
-  emptyRecent: "暂无提交记录。提交一个任务后会出现在这里。",
+  emptyWarning: "请先拖入或选择文件",
+  submittedToast: "任务已创建，已写入数据入口队列",
+  recentTitle: "数据入口任务",
+  emptyRecent: "暂无任务。拖入文件夹或文件后点击运行。",
 };
 
 const state = {
@@ -162,6 +196,8 @@ const state = {
   activeTaskId: null,
   detailTab: "analysis",
   pendingFiles: [],
+  intakeTaskType: "research_reproduction",
+  intakeInputMode: "folder",
   agentTasks: [],
   agentTasksLoaded: false,
   agentInstruction: "",
@@ -192,6 +228,9 @@ const state = {
     limitFilter: "是",
   },
 };
+
+const pendingFileStore = new Map();
+let activePreviewUrl = null;
 
 const els = {
   pageTitle: document.querySelector("#pageTitle"),
@@ -244,7 +283,12 @@ const els = {
   taskTableBody: document.querySelector("#taskTableBody"),
   taskStagePanel: document.querySelector("#taskStagePanel"),
   refreshButton: document.querySelector("#refreshButton"),
+  logoutButton: document.querySelector("#logoutButton"),
   collapseButton: document.querySelector("#collapseButton"),
+  loginView: document.querySelector("#loginView"),
+  loginForm: document.querySelector("#loginForm"),
+  loginPassword: document.querySelector("#loginPassword"),
+  loginError: document.querySelector("#loginError"),
   appShell: document.querySelector(".app-shell"),
 };
 
@@ -663,6 +707,85 @@ async function fetchWithTimeout(url, options = {}) {
   }
 }
 
+function parseJsonObject(value) {
+  if (!value) return {};
+  if (typeof value === "object" && !Array.isArray(value)) return value;
+  if (typeof value !== "string") return {};
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch (error) {
+    return {};
+  }
+}
+
+function normalizeSupabaseFactorRow(row) {
+  const payload = parseJsonObject(row.payload);
+  return {
+    ...payload,
+    id: payload.id || row.factor_id || row.id,
+    factor_name: payload.factor_name || row.factor_name || row.factor_id || row.id,
+    raw_factor_name: payload.raw_factor_name || row.raw_factor_name || row.factor_name || row.factor_id,
+    library: payload.library || row.library || row.factor_family || "User Custom",
+    raw_library: payload.raw_library || row.raw_library || row.factor_family || row.library,
+    category: payload.category || row.category || "自定义因子",
+    source: payload.source || row.source || "supabase_public_dashboard",
+    source_id: payload.source_id || row.source_id || row.factor_id || row.id,
+    display_name: payload.display_name || row.display_name || row.factor_name || row.factor_id,
+    description: payload.description || row.description || "",
+    formula: payload.formula || row.formula || "",
+    implementation_status: payload.implementation_status || row.implementation_status || "registered",
+    proof_status: payload.proof_status || row.proof_status || null,
+    truth_status: payload.truth_status || row.truth_status || null,
+    overall_status: payload.overall_status || row.overall_status || row.status || "registered",
+    coverage_ratio: payload.coverage_ratio ?? row.coverage_ratio ?? null,
+    rank_ic_mean: payload.rank_ic_mean ?? row.rank_ic_mean ?? row.ic_mean ?? null,
+    rank_ic_ir: payload.rank_ic_ir ?? row.rank_ic_ir ?? row.ic_ir ?? null,
+    long_short_mean: payload.long_short_mean ?? row.long_short_mean ?? null,
+    truth_exact_match_ratio: payload.truth_exact_match_ratio ?? row.truth_exact_match_ratio ?? null,
+    truth_max_abs_error: payload.truth_max_abs_error ?? row.truth_max_abs_error ?? null,
+    latest_job_id: payload.latest_job_id || row.latest_task_id || row.task_id || null,
+    latest_checked_at: payload.latest_checked_at || row.latest_checked_at || row.updated_at || row.created_at || null,
+    data_source: payload.data_source || row.data_source || "Supabase",
+    metadata: {
+      ...(payload.metadata || {}),
+      supabase_row_id: row.id,
+    },
+  };
+}
+
+async function fetchSupabaseDashboardPayload() {
+  const endpoint = new URL(`${SUPABASE_URL}/rest/v1/${encodeURIComponent(SUPABASE_FACTOR_TABLE)}`);
+  endpoint.searchParams.set("select", "*");
+  endpoint.searchParams.set("order", "latest_checked_at.desc.nullslast");
+  endpoint.searchParams.set("limit", "1000");
+  const response = await fetchWithTimeout(endpoint.toString(), {
+    headers: {
+      apikey: SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+      Accept: "application/json",
+    },
+  });
+  if (!response.ok) throw new Error(`Supabase HTTP ${response.status}`);
+  const rows = await response.json();
+  const factors = Array.isArray(rows) ? rows.map(normalizeSupabaseFactorRow) : [];
+  return {
+    schema_version: "factor_lab_view_v1",
+    generated_at: new Date().toISOString(),
+    local_flask: { connected: false },
+    cloud_registry: { status: "supabase", label: "Supabase Public Dashboard" },
+    metadata: {
+      factor_source_types: ["supabase_public_dashboard"],
+      warning_count: 0,
+      factor_source_warning_count: 0,
+      artifact_warning_count: 0,
+      supabase_table: SUPABASE_FACTOR_TABLE,
+    },
+    errors: [],
+    factors,
+  };
+}
+
 async function checkLocalHealth() {
   if (CLOUD_DEMO_MODE) {
     updateConnectionStatus(true, {
@@ -719,6 +842,25 @@ async function loadData() {
   state.isLoading = true;
   updateRefreshButton(true);
   try {
+    if (USE_SUPABASE_DASHBOARD) {
+      const payload = await fetchSupabaseDashboardPayload();
+      const normalizedPayload = normalizePayload(payload);
+      state.rawFactors = normalizedPayload.factors || [];
+      updateConnectionStatus(true, payload);
+      updateQuantApiStatus({
+        token_configured: false,
+        base_url: "Supabase public dashboard",
+      });
+      els.errorPanel.classList.add("hidden");
+      renderTabs(normalizedPayload);
+      applyFilters();
+      await syncDetailFromHash();
+      if (state.view === "monitor") renderMonitor();
+      if (state.view === "strategy") renderStrategy();
+      if (state.view === "strategy-detail") renderStrategyDetail();
+      if (state.view === "tasks") renderTasks();
+      return;
+    }
     if (CLOUD_DEMO_MODE) {
       const response = await fetchWithTimeout(withCacheBust(DEMO_LIBRARY_URL));
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -2945,10 +3087,13 @@ function taskRows() {
 function agentTaskStatusMeta(task) {
   const status = String(task.status || "submitted");
   const map = {
+    queued: { label: "等待 Agent", progress: 5, stageStatus: "running", appStatus: "运行中" },
     queued_for_trae: { label: "等待 Agent", progress: 10, stageStatus: "running", appStatus: "运行中" },
     submitted: { label: "已提交", progress: 8, stageStatus: "running", appStatus: "运行中" },
     running: { label: "运行中", progress: 45, stageStatus: "running", appStatus: "运行中" },
+    waiting_final_approval: { label: "等待最终确认", progress: 92, stageStatus: "running", appStatus: "需关注" },
     failed: { label: "需关注", progress: 35, stageStatus: "warning", appStatus: "需关注" },
+    rejected: { label: "已拒绝", progress: 100, stageStatus: "warning", appStatus: "需关注" },
     completed: { label: "已完成", progress: 100, stageStatus: "passed", appStatus: "已完成" },
   };
   return map[status] || { label: status, progress: 10, stageStatus: "running", appStatus: "运行中" };
@@ -2961,40 +3106,48 @@ function agentTaskRows() {
     const taskId = task.task_id || task.id || "agent-task";
     const artifacts = task.artifacts_dir || task.status_path || "local agent task artifacts";
     const progress = Number(task.progress ?? meta.progress);
+    const stages = Array.isArray(task.gates) && task.gates.length
+      ? task.gates.map((gate) => ({
+          gate: gate.gate || "-",
+          name: gate.name || gate.gate || "Gate",
+          status: gate.status || "pending",
+          note: gate.note || task.message || meta.label,
+        }))
+      : [
+          {
+            gate: "G0",
+            name: "任务接收",
+            status: "passed",
+            note: `已写入任务队列：${taskId}`,
+          },
+          {
+            gate: "G1",
+            name: "Agent 执行",
+            status: meta.stageStatus,
+            note: task.message || meta.label,
+          },
+          {
+            gate: "G2",
+            name: "产物校验",
+            status: meta.appStatus === "已完成" ? "passed" : "pending",
+            note: "等待 request/status/artifacts 校验结果",
+          },
+          {
+            gate: "G3",
+            name: "入库审核",
+            status: "pending",
+            note: "quarantine 通过后进入正式因子库",
+          },
+        ];
     return {
       id: taskId,
       name: summary === "-" ? taskId : summary,
-      type: "Agent",
+      type: (task.task_type === "truth_compare" || task.task_type === "factor_values_compare") ? "因子对比" : "研报复现",
       currentGate: task.current_gate || "G0",
       progress: Number.isFinite(progress) ? Math.max(0, Math.min(100, progress)) : meta.progress,
       status: meta.appStatus,
       sourceStatus: task.status || "submitted",
-      stages: [
-        {
-          gate: "G0",
-          name: "任务接收",
-          status: "passed",
-          note: `已写入任务队列：${taskId}`,
-        },
-        {
-          gate: "G1",
-          name: "Agent 执行",
-          status: meta.stageStatus,
-          note: task.message || meta.label,
-        },
-        {
-          gate: "G2",
-          name: "产物校验",
-          status: meta.appStatus === "已完成" ? "passed" : "pending",
-          note: "等待 request/status/artifacts 校验结果",
-        },
-        {
-          gate: "G3",
-          name: "入库审核",
-          status: "pending",
-          note: "quarantine 通过后进入正式因子库",
-        },
-      ],
+      stages,
       artifacts,
     };
   });
@@ -3126,8 +3279,14 @@ function addPendingFiles(fileList) {
 }
 
 function removePendingFile(index) {
-  state.pendingFiles.splice(index, 1);
+  const [removed] = state.pendingFiles.splice(index, 1);
+  if (removed?.file_id) pendingFileStore.delete(removed.file_id);
   renderAgentTask();
+}
+
+function clearPendingFiles() {
+  state.pendingFiles = [];
+  pendingFileStore.clear();
 }
 
 async function loadAgentTasks() {
@@ -3169,7 +3328,7 @@ async function loadAgentTasks() {
 
 async function submitTaskRequest(payload) {
   if (!ENABLE_AGENT_TASK_DEBUG) {
-    throw new Error("AI 任务调试入口已暂时关闭");
+    throw new Error("数据入口已关闭");
   }
   if (CLOUD_DEMO_MODE) {
     throw new Error("GitHub Pages demo mode is read-only. Deploy the Flask backend to enable Agent tasks.");
@@ -3189,21 +3348,1186 @@ async function submitTaskRequest(payload) {
   return await response.json();
 }
 
+function fileListFromInput(fileList) {
+  return Array.from(fileList || [])
+    .map((file, index) => {
+      const fileId = `${Date.now()}-${index}-${file.name}-${file.size}-${file.lastModified || 0}`;
+      pendingFileStore.set(fileId, file);
+      return {
+        file_id: fileId,
+        name: file.name,
+        relative_path: file.webkitRelativePath || file.name,
+        size: file.size,
+        type: file.type || "",
+        last_modified: file.lastModified ? new Date(file.lastModified).toISOString() : null,
+      };
+    })
+    .filter((file) => file.name);
+}
+
+function inferPackageName(files) {
+  const firstPath = files.find((file) => file.relative_path?.includes("/"))?.relative_path || "";
+  const root = firstPath.split("/").filter(Boolean)[0];
+  if (root) return root;
+  return "factor_intake_loose_files";
+}
+
+function inferTaskType(files) {
+  const names = new Set(files.map((file) => file.name));
+  if (names.has("factor_values.csv")) return "truth_compare";
+  if (
+    names.has("code.py") ||
+    names.has("experiment_data.csv") ||
+    names.has("paper.pdf") ||
+    names.has("research_report.pdf") ||
+    names.has("report.pdf")
+  ) {
+    return "research_reproduction";
+  }
+  return state.intakeTaskType;
+}
+
+function currentInputProfileSummary() {
+  if (state.intakeTaskType === "truth_compare" || state.intakeTaskType === "factor_values_compare") {
+    return {
+      summary: "因子值对照：提交 factor_values.csv，Agent 统一整理成 factor_values_compare 可读结构。",
+      tree: ["factor_intake_YYYYMMDD_name/", "  factor_values.csv"],
+    };
+  }
+  return {
+    summary: "研报自动复现：提交 code.py、experiment_data.csv、paper.pdf、research_report.pdf，Agent 统一整理成 research_report_reproduction 可读结构。",
+    tree: [
+      "factor_intake_YYYYMMDD_name/",
+      "  code.py",
+      "  experiment_data.csv",
+      "  paper.pdf",
+      "  research_report.pdf",
+    ],
+  };
+}
+
+function currentSkillContract() {
+  if (state.intakeTaskType === "truth_compare") {
+    return {
+      title: "Agent Skill: truth_compare_v1",
+      shortDescription: "标准真值对照入口。上传已有因子值，和库内标准真值逐点比较，并做重复因子检查。",
+      skillText: `# Agent Skill: truth_compare_v1
+
+## 0. Role
+You are the Factor Lab truth-comparison Agent. Your task is to read one uploaded factor value file, compare it point-by-point against the standard truth values already stored in the factor library, check similarity against existing factors, and write machine-readable artifacts.
+
+This entry answers:
+- does the uploaded factor value match the library standard truth?
+- is it a duplicate or near-duplicate of an existing factor?
+- what are the overlap ratio, exact match ratio, max absolute error, and similarity metrics?
+
+Do not promote anything into the official factor library. Write outputs under the task artifacts directory.
+
+## 1. Input
+Required:
+
+~~~text
+factor_intake_YYYYMMDD_name/
+  factor_values.csv
+~~~
+
+Recommended metadata:
+
+~~~json
+{
+  "task_type": "truth_compare",
+  "skill_name": "truth_compare_v1",
+  "factor_family": "alpha101|wq101|gtja191|exploratory",
+  "factor_name": "string"
+}
+~~~
+
+factor_values.csv must contain:
+
+| column | required | rule |
+| --- | --- | --- |
+| date | yes | normalize to YYYY-MM-DD |
+| symbol | yes | normalize to backend symbol format |
+| factor_value | yes | finite numeric value |
+
+## 2. Frozen Criteria
+criteria.json is written by G0 and read-only downstream. Every gate must verify status.json.criteria_sha256 before running.
+
+For this entry, standard truth is the primary gate:
+
+~~~json
+{
+  "standard_truth": {
+    "role": "primary_gate",
+    "required": true,
+    "source": "factor_library_truth",
+    "missing_source_status": "not_comparable",
+    "blocking": true
+  }
+}
+~~~
+
+If library truth is missing, write status=not_comparable and final decision reject. Do not mark it not_applicable.
+
+## 3. Gates
+G0 intake_validation:
+- verify request.json and factor_values.csv
+- identify factor_family and factor_name
+- freeze criteria.json and sha256
+
+G1 criteria_freeze:
+- verify criteria hash
+- fail with criteria_tampered if changed
+
+G2 value_schema_check:
+- validate date, symbol, factor_value
+- normalize date/symbol/value
+
+G3 data_quality_check:
+- count invalid rows, duplicate keys, missing values
+- write data_quality.json
+
+G4 library_truth_lookup:
+- locate library standard truth for factor_family + factor_name
+- if unavailable, write standard_truth.status=not_comparable
+
+G5 standard_truth_comparison:
+- compare uploaded value and library truth point by point
+- compute overlap_ratio, exact_match_ratio, max_abs_error
+- passed iff overlap_ratio >= min_overlap_ratio and exact_match_ratio >= pass_exact_match_ratio and max_abs_error <= tolerance
+
+G6 library_similarity:
+- compare with existing factor library for duplicate / near-duplicate detection
+
+G7 report_generation:
+- write comparison_report.md
+
+G8 final_approval:
+- write final_decision.json
+
+## 4. Decision Rule
+accept iff standard_truth.status=passed and no blocking duplicate issue exists.
+
+Missing library truth means not_comparable and reject. Low overlap means not_compared. Enough overlap but wrong values means failed.
+
+## 5. Required Artifacts
+~~~text
+artifacts/
+  criteria.json
+  input_profile.json
+  data_quality.json
+  normalized_factor_values.parquet
+  standard_truth_comparison.json
+  library_similarity.json
+  comparison_report.md
+  final_decision.json
+~~~`,
+      note: "真值对照入口只处理已有因子值和库内标准真值的逐点对照。",
+    };
+  }
+  if (state.intakeTaskType === "research_reproduction") {
+    return {
+      title: "Agent Skill: research_reproduction_v1",
+      shortDescription: "研报论文复现入口。把研究材料转成可运行、可审核、可入库候选因子；真值只做可选诊断。",
+      skillText: `# Agent Skill: research_reproduction_v1
+
+## 0. Role
+You are the Factor Lab research-reproduction Agent. Your task is to read one complete research package, reconstruct the factor, run it, evaluate economic usefulness, ask AMR to review it, compare it with the library, and produce artifacts for final approval.
+
+This entry answers:
+- can the research material be turned into a runnable factor?
+- is the produced factor economically useful?
+- does AMR find implementation or assumption risk?
+- is it duplicate or near-duplicate with the existing library?
+
+Standard truth is optional diagnostic evidence in this entry. It must not be the main promotion gate.
+
+## 1. Input
+Required:
+
+~~~text
+factor_intake_YYYYMMDD_name/
+  code.py
+  experiment_data.csv
+  paper.pdf
+  research_report.pdf
+~~~
+
+Optional:
+
+~~~text
+truth_values.csv
+truth_values.parquet
+~~~
+
+## 2. Frozen Criteria
+criteria.json is written by G0 and read-only downstream. Every gate must verify status.json.criteria_sha256 before running.
+
+For this entry, standard truth is optional:
+
+~~~json
+{
+  "standard_truth": {
+    "role": "optional_diagnostic",
+    "required": false,
+    "source": "optional_truth_values_or_library_truth",
+    "missing_source_status": "not_applicable",
+    "blocking": false
+  }
+}
+~~~
+
+Acceptance is based on economic validation, AMR review, and library comparison:
+
+~~~text
+accept iff
+  economic_validation.status = passed
+  and amr_review.status = passed
+  and library_comparison.status != duplicate
+~~~
+
+## 3. Gates
+G0 intake_validation:
+- verify request.json
+- verify the four fixed files exist
+- freeze criteria.json and sha256
+
+G1 criteria_freeze:
+- verify criteria hash
+- fail with criteria_tampered if changed
+
+G2 document_parse:
+- parse paper.pdf and research_report.pdf
+- write parsed_paper.md and parsed_research_report.md
+
+G3 factor_spec_extraction:
+- extract formula, variables, frequency, universe, preprocessing, return horizon
+- prefer research_report.pdf for production formula
+
+G4 code_reconciliation:
+- compare code.py with extracted formula
+- record conflicts and assumptions
+
+G5 data_binding:
+- profile experiment_data.csv
+- map variables to file columns or Quant API fields
+
+G6 reproduction_run:
+- write factor.py and test_factor.py
+- run factor and write factor_values.parquet
+
+G7 optional_truth_diagnostics:
+- if no truth exists, write not_applicable
+- if truth exists and matches, record stronger evidence
+- if truth exists and does not match but economic validation passes, set needs_review because implementation or data mapping may be wrong
+- if truth exists and matches but economic validation fails, record as correctly reproduced but economically decayed
+
+G8 economic_validation:
+- compute IC, RankIC, IR, long-short return, turnover, coverage, stability, sample-out evidence when available
+
+G9 amr_review:
+- review code, assumptions, data mapping, risk, and report consistency
+- AMR may suggest patch but must not overwrite factor.py directly
+
+G10 library_comparison:
+- detect duplicate or near-duplicate factors
+
+G11 report_generation:
+- write reproduction_report.md
+
+G12 final_approval:
+- write final_decision.json
+- do not promote directly to official library
+
+## 4. Required Artifacts
+~~~text
+artifacts/
+  criteria.json
+  parsed_paper.md
+  parsed_research_report.md
+  extracted_formula.json
+  assumptions.json
+  data_profile.json
+  factor.py
+  test_factor.py
+  factor_values.parquet
+  optional_truth_diagnostics.json
+  economic_validation.json
+  amr_review.json
+  library_comparison.json
+  reproduction_report.md
+  final_decision.json
+~~~`,
+      note: "研报复现入口不强制真值；真值只用于诊断和归因。",
+    };
+  }
+  if (state.intakeTaskType === "truth_compare" || state.intakeTaskType === "factor_values_compare") {
+    return {
+      title: "Agent Skill：factor_values_compare_v1",
+      shortDescription: "已配置因子值对照总 Skill。点击查看给智能体执行的完整 SOP、字段要求和后端输出目录。",
+      skillText: `# Agent Skill: factor_values_compare_v1
+
+## 0. Role and operating mode
+You are the downstream Factor Lab intake Agent. Your task is to read one external factor value file, normalize it, compare it with the existing factor library, and produce machine-readable artifacts for final human approval.
+
+Do not ask the user intermediate questions. If information is missing, make the least risky assumption, record it in artifacts/input_profile.json or artifacts/data_quality.json, and continue until a final_decision.json is produced.
+
+Never write directly into the official factor library. All candidate results must stay under namespace=quarantine.
+
+## 0.1 Frozen criteria
+Truth comparison criteria must be resolved from the factor-family registry at G0 and frozen into artifacts/criteria.json. Downstream Agents may read criteria.json but must not modify it. G0 must compute sha256(criteria.json) and store it in status.json.criteria_sha256. Every downstream gate must recompute and compare this hash before running. If the hash differs, fail the gate with error=criteria_tampered.
+
+truth_required and truth_file_present are independent:
+| truth_required | truth_file_present | truth_status |
+| --- | --- | --- |
+| false | false/true | not_applicable |
+| true | true | passed or failed |
+| true | false | not_compared, blocking |
+
+not_applicable may only be derived from truth_required=false. It must never be derived from a missing truth file.
+
+Passed truth comparison requires all conditions:
+overlap_ratio >= min_overlap_ratio
+and exact_match_ratio >= pass_exact_match_ratio
+and max_abs_error <= tolerance
+
+If truth_required=true and coverage is below min_overlap_ratio, set truth_status=not_compared, never failed or passed. failed means enough overlap was compared but values did not match.
+
+truth_required must come from registry, not from AMR:
+- alpha101 / wq101 -> truth_required=true, criteria_source=registry:alpha101_v1
+- gtja191 -> truth_required=true, criteria_source=registry:gtja191_v1
+- exploratory -> truth_required=false, criteria_source=registry:exploratory_v1
+- unknown factor_family -> criteria_status=failed, criteria_error=unknown_factor_family, truth_required=true, no accept
+
+The sha256 mechanism detects accidental tampering such as an Agent overwriting criteria.json or a patch rerun carrying the wrong file. It is not an adversarial security boundary. For adversarial protection, store criteria_sha256 in a database table, append-only log, or read-only API that downstream Agents cannot write.
+
+## 1. Fixed input package
+Accept either a folder upload or direct file upload, but normalize both modes into this package model:
+
+factor_intake_YYYYMMDD_name/
+  factor_values.csv
+
+Required file list is fixed:
+- factor_values.csv
+
+Reject or mark needs_review if factor_values.csv is missing. Extra files are allowed only as optional references; do not require them.
+
+## 2. factor_values.csv hard format
+File requirements:
+- file name must be exactly factor_values.csv
+- format must be CSV
+- header row is required
+- delimiter is comma
+- preferred encoding is UTF-8
+- GBK may be accepted only if parser can detect and decode it
+- one row represents one symbol on one date
+
+Required columns:
+| column | type | required | normalization rule |
+| --- | --- | --- | --- |
+| date | string/date | yes | normalize to YYYY-MM-DD |
+| symbol | string | yes | normalize to backend symbol format, e.g. 000001.SZ or 600000.SH |
+| factor_value | number | yes | finite numeric value only |
+
+Optional columns:
+| column | type | required | usage |
+| --- | --- | --- | --- |
+| factor_name | string | no | candidate factor name; fallback to package_name |
+| source_weight | number | no | optional confidence/weight; preserve in profile |
+| is_valid | bool/int/string | no | false rows excluded from evaluation but counted in data quality |
+| group | string | no | optional universe/group label |
+| industry | string | no | optional grouping/neutralization label |
+| note | string | no | optional row note; preserve but do not evaluate |
+
+Accepted date examples:
+- 2024-01-02
+- 20240102
+- 2024/01/02
+
+Accepted boolean examples for is_valid:
+- true/false
+- 1/0
+- yes/no
+- y/n
+
+## 3. Canonical request.json
+The backend should persist this request shape. If fields are missing, fill defaults exactly as below.
+
+~~~json
+{
+  "schema_version": "factor_intake_request_v1",
+  "task_type": "factor_values_compare",
+  "skill_name": "factor_values_compare_v1",
+  "package": {
+    "input_mode": "folder_or_files",
+    "package_name": "factor_intake_YYYYMMDD_name",
+    "required_files": ["factor_values.csv"],
+    "files": [
+      {
+        "name": "factor_values.csv",
+        "relative_path": "factor_intake_YYYYMMDD_name/factor_values.csv",
+        "size": 0,
+        "type": "text/csv",
+        "last_modified": "ISO-8601-or-null"
+      }
+    ]
+  },
+  "namespace": "quarantine",
+  "data_source": "quant_api",
+  "requires_quant_api": true,
+  "human_policy": {
+    "interactive_questions": false,
+    "human_only_final_approval": true
+  }
+}
+~~~
+
+## 4. Execution SOP
+Run these steps in order and update status.json after each gate.
+
+G0 intake_validation:
+- Verify request.json exists.
+- Verify task_type equals factor_values_compare.
+- Verify skill_name equals factor_values_compare_v1.
+- Verify package.required_files contains factor_values.csv.
+- Verify factor_values.csv exists and is readable.
+- Resolve the factor family from intake metadata, then freeze artifacts/criteria.json from registry. Do not let AMR choose truth_required or tolerance.
+- If missing, set status=failed and write final_decision.json with decision=reject.
+
+G1 criteria_freeze:
+- Verify artifacts/criteria.json exists.
+- Verify criteria_locked_by equals G0.
+- Verify mutable_by_downstream_agent equals false.
+- Recompute sha256(criteria.json) and compare with status.json.criteria_sha256.
+- If mismatched, fail with error=criteria_tampered.
+- This check must live in the unified gate entrypoint, not as an optional per-gate helper.
+- If AMR thinks criteria are wrong, set needs_review. Do not edit criteria.
+
+G2 value_schema_check:
+- Decode CSV.
+- Detect header.
+- Confirm date, symbol, factor_value columns exist.
+- Normalize column names by trimming whitespace and lowercasing.
+- Do not silently rename unknown core columns. If date/symbol/factor_value are absent, record error.
+- Normalize date to YYYY-MM-DD.
+- Normalize symbol to the backend symbol format.
+- Convert factor_value to float.
+
+G3 data_quality_check:
+- Count total rows, valid rows, invalid rows.
+- Detect duplicate keys by date + symbol.
+- Detect missing date, missing symbol, missing factor_value.
+- Detect non-finite values: NaN, inf, -inf, empty string, null.
+- Detect date span: min_date, max_date, number of trading dates.
+- Detect symbol coverage: number of unique symbols, average symbols per date.
+- Detect extreme values using robust z-score or percentile rules.
+- If coverage is too low or values are mostly invalid, continue but set final decision to needs_review.
+
+G4 truth_comparison:
+- Read artifacts/criteria.json.
+- If truth_required=false, write truth_status=not_applicable.
+- If truth_required=true and truth_values.csv or registry truth source is missing, write truth_status=not_compared and block accept.
+- If truth_required=true and truth is available, compare point by point.
+- Set passed only if overlap_ratio, exact_match_ratio, and tolerance all pass.
+
+G5 library_similarity:
+- Load or query existing factor library metadata and values.
+- Compare with existing factors when overlapping date/symbol data is available.
+- Compute Pearson correlation, Spearman correlation, overlap ratio, and top matches.
+- If values are not available for a library factor, record unavailable reason.
+
+G6 metric_evaluation:
+- Use quant_api returns if available.
+- Calculate IC, RankIC, IC mean, IC std, IR, positive IC ratio.
+- If return data is unavailable, write evaluation.status=skipped and explain why.
+- Do not block final report only because return data is unavailable.
+
+G7 report_generation:
+- Generate comparison_report.md in Chinese.
+- Include input summary, quality summary, top similar factors, evaluation metrics, risk notes, and recommendation.
+
+G8 final_approval:
+- Generate final_decision.json.
+- Do not promote or write the factor to the official library.
+
+## 5. Fixed output directory
+All outputs must be written under:
+
+runtime/factor_lab/agent_tasks/<task_id>/
+  request.json
+  status.json
+  artifacts/
+    criteria.json
+    input_profile.json
+    data_quality.json
+    normalized_factor_values.parquet
+    truth_comparison.json
+    library_similarity.json
+    evaluation.json
+    comparison_report.md
+    final_decision.json
+
+## 6. Artifact schemas
+artifacts/input_profile.json:
+~~~json
+{
+  "schema_version": "factor_input_profile_v1",
+  "task_type": "factor_values_compare",
+  "factor_name": "string",
+  "file_name": "factor_values.csv",
+  "encoding": "utf-8|gbk|unknown",
+  "row_count": 0,
+  "valid_row_count": 0,
+  "date_range": {"start": "YYYY-MM-DD-or-null", "end": "YYYY-MM-DD-or-null"},
+  "symbol_count": 0,
+  "columns": [],
+  "optional_columns_detected": [],
+  "assumptions": []
+}
+~~~
+
+artifacts/data_quality.json:
+~~~json
+{
+  "schema_version": "factor_data_quality_v1",
+  "status": "passed|warning|failed",
+  "duplicate_key_count": 0,
+  "missing_date_count": 0,
+  "missing_symbol_count": 0,
+  "missing_factor_value_count": 0,
+  "non_finite_value_count": 0,
+  "invalid_is_valid_count": 0,
+  "coverage": {"dates": 0, "symbols": 0, "avg_symbols_per_date": 0.0},
+  "warnings": [],
+  "errors": []
+}
+~~~
+
+artifacts/library_similarity.json:
+~~~json
+{
+  "schema_version": "factor_library_similarity_v1",
+  "status": "passed|skipped|failed",
+  "candidate_factor_name": "string",
+  "top_matches": [
+    {
+      "factor_id": "string",
+      "factor_name": "string",
+      "pearson_corr": 0.0,
+      "spearman_corr": 0.0,
+      "overlap_ratio": 0.0,
+      "recommendation": "reuse_existing|create_new|needs_review"
+    }
+  ],
+  "notes": []
+}
+~~~
+
+artifacts/evaluation.json:
+~~~json
+{
+  "schema_version": "factor_evaluation_v1",
+  "status": "passed|skipped|failed",
+  "metrics": {
+    "ic_mean": null,
+    "rank_ic_mean": null,
+    "ic_std": null,
+    "ir": null,
+    "positive_ic_ratio": null
+  },
+  "data_source": "quant_api",
+  "notes": []
+}
+~~~
+
+artifacts/final_decision.json:
+~~~json
+{
+  "schema_version": "factor_final_decision_v1",
+  "decision": "accept|reject|needs_review",
+  "task_type": "factor_values_compare",
+  "candidate_factor_name": "string",
+  "library_action": "reuse_existing|create_new|reject|needs_review",
+  "truth_status": "passed|failed|not_applicable|not_compared",
+  "truth_required": false,
+  "truth_blocking": false,
+  "matched_existing_factors": [],
+  "blocking_errors": [],
+  "risk_notes": [],
+  "human_approval_required": true
+}
+~~~
+
+## 7. Decision rules
+Use decision=reject when required file or required columns are missing, or factor_value is not usable.
+Use decision=needs_review when data is partially usable, similarity is ambiguous, coverage is weak, or evaluation cannot be completed.
+Use decision=accept only when schema passes, data quality is acceptable, similarity/evaluation are completed or reasonably skipped, and no blocking risk remains.
+
+## 8. Non-negotiable rules
+- Do not ask humans during intermediate steps.
+- Never write directly to the official factor library.
+- Always write final_decision.json.
+- All uncertainty must be recorded in JSON artifacts, not hidden in logs.
+- Do not invent missing factor values.
+- Do not delete user input files.
+- Keep all generated outputs inside the task directory.`,
+      note: "因子值对照只有一个主文件，但后端输出必须落成固定任务目录和固定 artifacts。",
+    };
+  }
+  return {
+    title: "Agent Skill：research_report_reproduction_v1",
+    shortDescription: "已配置研报自动复现总 Skill。点击查看给智能体执行的四文件研究包 SOP、固定字段和产物 schema。",
+    skillText: `# Agent Skill: research_report_reproduction_v1
+
+## 0. Role and operating mode
+You are the downstream Factor Lab reproduction Agent. Your task is to read one complete research package, reconstruct the factor, bind data, run a reproducible experiment, compare the result with the existing factor library, and produce final artifacts for human approval.
+
+The four required files are one combined research context. Do not treat them as four separate tasks.
+
+Do not ask the user intermediate questions. If information is missing or contradictory, make a conservative assumption, record it in artifacts/assumptions.json, and continue. If the task cannot be completed, still write partial artifacts and final_decision.json.
+
+Never write directly into the official factor library. All candidate results must stay under namespace=quarantine.
+
+## 0.1 Frozen criteria
+Truth comparison criteria must be resolved from the factor-family registry at G0 and frozen into artifacts/criteria.json. Downstream Agents may read criteria.json but must not modify it. G0 must compute sha256(criteria.json) and store it in status.json.criteria_sha256. Every downstream gate must recompute and compare this hash before running. If the hash differs, fail the gate with error=criteria_tampered.
+
+criteria.json must come from the factor-family registry, not from AMR or ad hoc intake fields:
+~~~json
+{
+  "schema_version": "factor_intake_criteria_v1",
+  "truth_required": true,
+  "truth_file_present": true,
+  "tolerance": 1e-8,
+  "min_overlap_ratio": 0.9,
+  "pass_exact_match_ratio": 0.99,
+  "criteria_source": "registry:alpha101_v1",
+  "criteria_resolved_at": "G0",
+  "criteria_locked_by": "G0",
+  "mutable_by_downstream_agent": false
+}
+~~~
+
+truth_required and truth_file_present are independent:
+| truth_required | truth_file_present | truth_status |
+| --- | --- | --- |
+| false | false/true | not_applicable |
+| true | true | passed or failed |
+| true | false | not_compared, blocking |
+
+not_applicable may only be derived from truth_required=false. It must never be derived from a missing truth file.
+
+Passed truth comparison requires all conditions:
+overlap_ratio >= min_overlap_ratio
+and exact_match_ratio >= pass_exact_match_ratio
+and max_abs_error <= tolerance
+
+If truth_required=true and coverage is below min_overlap_ratio, set truth_status=not_compared, never failed or passed. failed means enough overlap was compared but values did not match.
+
+truth_required must come from registry, not from AMR:
+- alpha101 / wq101 -> truth_required=true, criteria_source=registry:alpha101_v1
+- gtja191 -> truth_required=true, criteria_source=registry:gtja191_v1
+- exploratory -> truth_required=false, criteria_source=registry:exploratory_v1
+- unknown factor_family -> criteria_status=failed, criteria_error=unknown_factor_family, truth_required=true, no accept
+
+The sha256 mechanism detects accidental tampering such as an Agent overwriting criteria.json or a patch rerun carrying the wrong file. It is not an adversarial security boundary. For adversarial protection, store criteria_sha256 in a database table, append-only log, or read-only API that downstream Agents cannot write.
+
+## 1. Fixed input package
+The user submits exactly one main folder:
+
+factor_intake_YYYYMMDD_name/
+  code.py
+  experiment_data.csv
+  paper.pdf
+  research_report.pdf
+
+Required file list is fixed:
+- code.py
+- experiment_data.csv
+- paper.pdf
+- research_report.pdf
+
+File names are part of the contract. Do not guess alternative names. If a required file is missing, write a failed final_decision.json.
+
+Optional extra files may exist under optional/ or references/. They may be read only after the four required files are processed. Optional files must never replace the required files.
+
+## 2. Required file semantics
+| file_name | required | purpose | exact handling |
+| --- | --- | --- | --- |
+| code.py | yes | reference implementation | read first as code evidence; if empty or placeholder, record no_original_code=true |
+| experiment_data.csv | yes | local data or sample data | profile columns, dates, symbols, available raw fields, calculated factor values if any |
+| paper.pdf | yes | academic/method source | extract theory, variables, formulas, definitions, experiment design |
+| research_report.pdf | yes | broker/internal report | extract final factor expression, empirical assumptions, charts, tables, conclusions |
+
+## 3. experiment_data.csv accepted schema
+CSV requirements:
+- delimiter: comma
+- header: required
+- preferred encoding: UTF-8
+- GBK allowed only if auto-detected
+- one row should represent one symbol on one date if panel data is present
+
+Core columns:
+| column | type | required | meaning |
+| --- | --- | --- | --- |
+| date | string/date | recommended | trading date, normalize to YYYY-MM-DD |
+| symbol | string | recommended | security identifier, normalize to backend symbol format |
+| factor_value | number | optional | precomputed factor value; required only if CSV is submitted as calculated factor data |
+
+Recommended raw panel columns:
+| column | type | usage |
+| --- | --- | --- |
+| open | number | price feature |
+| high | number | price feature |
+| low | number | price feature |
+| close | number | price feature |
+| vwap | number | price feature |
+| volume | number | volume feature |
+| amount | number | turnover amount |
+| ret | number | return feature |
+| turnover | number | liquidity feature |
+| market_cap | number | size neutralization/control |
+| industry | string | industry neutralization/group |
+
+Column mapping rules:
+- Trim whitespace from headers.
+- Preserve original column names in data_profile.json.
+- Map common aliases only when unambiguous, e.g. ticker -> symbol, trade_date -> date, sec_code -> symbol.
+- If a required variable from the extracted formula is missing, try quant_api before failing.
+- Every alias mapping must be recorded in data_profile.json.
+- Every missing field filled from quant_api must be recorded in assumptions.json.
+
+## 4. Canonical request.json
+The backend should persist this request shape. If fields are missing, fill defaults exactly as below.
+
+~~~json
+{
+  "schema_version": "factor_intake_request_v1",
+  "task_type": "research_report_reproduction",
+  "skill_name": "research_report_reproduction_v1",
+  "package": {
+    "input_mode": "folder",
+    "package_name": "factor_intake_YYYYMMDD_name",
+    "required_files": [
+      "code.py",
+      "experiment_data.csv",
+      "paper.pdf",
+      "research_report.pdf"
+    ],
+    "files": [
+      {"name": "code.py", "relative_path": "factor_intake_YYYYMMDD_name/code.py", "type": "text/x-python"},
+      {"name": "experiment_data.csv", "relative_path": "factor_intake_YYYYMMDD_name/experiment_data.csv", "type": "text/csv"},
+      {"name": "paper.pdf", "relative_path": "factor_intake_YYYYMMDD_name/paper.pdf", "type": "application/pdf"},
+      {"name": "research_report.pdf", "relative_path": "factor_intake_YYYYMMDD_name/research_report.pdf", "type": "application/pdf"}
+    ]
+  },
+  "namespace": "quarantine",
+  "data_source": "quant_api",
+  "requires_quant_api": true,
+  "human_policy": {
+    "interactive_questions": false,
+    "human_only_final_approval": true
+  }
+}
+~~~
+
+## 5. Execution SOP
+Run these gates in order. After each gate, update status.json with gate, status, progress, message, updated_at.
+
+G0 intake_validation:
+- Verify request.json exists.
+- Verify task_type equals research_report_reproduction.
+- Verify skill_name equals research_report_reproduction_v1.
+- Verify all four required files exist with exact names.
+- Verify files can be opened.
+- Resolve the factor family from intake metadata, then freeze artifacts/criteria.json from registry. Do not let AMR choose truth_required, tolerance, min_overlap_ratio, or pass_exact_match_ratio.
+- Create artifacts/ if missing.
+- If any required file is missing, write final_decision.json with decision=reject and stop.
+
+G1 criteria_freeze:
+- Verify artifacts/criteria.json exists.
+- Verify criteria_locked_by equals G0.
+- Verify mutable_by_downstream_agent equals false.
+- Recompute sha256(criteria.json) and compare with status.json.criteria_sha256.
+- If mismatched, fail with error=criteria_tampered.
+- This check must live in the unified gate entrypoint, not as an optional per-gate helper.
+- If AMR thinks criteria are wrong, set needs_review. Do not edit criteria.
+
+G2 document_parse:
+- Extract text from paper.pdf into artifacts/parsed_paper.md.
+- Extract text from research_report.pdf into artifacts/parsed_research_report.md.
+- Preserve page references when possible.
+- Extract tables if possible and summarize them under a Tables section.
+- If OCR/table parsing fails, continue with available text and record parser limitations in assumptions.json.
+
+G3 factor_spec_extraction:
+- From parsed_paper.md and parsed_research_report.md, extract:
+  - factor name
+  - formula
+  - variables and meanings
+  - data frequency
+  - stock universe
+  - sample interval
+  - rebalance frequency
+  - preprocessing: winsorization, standardization, neutralization
+  - ranking direction: higher_is_better, lower_is_better, unknown
+  - return horizon and evaluation metric
+- Prefer research_report.pdf for final production formula.
+- Use paper.pdf for theoretical definition and variable meaning.
+- If formula differs between paper and report, record conflict in extracted_formula.json.source_conflicts and assumptions.json.
+
+G4 code_reconciliation:
+- Read code.py.
+- Identify exposed functions, formula logic, rolling windows, lags, ranking, neutralization, and data dependencies.
+- Compare code.py against extracted_formula.json.
+- If code.py and documents conflict:
+  - prefer explicit final formula in research_report.pdf
+  - use code.py to resolve implementation details only when report is ambiguous
+  - record every conflict and resolution in assumptions.json
+- If code.py is empty/placeholder, generate implementation from extracted formula.
+
+G5 data_binding:
+- Read experiment_data.csv.
+- Build data_profile.json with row count, column list, date range, symbol coverage, missing values.
+- Map formula variables to CSV columns or quant_api fields.
+- Pull missing standard market fields from quant_api if requires_quant_api=true.
+- Do not invent unavailable variables. If a variable cannot be sourced, mark reproduction_status=partial or failed.
+
+G6 reproduction_run:
+- Write artifacts/factor.py.
+- Write artifacts/test_factor.py.
+- The generated factor.py must expose a callable function named compute_factor(panel).
+- compute_factor(panel) must return a table indexed or columned by date and symbol with one factor_value column.
+- Run tests on sample data when possible.
+- Produce artifacts/factor_values.parquet.
+- If execution fails, save error traceback summary in assumptions.json and final_decision.json.
+- If AMR later outputs suggested_patch.diff, do not auto-apply it. A human must approve the patch, and the approved patch starts a new attempt with parent_task_id and patch_source=amr.
+
+G7 truth_comparison:
+- Read artifacts/criteria.json.
+- If truth_required=false, write truth_status=not_applicable.
+- If truth_required=true and truth_values.csv or registry truth source is missing, write truth_status=not_compared and block accept.
+- If truth_required=true and truth is available, compare reproduced factor values point by point.
+- Set passed only if overlap_ratio, exact_match_ratio, and tolerance all pass.
+- Coverage below min_overlap_ratio cannot pass.
+
+G8 library_comparison:
+- Compare reproduced factor values with existing factor library when overlap exists.
+- Compute Pearson correlation, Spearman correlation, overlap ratio, and top matches.
+- If library values are unavailable, write library_comparison.status=skipped with reason.
+
+G9 report_generation:
+- Write reproduction_report.md in Chinese.
+- Include source summary, extracted formula, assumptions, data mapping, reproduction result, evaluation, library comparison, and final recommendation.
+
+G10 final_approval:
+- Write final_decision.json.
+- Do not promote to official factor library.
+- Human must see raw evidence before AMR recommendation: source files, Hermes raw outputs, factor.py, test_factor.py, factor_values.parquet sample, evaluation.json, truth_comparison.json, and library_comparison.json. Show AMR recommendation last or collapsed.
+
+## 6. Fixed output directory
+All outputs must be written under:
+
+runtime/factor_lab/agent_tasks/<task_id>/
+  request.json
+  status.json
+  artifacts/
+    criteria.json
+    parsed_paper.md
+    parsed_research_report.md
+    normalized_report.md
+    extracted_formula.json
+    assumptions.json
+    data_profile.json
+    factor.py
+    test_factor.py
+    factor_values.parquet
+    truth_comparison.json
+    evaluation.json
+    library_comparison.json
+    reproduction_report.md
+    final_decision.json
+
+## 7. Artifact schemas
+artifacts/extracted_formula.json:
+~~~json
+{
+  "schema_version": "factor_formula_v1",
+  "factor_name": "string",
+  "formula": "string",
+  "formula_source": "research_report|paper|code|inferred",
+  "variables": [
+    {"name": "string", "meaning": "string", "source": "paper|research_report|code|inferred", "required": true}
+  ],
+  "frequency": "daily|weekly|monthly|unknown",
+  "universe": "string_or_unknown",
+  "sample_period": {"start": "YYYY-MM-DD-or-null", "end": "YYYY-MM-DD-or-null"},
+  "preprocessing": {
+    "winsorize": "string_or_null",
+    "standardize": "string_or_null",
+    "neutralize": "string_or_null"
+  },
+  "rebalance_rule": "string_or_unknown",
+  "ranking_direction": "higher_is_better|lower_is_better|unknown",
+  "return_horizon": "string_or_unknown",
+  "source_conflicts": []
+}
+~~~
+
+artifacts/assumptions.json:
+~~~json
+{
+  "schema_version": "factor_assumptions_v1",
+  "no_original_code": false,
+  "document_parse_limitations": [],
+  "formula_conflicts": [],
+  "code_conflicts": [],
+  "data_substitutions": [],
+  "missing_variables": [],
+  "implementation_assumptions": [],
+  "blocking_errors": []
+}
+~~~
+
+artifacts/data_profile.json:
+~~~json
+{
+  "schema_version": "factor_data_profile_v1",
+  "file_name": "experiment_data.csv",
+  "encoding": "utf-8|gbk|unknown",
+  "row_count": 0,
+  "columns_original": [],
+  "columns_normalized": [],
+  "column_mappings": [],
+  "date_range": {"start": "YYYY-MM-DD-or-null", "end": "YYYY-MM-DD-or-null"},
+  "symbol_count": 0,
+  "missing_summary": {},
+  "quant_api_fields_used": []
+}
+~~~
+
+artifacts/evaluation.json:
+~~~json
+{
+  "schema_version": "factor_evaluation_v1",
+  "status": "passed|skipped|failed",
+  "metrics": {
+    "ic_mean": null,
+    "rank_ic_mean": null,
+    "ic_std": null,
+    "ir": null,
+    "positive_ic_ratio": null,
+    "turnover": null
+  },
+  "sample_period": {"start": "YYYY-MM-DD-or-null", "end": "YYYY-MM-DD-or-null"},
+  "notes": []
+}
+~~~
+
+artifacts/library_comparison.json:
+~~~json
+{
+  "schema_version": "factor_library_comparison_v1",
+  "status": "passed|skipped|failed",
+  "top_matches": [
+    {
+      "factor_id": "string",
+      "factor_name": "string",
+      "pearson_corr": 0.0,
+      "spearman_corr": 0.0,
+      "overlap_ratio": 0.0,
+      "recommendation": "reuse_existing|create_new|needs_review"
+    }
+  ],
+  "notes": []
+}
+~~~
+
+artifacts/final_decision.json:
+~~~json
+{
+  "schema_version": "factor_final_decision_v1",
+  "decision": "accept|reject|needs_review",
+  "task_type": "research_report_reproduction",
+  "candidate_factor_name": "string",
+  "reproduction_status": "success|partial|failed",
+  "library_action": "reuse_existing|create_new|reject|needs_review",
+  "truth_status": "passed|failed|not_applicable|not_compared",
+  "truth_required": true,
+  "truth_blocking": true,
+  "matched_existing_factors": [],
+  "key_assumptions": [],
+  "blocking_errors": [],
+  "risk_notes": [],
+  "human_approval_required": true
+}
+~~~
+
+## 8. Decision rules
+Use decision=reject when required files are missing, documents cannot be read at all, no formula can be extracted, or the factor cannot be computed.
+Use decision=needs_review when formula is partial, assumptions are material, data is incomplete, evaluation is skipped, or library similarity is ambiguous.
+Use decision=accept only when the factor was computed, tests passed, evaluation/library comparison completed or reasonably skipped, and no blocking risk remains.
+
+## 9. Non-negotiable rules
+- Treat the four files as one research context.
+- Do not ask humans during intermediate steps.
+- Never write directly to the official factor library.
+- Always write final_decision.json.
+- All uncertainty must be recorded in JSON artifacts, not hidden in logs.
+- Do not invent missing market data or factor values.
+- Do not delete user input files.
+- Keep all generated outputs inside the task directory.`,
+    note: "四个文件合起来是一份研报复现输入包，Agent 只按这一份总 skill 处理。",
+  };
+}
+
+function renderCurrentSkillContract() {
+  const contract = currentSkillContract();
+  return `
+    <div class="intake-skill-card">
+      <div>
+        <strong>${escapeHtml(contract.title)}</strong>
+        <span>${escapeHtml(contract.shortDescription)}</span>
+      </div>
+      <button type="button" class="text-button" data-open-skill-contract>查看契约</button>
+    </div>
+  `;
+}
+
+function closeSkillContractModal() {
+  document.querySelector(".skill-contract-modal")?.remove();
+}
+
+function openSkillContractModal() {
+  const contract = currentSkillContract();
+  closeSkillContractModal();
+  const modal = document.createElement("div");
+  modal.className = "skill-contract-modal";
+  modal.innerHTML = `
+    <div class="file-preview-backdrop" data-skill-contract-close></div>
+    <section class="skill-contract-panel" role="dialog" aria-modal="true" aria-label="Agent Skill 契约">
+      <header>
+        <div>
+          <strong>${escapeHtml(contract.title)}</strong>
+          <span>${escapeHtml(contract.note)}</span>
+        </div>
+        <div class="skill-contract-actions">
+          <button type="button" class="text-button" data-skill-contract-copy>复制契约</button>
+          <button type="button" class="text-button" data-skill-contract-close>关闭</button>
+        </div>
+      </header>
+      <pre>${escapeHtml(contract.skillText)}</pre>
+    </section>
+  `;
+  document.body.appendChild(modal);
+  modal.querySelectorAll("[data-skill-contract-close]").forEach((button) => {
+    button.addEventListener("click", closeSkillContractModal);
+  });
+  modal.querySelector("[data-skill-contract-copy]")?.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(contract.skillText);
+      showToast("契约已复制");
+    } catch (error) {
+      showToast("复制失败，请手动选择文本");
+    }
+  });
+}
+
+function closeFilePreview() {
+  document.querySelector(".file-preview-modal")?.remove();
+  if (activePreviewUrl) {
+    URL.revokeObjectURL(activePreviewUrl);
+    activePreviewUrl = null;
+  }
+}
+
+function renderFilePreview(file, bodyHtml) {
+  closeFilePreview();
+  const modal = document.createElement("div");
+  modal.className = "file-preview-modal";
+  modal.innerHTML = `
+    <div class="file-preview-backdrop" data-file-preview-close></div>
+    <section class="file-preview-panel" role="dialog" aria-modal="true" aria-label="文件预览">
+      <header>
+        <div>
+          <strong>${escapeHtml(file.name)}</strong>
+          <span>${escapeHtml(file.type || "unknown")} · ${formatFileSize(file.size)}</span>
+        </div>
+        <button type="button" class="text-button" data-file-preview-close>关闭</button>
+      </header>
+      <div class="file-preview-body">${bodyHtml}</div>
+    </section>
+  `;
+  document.body.appendChild(modal);
+  modal.querySelectorAll("[data-file-preview-close]").forEach((button) => {
+    button.addEventListener("click", closeFilePreview);
+  });
+}
+
+function previewPendingFile(fileId) {
+  const file = pendingFileStore.get(fileId);
+  if (!file) {
+    showToast("文件已不可用，请重新选择");
+    return;
+  }
+  const type = file.type || "";
+  const lowerName = file.name.toLowerCase();
+  if (type.startsWith("image/")) {
+    activePreviewUrl = URL.createObjectURL(file);
+    renderFilePreview(file, `<img class="file-preview-image" src="${activePreviewUrl}" alt="${escapeHtml(file.name)}" />`);
+    return;
+  }
+  if (type === "application/pdf" || lowerName.endsWith(".pdf")) {
+    activePreviewUrl = URL.createObjectURL(file);
+    renderFilePreview(file, `<iframe class="file-preview-frame" src="${activePreviewUrl}" title="${escapeHtml(file.name)}"></iframe>`);
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = () => {
+    const text = String(reader.result || "");
+    renderFilePreview(file, `<pre>${escapeHtml(text.slice(0, 200000))}</pre>`);
+  };
+  reader.onerror = () => showToast("文件读取失败");
+  reader.readAsText(file);
+}
+
 async function submitAgentTask() {
   if (!ENABLE_AGENT_TASK_DEBUG) return;
-  const instruction = state.agentInstruction.trim();
-  if (!instruction) {
+  const files = state.pendingFiles;
+  if (!files.length) {
     showToast(AGENT_TASK_TEXT.emptyWarning);
     return;
   }
+  const taskType = inferTaskType(files);
+  const packageName = inferPackageName(files);
+  const skillName =
+    taskType === "truth_compare" ? "truth_compare_v1" : "research_reproduction_v1";
+  const requiredFiles =
+    taskType === "truth_compare"
+      ? ["factor_values.csv"]
+      : ["code.py", "experiment_data.csv", "paper.pdf", "research_report.pdf"];
 
   const payload = {
-    schema_version: "agent_task_request_v1",
-    instruction,
-    files: [],
+    schema_version: "factor_intake_request_v1",
+    task_type: taskType,
+    skill_name: skillName,
+    instruction:
+      (taskType === "truth_compare"
+        ? "请将外部因子值与当前因子库做对比，中间不要询问用户，最终给出复用和入库建议。"
+        : "请按数据入口契约读取 code.py、experiment_data.csv、paper.pdf、research_report.pdf，自动复现研报因子，中间不要询问用户，最终给出入库建议。"),
+    package: {
+      input_mode: state.intakeInputMode,
+      package_name: packageName,
+      required_files: requiredFiles,
+      files,
+    },
+    files,
     namespace: "quarantine",
     data_source: "quant_api",
     requires_quant_api: true,
+    human_policy: {
+      interactive_questions: false,
+      human_only_final_approval: true,
+    },
     requested_at: new Date().toISOString(),
   };
 
@@ -3212,7 +4536,7 @@ async function submitAgentTask() {
   try {
     const result = await submitTaskRequest(payload);
     state.agentTasks.unshift({ ...payload, ...result });
-    state.pendingFiles = [];
+    clearPendingFiles();
     showToast(AGENT_TASK_TEXT.submittedToast);
   } catch (error) {
     showToast(`Submit failed: ${error.message}`);
@@ -3316,6 +4640,28 @@ async function openAgentTaskFolder(taskId) {
 function renderAgentTask() {
   if (!ENABLE_AGENT_TASK_DEBUG) return;
   if (!els.agentTaskView) return;
+  const inputProfile = currentInputProfileSummary();
+  const pendingFileRows = state.pendingFiles
+    .slice(0, 8)
+    .map(
+      (file) => `
+        <li class="agent-file-item">
+          <span>
+            <strong>${escapeHtml(file.relative_path || file.name)}</strong>
+            <small>${escapeHtml(file.type || "unknown")} · ${formatFileSize(file.size)}</small>
+          </span>
+          <span class="agent-file-actions">
+            <button type="button" class="text-button" data-pending-file-preview="${escapeHtml(file.file_id || "")}">查看</button>
+            <button type="button" class="text-button danger" data-pending-file-remove="${state.pendingFiles.indexOf(file)}">删除</button>
+          </span>
+        </li>
+      `,
+    )
+    .join("");
+  const pendingFileExtra =
+    state.pendingFiles.length > 8
+      ? `<li class="agent-file-item"><span><strong>还有 ${state.pendingFiles.length - 8} 个文件</strong><small>运行时会一并写入 request.json 文件清单</small></span></li>`
+      : "";
   const taskRows = state.agentTasks
     .map(
       (task) => `
@@ -3354,17 +4700,46 @@ function renderAgentTask() {
     </section>
 
     <section class="agent-task-card">
-      <label class="agent-task-field">
-        <span>${AGENT_TASK_TEXT.instructionLabel}</span>
-        <textarea id="agentInstructionInput" rows="5" placeholder="${AGENT_TASK_TEXT.instructionPlaceholder}">${escapeHtml(state.agentInstruction)}</textarea>
-      </label>
+      <div class="agent-task-pending-banner">
+        <strong>待接入 Supabase</strong>
+        <span>当前保留文件契约、Skill 弹窗和提交结构；GitHub Pages 阶段只读取 Supabase 展示表，不在浏览器内上传大文件、执行 Agent 或写正式因子库。</span>
+      </div>
+
+      <div class="agent-intake-mode">
+        <button type="button" class="${state.intakeTaskType === "research_reproduction" || state.intakeTaskType === "research_report_reproduction" ? "active" : ""}" data-intake-type="research_reproduction">研报自动复现</button>
+        <button type="button" class="${state.intakeTaskType === "truth_compare" || state.intakeTaskType === "factor_values_compare" ? "active" : ""}" data-intake-type="truth_compare">因子值对照</button>
+      </div>
+
+      ${renderCurrentSkillContract()}
+
+      <div class="agent-drop-zone" id="agentDropZone">
+        <input id="agentFolderInput" type="file" webkitdirectory directory multiple hidden />
+        <input id="agentFileInput" type="file" multiple hidden />
+        <div>
+          <strong>拖入或点击选择文件</strong>
+          <span>${escapeHtml(inputProfile.summary)}</span>
+        </div>
+        <div class="agent-drop-actions">
+          <button type="button" class="text-button" id="chooseFolderButton">选择文件夹</button>
+          <button type="button" class="text-button" id="chooseFilesButton">选择文件</button>
+        </div>
+      </div>
+
+      <ul class="agent-file-list">
+        ${
+          pendingFileRows ||
+          `<li class="agent-file-item"><span><strong>等待数据包</strong><small>${escapeHtml(inputProfile.tree.join(" / "))}</small></span></li>`
+        }
+        ${pendingFileExtra}
+      </ul>
 
       <div class="agent-task-foot">
         <span>${AGENT_TASK_TEXT.quarantineHint}</span>
+        <button type="button" class="text-button danger" id="clearPendingFilesButton" ${state.pendingFiles.length ? "" : "disabled"}>清空文件</button>
       </div>
 
       <div class="agent-task-foot">
-        <span>\u4f4e\u624b\u52a8\u6a21\u5f0f: \u4e0d\u62d6\u6587\u4ef6\u3001\u4e0d\u9009\u62e9\u6d41\u7a0b,\u7531\u540e\u7aef agent \u57fa\u4e8e Quant API \u81ea\u52a8\u5224\u65ad\u3002</span>
+        <span>契约：<code>factor_intake_request_v1</code> / <code>factor_intake_manifest_v1</code> / ${escapeHtml(FACTOR_INTAKE_CONTRACT_DOC)}</span>
         <button type="button" class="primary-action compact" id="agentSubmitButton" ${state.agentTaskSubmitting ? "disabled" : ""}>
           ${state.agentTaskSubmitting ? AGENT_TASK_TEXT.submitting : AGENT_TASK_TEXT.submit}
         </button>
@@ -3399,13 +4774,73 @@ function renderAgentTask() {
     </section>
   `;
 
-  const instructionInput = els.agentTaskView.querySelector("#agentInstructionInput");
   const submitButton = els.agentTaskView.querySelector("#agentSubmitButton");
+  const folderInput = els.agentTaskView.querySelector("#agentFolderInput");
+  const fileInput = els.agentTaskView.querySelector("#agentFileInput");
+  const dropZone = els.agentTaskView.querySelector("#agentDropZone");
 
-  instructionInput?.addEventListener("input", (event) => {
-    state.agentInstruction = event.target.value;
-  });
   submitButton?.addEventListener("click", submitAgentTask);
+  els.agentTaskView.querySelector("#clearPendingFilesButton")?.addEventListener("click", () => {
+    clearPendingFiles();
+    renderAgentTask();
+  });
+  els.agentTaskView.querySelectorAll("[data-pending-file-remove]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const index = Number(button.dataset.pendingFileRemove);
+      if (Number.isInteger(index)) removePendingFile(index);
+    });
+  });
+  els.agentTaskView.querySelectorAll("[data-pending-file-preview]").forEach((button) => {
+    button.addEventListener("click", () => previewPendingFile(button.dataset.pendingFilePreview));
+  });
+  els.agentTaskView.querySelector("[data-open-skill-contract]")?.addEventListener("click", openSkillContractModal);
+  els.agentTaskView.querySelectorAll("[data-intake-type]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.intakeTaskType = button.dataset.intakeType || "research_reproduction";
+      renderAgentTask();
+    });
+  });
+  els.agentTaskView.querySelector("#chooseFolderButton")?.addEventListener("click", () => {
+    state.intakeInputMode = "folder";
+    folderInput?.click();
+  });
+  els.agentTaskView.querySelector("#chooseFilesButton")?.addEventListener("click", () => {
+    state.intakeInputMode = "files";
+    fileInput?.click();
+  });
+  dropZone?.addEventListener("click", (event) => {
+    if (event.target.closest("button")) return;
+    state.intakeInputMode = "files";
+    fileInput?.click();
+  });
+  folderInput?.addEventListener("change", (event) => {
+    state.intakeInputMode = "folder";
+    pendingFileStore.clear();
+    state.pendingFiles = fileListFromInput(event.target.files);
+    state.intakeTaskType = inferTaskType(state.pendingFiles);
+    renderAgentTask();
+  });
+  fileInput?.addEventListener("change", (event) => {
+    state.intakeInputMode = "files";
+    pendingFileStore.clear();
+    state.pendingFiles = fileListFromInput(event.target.files);
+    state.intakeTaskType = inferTaskType(state.pendingFiles);
+    renderAgentTask();
+  });
+  dropZone?.addEventListener("dragover", (event) => {
+    event.preventDefault();
+    dropZone.classList.add("drag-over");
+  });
+  dropZone?.addEventListener("dragleave", () => dropZone.classList.remove("drag-over"));
+  dropZone?.addEventListener("drop", (event) => {
+    event.preventDefault();
+    dropZone.classList.remove("drag-over");
+    state.intakeInputMode = "files";
+    pendingFileStore.clear();
+    state.pendingFiles = fileListFromInput(event.dataTransfer?.files);
+    state.intakeTaskType = inferTaskType(state.pendingFiles);
+    renderAgentTask();
+  });
   els.agentTaskView.querySelectorAll("[data-agent-task-row]").forEach((row) => {
     row.addEventListener("dblclick", (event) => {
       if (event.target.closest("button") || event.target.closest("input")) return;
@@ -3414,6 +4849,9 @@ function renderAgentTask() {
   });
   els.agentTaskView.querySelectorAll("[data-agent-task-progress]").forEach((button) => {
     button.addEventListener("click", () => openAgentTaskProgress(button.dataset.agentTaskProgress));
+  });
+  els.agentTaskView.querySelectorAll("[data-agent-task-delete]").forEach((button) => {
+    button.addEventListener("click", () => deleteAgentTask(button.dataset.agentTaskDelete));
   });
   els.agentTaskView.querySelectorAll("[data-agent-task-select]").forEach((checkbox) => {
     checkbox.addEventListener("change", (event) => {
@@ -3463,6 +4901,7 @@ function connectionCard(title, statusText, statusClass, rows) {
 function renderSettings() {
   if (!els.settingsView) return;
   const localStatusText = state.localConnected ? "已连接" : "未连接";
+  const supabaseConfigured = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
   const quantStatusText = state.quantApiReachable
     ? state.quantApiConfigured
       ? "已配置"
@@ -3493,10 +4932,10 @@ function renderSettings() {
         ["Credential 位置", "后端环境变量（静态快照不携带）"],
         ["安全说明", "前端不接触 token，不直接访问公网数据接口"],
       ])}
-      ${connectionCard("云端信息库", "未同步", "warn", [
-        ["当前状态", "预留同步入口，后续用于团队共享已审核因子与报告"],
-        ["同步对象", "因子元信息、审核状态、报告摘要、可追溯 artifact"],
-        ["当前策略", "本地优先，云端只读展示待接入"],
+      ${connectionCard("Supabase 只读接入", supabaseConfigured ? "已配置" : "待接入", supabaseConfigured ? "ok" : "warn", [
+        ["读取方式", "GitHub Pages 浏览器端 → Supabase public dashboard 表"],
+        ["目标表", `<code>${escapeHtml(SUPABASE_FACTOR_TABLE)}</code>`],
+        ["安全边界", "anon key 只能 SELECT 公开脱敏表；上传、写入、执行和 promotion 不走 GitHub Pages"],
       ])}
       ${ENABLE_AGENT_TASK_DEBUG ? connectionCard("AI Agent 接入", "待接入", "warn", [
         ["外部 Agent", "Trae / Claude Code / Codex 等工具预留统一提交入口"],
@@ -3526,7 +4965,8 @@ function renderSettings() {
       <div class="settings-page-contracts">
         <span><code>factor_lab_view_v1</code>：因子库、因子详情、报告产物</span>
         <span><code>factor_lab_view_v1.1</code>：官方 Quant API 的 official 命名空间</span>
-        ${ENABLE_AGENT_TASK_DEBUG ? "<span><code>agent_task_request_v1</code>：AI 任务发起请求（要求文本 + 文件元信息，不含 skill；流程由后端 agent 判断）。当前为占位，后端接入后生效。</span>" : ""}
+        ${ENABLE_AGENT_TASK_DEBUG ? "<span><code>factor_intake_request_v1</code>：数据入口请求（研报复现包 / 外部因子值包 + 文件元信息；中间流程由后端 Agent 判断）。</span>" : ""}
+        ${ENABLE_AGENT_TASK_DEBUG ? "<span><code>factor_intake_manifest_v1</code>：数据入口文件夹 manifest，固定文件名见 docs/FACTOR_LAB_INTAKE_REPRODUCTION_CONTRACT.md。</span>" : ""}
         <span><code>strategy_monitor_view_v1</code>：策略看板与策略详情预留</span>
         <span><code>gate_monitor_view_v1</code>：任务监控与 Gate 可视化预留</span>
       </div>
@@ -3638,7 +5078,7 @@ function renderView() {
             : taskMode
               ? "任务监控"
               : agentTaskMode
-                ? "AI 任务(调试)"
+                ? "数据入口"
                 : settingsMode
                   ? "设置"
                   : "因子库";
@@ -4409,10 +5849,62 @@ function countLibraries() {
   return counts;
 }
 
-bindEvents();
-loadData();
-startAutoRefresh();
-bindResearchEvents();
+let appStarted = false;
+
+function isAuthenticated() {
+  return window.sessionStorage.getItem(ACCESS_SESSION_KEY) === "1";
+}
+
+function showApp() {
+  document.body.classList.remove("auth-locked");
+  els.loginPassword && (els.loginPassword.value = "");
+  if (els.loginError) els.loginError.textContent = "";
+}
+
+function showLogin(message = "") {
+  document.body.classList.add("auth-locked");
+  if (els.loginError) els.loginError.textContent = message;
+  window.setTimeout(() => els.loginPassword?.focus(), 50);
+}
+
+function startApp() {
+  if (appStarted) return;
+  appStarted = true;
+  bindEvents();
+  loadData();
+  startAutoRefresh();
+  bindResearchEvents();
+}
+
+function handleLoginSubmit(event) {
+  event.preventDefault();
+  const password = String(els.loginPassword?.value || "");
+  if (password === ACCESS_PASSWORD) {
+    window.sessionStorage.setItem(ACCESS_SESSION_KEY, "1");
+    showApp();
+    startApp();
+    return;
+  }
+  showLogin("密码不正确，请重试");
+}
+
+function logout() {
+  window.sessionStorage.removeItem(ACCESS_SESSION_KEY);
+  showLogin("已退出登录");
+}
+
+function initAuth() {
+  els.loginForm?.addEventListener("submit", handleLoginSubmit);
+  els.logoutButton?.addEventListener("click", logout);
+  if (isAuthenticated()) {
+    showApp();
+    startApp();
+  } else {
+    showLogin();
+  }
+}
+
+initAuth();
 
 function bindResearchEvents() {
   const runBtn = document.getElementById("runResearchButton");
@@ -4518,5 +6010,3 @@ function clearResearchResults() {
   document.getElementById("researchResultsBody").innerHTML = "";
   document.getElementById("researchJobId").textContent = "";
 }
-
-bindResearchEvents();

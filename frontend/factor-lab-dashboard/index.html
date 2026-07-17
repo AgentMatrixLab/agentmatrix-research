@@ -14,7 +14,27 @@
     <title>Factor Lab 因子库</title>
     <link rel="stylesheet" href="./styles.css?v=20260710-factor-chart-layout-fix" />
   </head>
-  <body>
+  <body class="auth-locked">
+    <section id="loginView" class="login-view" aria-label="登录">
+      <div class="login-card">
+        <div class="login-brand">
+          <img src="./assets/factor-lab-logo.png" alt="" />
+          <div>
+            <strong>Factor Lab</strong>
+            <span>公司内部研究面板</span>
+          </div>
+        </div>
+        <form id="loginForm" class="login-form">
+          <label>
+            访问密码
+            <input id="loginPassword" type="password" autocomplete="current-password" placeholder="请输入公司访问密码" />
+          </label>
+          <button type="submit">登录</button>
+          <p id="loginError" class="login-error" aria-live="polite"></p>
+        </form>
+        <p class="login-note">GitHub Pages 仅做前端门禁和只读展示；真实数据权限仍由 Supabase RLS / 后端控制。</p>
+      </div>
+    </section>
     <div class="app-shell">
       <aside id="sidebar" class="sidebar">
         <div class="brand">
@@ -38,16 +58,14 @@
             <span class="nav-icon">▣</span>
             <span>策略看板</span>
           </button>
+          <button class="nav-item" type="button" data-view="agent_task">
+            <span class="nav-icon">AI</span>
+            <span>数据入口</span>
+          </button>
           <button class="nav-item" type="button" data-view="tasks">
             <span class="nav-icon">G</span>
             <span>任务监控</span>
           </button>
-          <!-- AI 任务调试入口暂时关闭，后续后端流程稳定后再恢复。
-          <button class="nav-item" type="button" data-view="agent_task">
-            <span class="nav-icon">AI</span>
-            <span>AI 任务(调试)</span>
-          </button>
-          -->
           <button class="nav-item" type="button" data-view="settings">
             <span class="nav-icon">⚙</span>
             <span>设置</span>
@@ -74,6 +92,7 @@
 
           <div class="topbar-actions">
             <button id="refreshButton" class="icon-button" type="button" aria-label="刷新">刷新</button>
+            <button id="logoutButton" class="icon-button" type="button" aria-label="退出登录">退出</button>
             <div class="avatar" aria-label="当前用户">JD</div>
           </div>
         </header>
@@ -394,9 +413,7 @@
 
         <section id="detailView" class="content detail-view hidden" aria-label="单因子详情"></section>
 
-        <!-- AI 任务调试窗口暂时关闭。
-        <section id="agentTaskView" class="content agent-task-view hidden" aria-label="AI 任务调试入口"></section>
-        -->
+        <section id="agentTaskView" class="content agent-task-view hidden" aria-label="数据入口"></section>
 
         <section id="settingsView" class="content settings-view hidden" aria-label="设置"></section>
 
@@ -411,6 +428,6 @@
       </main>
     </div>
     <script src="./config.js?v=20260708-factor-detail"></script>
-    <script src="./app.js?v=20260710-factor-chart-layout-fix"></script>
+    <script src="./app.js?v=20260713-no-cache-fix"></script>
   </body>
 </html>

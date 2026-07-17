@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import random
 import re
@@ -200,6 +201,337 @@ def _write_json(path: Path, payload: dict) -> None:
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+TRUTH_CRITERIA_REGISTRY = {
+    "alpha101": {
+        "truth_required": True,
+        "tolerance": 1e-8,
+        "min_overlap_ratio": 0.9,
+        "pass_exact_match_ratio": 0.99,
+        "criteria_source": "registry:alpha101_v1",
+    },
+    "wq101": {
+        "truth_required": True,
+        "tolerance": 1e-8,
+        "min_overlap_ratio": 0.9,
+        "pass_exact_match_ratio": 0.99,
+        "criteria_source": "registry:alpha101_v1",
+    },
+    "gtja191": {
+        "truth_required": True,
+        "tolerance": 1e-8,
+        "min_overlap_ratio": 0.9,
+        "pass_exact_match_ratio": 0.99,
+        "criteria_source": "registry:gtja191_v1",
+    },
+    "exploratory": {
+        "truth_required": False,
+        "tolerance": 1e-8,
+        "min_overlap_ratio": 0.9,
+        "pass_exact_match_ratio": 0.99,
+        "criteria_source": "registry:exploratory_v1",
+    },
+}
+
+TASK_TYPE_ALIASES = {
+    "factor_values_compare": "truth_compare",
+    "truth_compare": "truth_compare",
+    "research_report_reproduction": "research_reproduction",
+    "research_reproduction": "research_reproduction",
+}
+
+TASK_SKILL_NAMES = {
+    "truth_compare": "truth_compare_v1",
+    "research_reproduction": "research_reproduction_v1",
+}
+
+LEGACY_TASK_SKILL_NAMES = {
+    "factor_values_compare": "factor_values_compare_v1",
+    "research_report_reproduction": "research_report_reproduction_v1",
+}
+
+
+def _canonical_task_type(task_type: str | None) -> str:
+    return TASK_TYPE_ALIASES.get(str(task_type or "").strip(), "research_reproduction")
+
+
+def _default_skill_name(task_type: str) -> str:
+    return TASK_SKILL_NAMES.get(_canonical_task_type(task_type), "research_reproduction_v1")
+
+
+def _task_required_files(task_type: str) -> list[str]:
+    if _canonical_task_type(task_type) == "truth_compare":
+        return ["factor_values.csv"]
+    return ["code.py", "experiment_data.csv", "paper.pdf", "research_report.pdf"]
+
+
+def _sha256_file(path: Path) -> str:
+    hasher = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            hasher.update(chunk)
+    return hasher.hexdigest()
+
+
+def _infer_factor_family(payload: dict) -> str:
+    criteria_payload = payload.get("criteria") if isinstance(payload.get("criteria"), dict) else {}
+    explicit = str(
+        criteria_payload.get("factor_family")
+        or payload.get("factor_family")
+        or payload.get("factor_set")
+        or ""
+    ).strip().lower()
+    if explicit:
+        return explicit
+    searchable = " ".join(
+        str(value or "")
+        for value in (
+            payload.get("task_type"),
+            payload.get("instruction"),
+            (payload.get("package") or {}).get("package_name") if isinstance(payload.get("package"), dict) else "",
+        )
+    ).lower()
+    if "alpha101" in searchable or "wq101" in searchable:
+        return "alpha101"
+    if "gtja191" in searchable:
+        return "gtja191"
+    if "exploratory" in searchable or "custom" in searchable or "自研" in searchable:
+        return "exploratory"
+    return "unknown"
+
+
+def _resolve_truth_criteria(payload: dict) -> dict:
+    family = _infer_factor_family(payload)
+    criteria = TRUTH_CRITERIA_REGISTRY.get(family)
+    if criteria:
+        return {**criteria, "criteria_status": "resolved", "factor_family": family}
+    return {
+        "truth_required": True,
+        "tolerance": 1e-8,
+        "min_overlap_ratio": 0.9,
+        "pass_exact_match_ratio": 0.99,
+        "criteria_source": f"registry:unknown_factor_family:{family}",
+        "criteria_status": "failed",
+        "factor_family": family,
+        "criteria_error": "unknown_factor_family",
+    }
+
+
+def _decide_truth_comparison_status(
+    criteria: dict,
+    *,
+    truth_file_present: bool,
+    overlap_ratio: float | None = None,
+    exact_match_ratio: float | None = None,
+    max_abs_error: float | None = None,
+) -> dict:
+    truth_required = bool(criteria.get("truth_required", False))
+    if not truth_required:
+        return {"truth_status": "not_applicable", "truth_blocking": False, "accept_allowed": True}
+    if not truth_file_present:
+        return {"truth_status": "not_compared", "truth_blocking": True, "accept_allowed": False}
+
+    min_overlap_ratio = float(criteria.get("min_overlap_ratio", 0.9))
+    pass_exact_match_ratio = float(criteria.get("pass_exact_match_ratio", 0.99))
+    tolerance = float(criteria.get("tolerance", 1e-8))
+    if overlap_ratio is None or exact_match_ratio is None or max_abs_error is None:
+        return {"truth_status": "not_compared", "truth_blocking": True, "accept_allowed": False}
+    if overlap_ratio < min_overlap_ratio:
+        return {"truth_status": "not_compared", "truth_blocking": True, "accept_allowed": False}
+    passed = exact_match_ratio >= pass_exact_match_ratio and max_abs_error <= tolerance
+    return {
+        "truth_status": "passed" if passed else "failed",
+        "truth_blocking": not passed,
+        "accept_allowed": passed,
+    }
+
+
+def _decide_research_truth_diagnostic_status(*, truth_file_present: bool) -> dict:
+    if not truth_file_present:
+        return {
+            "truth_status": "not_applicable",
+            "truth_blocking": False,
+            "accept_allowed": True,
+            "role": "optional_diagnostic",
+            "note": "research_reproduction does not require standard truth; final decision is based on economic validation, AMR review, and library comparison.",
+        }
+    return {
+        "truth_status": "diagnostic_pending",
+        "truth_blocking": False,
+        "accept_allowed": True,
+        "role": "optional_diagnostic",
+        "note": "truth values are present and should be compared for diagnosis only, not as the promotion gate.",
+    }
+
+
+def _verify_locked_criteria(task_dir: Path, status_payload: dict) -> dict:
+    expected = str(status_payload.get("criteria_sha256") or "")
+    criteria_path = task_dir / "artifacts" / "criteria.json"
+    if not expected or not criteria_path.is_file():
+        return {"ok": False, "error": "criteria_missing"}
+    actual = _sha256_file(criteria_path)
+    if actual != expected:
+        return {
+            "ok": False,
+            "error": "criteria_tampered",
+            "expected_sha256": expected,
+            "actual_sha256": actual,
+        }
+    return {"ok": True, "criteria_sha256": actual}
+
+
+def _enter_intake_gate(task_dir: Path, status_payload: dict, gate_name: str) -> dict:
+    if gate_name != "intake_validation":
+        integrity = _verify_locked_criteria(task_dir, status_payload)
+        if not integrity.get("ok"):
+            return {
+                "ok": False,
+                "gate": gate_name,
+                "error": integrity.get("error") or "criteria_integrity_failed",
+                "criteria_integrity": integrity,
+            }
+    return {"ok": True, "gate": gate_name}
+
+
+def _initial_intake_gates(task_type: str) -> list[dict]:
+    task_type = _canonical_task_type(task_type)
+    if task_type == "truth_compare":
+        names = [
+            "intake_validation",
+            "criteria_freeze",
+            "value_schema_check",
+            "data_quality_check",
+            "library_truth_lookup",
+            "standard_truth_comparison",
+            "library_similarity",
+            "report_generation",
+            "final_approval",
+        ]
+    else:
+        names = [
+            "intake_validation",
+            "criteria_freeze",
+            "document_parse",
+            "factor_spec_extraction",
+            "code_reconciliation",
+            "data_binding",
+            "reproduction_run",
+            "optional_truth_diagnostics",
+            "economic_validation",
+            "amr_review",
+            "library_comparison",
+            "report_generation",
+            "final_approval",
+        ]
+    return [
+        {
+            "gate": f"G{index}",
+            "name": name,
+            "status": "queued" if index == 0 else "pending",
+        }
+        for index, name in enumerate(names)
+    ]
+
+
+def _locked_intake_criteria(payload: dict, task_type: str, file_items: list[dict]) -> dict:
+    task_type = _canonical_task_type(task_type)
+    file_names = {str(item.get("name") or "") for item in file_items}
+    truth_file_present = any(name in file_names for name in {"truth_values.csv", "truth_values.parquet"})
+    if task_type == "truth_compare":
+        registry_criteria = _resolve_truth_criteria(payload)
+        truth_required = True
+        initial_truth_decision = _decide_truth_comparison_status(
+            {**registry_criteria, "truth_required": True},
+            truth_file_present=True,
+        )
+        criteria_status = str(registry_criteria["criteria_status"])
+        criteria_error = registry_criteria.get("criteria_error")
+        factor_family = str(registry_criteria["factor_family"])
+        criteria_source = str(registry_criteria["criteria_source"])
+        tolerance = float(registry_criteria["tolerance"])
+        min_overlap_ratio = float(registry_criteria["min_overlap_ratio"])
+        pass_exact_match_ratio = float(registry_criteria["pass_exact_match_ratio"])
+        standard_truth = {
+            "role": "primary_gate",
+            "required": True,
+            "source": "factor_library_truth",
+            "missing_source_status": "not_comparable",
+            "blocking": True,
+            "notes": [
+                "truth_compare must compare the uploaded factor values against the library standard truth.",
+                "if library truth is missing, return status=not_comparable instead of accepting.",
+            ],
+        }
+        decision_basis = {
+            "accept_requires": [
+                "standard_truth.status=passed",
+                "overlap_ratio >= min_overlap_ratio",
+                "exact_match_ratio >= pass_exact_match_ratio",
+                "max_abs_error <= tolerance",
+            ],
+            "library_similarity": "diagnostic_and_duplicate_detection",
+        }
+    else:
+        family = _infer_factor_family(payload)
+        registry_criteria = TRUTH_CRITERIA_REGISTRY.get(family, TRUTH_CRITERIA_REGISTRY["exploratory"])
+        truth_required = False
+        initial_truth_decision = _decide_research_truth_diagnostic_status(truth_file_present=truth_file_present)
+        criteria_status = "resolved"
+        criteria_error = None
+        factor_family = family if family != "unknown" else "research_unspecified"
+        criteria_source = (
+            registry_criteria["criteria_source"]
+            if family in TRUTH_CRITERIA_REGISTRY
+            else "registry:research_reproduction_default_v1"
+        )
+        tolerance = float(registry_criteria.get("tolerance") or 1e-8)
+        min_overlap_ratio = float(registry_criteria.get("min_overlap_ratio") or 0.9)
+        pass_exact_match_ratio = float(registry_criteria.get("pass_exact_match_ratio") or 0.99)
+        standard_truth = {
+            "role": "optional_diagnostic",
+            "required": False,
+            "source": "optional_truth_values_or_library_truth",
+            "missing_source_status": "not_applicable",
+            "blocking": False,
+            "notes": [
+                "research_reproduction is not blocked by missing standard truth.",
+                "if truth values are present, compare them for diagnosis and attribution only.",
+            ],
+        }
+        decision_basis = {
+            "accept_requires": [
+                "economic_validation.status=passed",
+                "amr_review.status=passed",
+                "library_comparison.status not in duplicate",
+            ],
+            "truth_diagnostics": "non_blocking_attribution",
+        }
+    return {
+        "schema_version": "factor_intake_criteria_v1",
+        "task_type": task_type,
+        "intake_entry": task_type,
+        "factor_family": factor_family,
+        "criteria_status": criteria_status,
+        "criteria_error": criteria_error,
+        "truth_required": truth_required,
+        "truth_file_present": truth_file_present,
+        "standard_truth": standard_truth,
+        "initial_truth_decision": initial_truth_decision,
+        "tolerance": tolerance,
+        "min_overlap_ratio": min_overlap_ratio,
+        "pass_exact_match_ratio": pass_exact_match_ratio,
+        "criteria_source": criteria_source,
+        "decision_basis": decision_basis,
+        "criteria_resolved_at": "G0",
+        "criteria_locked_by": "G0",
+        "mutable_by_downstream_agent": False,
+        "notes": [
+            "truth_compare uses standard truth as the primary gate.",
+            "research_reproduction uses standard truth only as an optional diagnostic; acceptance is based on economic validation, AMR review, and library comparison.",
+            "passed standard truth requires overlap_ratio >= min_overlap_ratio and exact_match_ratio >= pass_exact_match_ratio.",
+        ],
+    }
+
+
 @app.route("/factor-lab-dashboard/", methods=["GET"])
 def factor_lab_dashboard():
     return send_from_directory(dashboard_root, "index.html")
@@ -362,8 +694,11 @@ def factor_lab_factor_detail(factor_id: str):
             if not refresh:
                 cached = _read_artifact_cache("factor_detail_cache", factor_id)
                 if cached is not None:
+                    if _ensure_stratification_from_group_returns(cached):
+                        cached = _write_artifact_cache("factor_detail_cache", factor_id, cached)
                     return jsonify(cached)
             payload = _build_real_factor_detail(factor_id, library_name, factor_name)
+            _ensure_stratification_from_group_returns(payload)
             return jsonify(_write_artifact_cache("factor_detail_cache", factor_id, payload))
         except Exception as e:
             print(f"real factor detail failed for {factor_id}: {e}")
@@ -371,7 +706,7 @@ def factor_lab_factor_detail(factor_id: str):
         if library_name == "QuantAPI":
             _load_local_env()
             client = QuantApiClient()
-            symbols = get_universe_symbols("沪深300")[:10]
+            symbols = get_universe_symbols("沪深300")[:50]
             
             try:
                 panel = fetch_kline_data(client, symbols, "2023-01-01", "2024-01-31")
@@ -490,13 +825,29 @@ def factor_lab_agent_tasks():
 @app.route("/api/agents/factor-lab/agent-tasks", methods=["POST"])
 def factor_lab_create_agent_task():
     payload = request.get_json(silent=True) or {}
+    return _create_factor_lab_agent_task(payload)
+
+
+def _create_factor_lab_agent_task(payload: dict):
     instruction = str(payload.get("instruction") or "").strip()
+    raw_task_type = str(payload.get("task_type") or "research_reproduction").strip()
+    task_type = _canonical_task_type(raw_task_type)
+    default_skill_name = _default_skill_name(task_type)
+    skill_name = str(payload.get("skill_name") or default_skill_name).strip() or default_skill_name
+    package_payload = payload.get("package") if isinstance(payload.get("package"), dict) else {}
+    human_policy = payload.get("human_policy") if isinstance(payload.get("human_policy"), dict) else {}
     files = payload.get("files") if isinstance(payload.get("files"), list) else []
+    required_files = package_payload.get("required_files")
+    if not isinstance(required_files, list):
+        required_files = _task_required_files(task_type)
+    required_files = [str(item) for item in required_files if item]
     file_items = [
         {
             "name": str(item.get("name") or ""),
+            "relative_path": str(item.get("relative_path") or item.get("name") or ""),
             "size": item.get("size"),
             "type": str(item.get("type") or ""),
+            "last_modified": item.get("last_modified"),
         }
         for item in files
         if isinstance(item, dict) and item.get("name")
@@ -510,36 +861,67 @@ def factor_lab_create_agent_task():
     task_dir = _agent_task_dir(task_id, create_root=True)
     artifacts_dir = task_dir / "artifacts"
     artifacts_dir.mkdir(parents=True, exist_ok=True)
+    criteria = _locked_intake_criteria(payload, task_type, file_items)
+    criteria_path = artifacts_dir / "criteria.json"
+    _write_json(criteria_path, criteria)
+    criteria_sha256 = _sha256_file(criteria_path)
 
     request_payload = {
-        "schema_version": "agent_task_request_v1",
+        "schema_version": payload.get("schema_version") or "factor_intake_request_v1",
         "task_id": task_id,
+        "task_type": task_type,
+        "legacy_task_type": raw_task_type if raw_task_type != task_type else None,
+        "skill_name": skill_name,
+        "criteria": criteria,
+        "criteria_sha256": criteria_sha256,
         "instruction": instruction,
+        "package": {
+            "input_mode": package_payload.get("input_mode") or "folder",
+            "package_name": package_payload.get("package_name") or task_id,
+            "required_files": required_files,
+            "files": file_items,
+        },
         "files": file_items,
         "namespace": payload.get("namespace") or "quarantine",
         "data_source": payload.get("data_source") or "quant_api",
         "requires_quant_api": bool(payload.get("requires_quant_api", True)),
+        "human_policy": {
+            "interactive_questions": bool(human_policy.get("interactive_questions", False)),
+            "human_only_final_approval": bool(human_policy.get("human_only_final_approval", True)),
+        },
         "requested_at": payload.get("requested_at") or now,
         "received_at": now,
         "execution_mode": "trae_manual_handoff",
         "agent_policy": {
-            "skill_selection": "backend_agent_decides",
+            "skill_selection": skill_name,
             "target_namespace": "quarantine",
             "default_data_source": payload.get("data_source") or "quant_api",
             "frontend_runs_agent": False,
         },
         "trae_instruction": (
-            "Read this request.json, decide whether the task is factor reproduction, mining, "
-            "or evaluation. Use the official Quant API through the backend as the default data "
-            "source, then write progress to status.json and outputs to artifacts/."
+            "Read this request.json and execute the declared intake entry. truth_compare compares "
+            "uploaded factor values against library standard truth as the primary gate. "
+            "research_reproduction turns research materials into a runnable candidate factor and "
+            "uses optional truth only for diagnostics; final acceptance depends on economic "
+            "validation, AMR review, and library comparison. Write progress to status.json and "
+            "outputs to artifacts/."
         ),
     }
     status_payload = {
         "schema_version": "agent_task_status_v1",
         "task_id": task_id,
-        "status": "queued_for_trae",
+        "task_type": task_type,
+        "status": "queued",
         "current_gate": "G0",
-        "message": "Request captured. Open this task directory from Trae to continue.",
+        "progress": 0,
+        "message": "Request captured. Agent should validate the intake package and continue from request.json.",
+        "gates": _initial_intake_gates(task_type),
+        "criteria_sha256": criteria_sha256,
+        "criteria_integrity": {
+            "status": "locked",
+            "error": None,
+            "checked_at": now,
+        },
         "updated_at": now,
     }
 
@@ -559,6 +941,22 @@ def factor_lab_create_agent_task():
         ),
         201,
     )
+
+
+@app.route("/api/agents/factor-lab/intake/truth-compare", methods=["POST"])
+def factor_lab_create_truth_compare_task():
+    payload = request.get_json(silent=True) or {}
+    payload["task_type"] = "truth_compare"
+    payload.setdefault("skill_name", "truth_compare_v1")
+    return _create_factor_lab_agent_task(payload)
+
+
+@app.route("/api/agents/factor-lab/intake/research-reproduction", methods=["POST"])
+def factor_lab_create_research_reproduction_task():
+    payload = request.get_json(silent=True) or {}
+    payload["task_type"] = "research_reproduction"
+    payload.setdefault("skill_name", "research_reproduction_v1")
+    return _create_factor_lab_agent_task(payload)
 
 
 @app.route("/api/agents/factor-lab/agent-tasks/<task_id>", methods=["GET"])
@@ -921,7 +1319,7 @@ def factor_lab_strategy_detail(strategy_id):
             if f.get("factor_name") == factor_name and f["library"] == "QuantAPI":
                 _load_local_env()
                 client = QuantApiClient()
-                symbols = get_universe_symbols("沪深300")[:10]
+                symbols = get_universe_symbols("沪深300")[:50]
                 
                 cutoff_date = "2023-09-01"
                 start_date = "2023-01-01"
@@ -1047,7 +1445,7 @@ def factor_lab_strategy_detail(strategy_id):
         if strong_factors:
             _load_local_env()
             client = QuantApiClient()
-            symbols = get_universe_symbols("沪深300")[:10]
+            symbols = get_universe_symbols("沪深300")[:50]
             
             cutoff_date = "2024-06-01"
             start_date = "2023-01-01"
@@ -1183,7 +1581,7 @@ def factor_lab_strategies():
     if strong_factors:
         _load_local_env()
         client = QuantApiClient()
-        symbols = get_universe_symbols("沪深300")[:10]
+        symbols = get_universe_symbols("沪深300")[:50]
         print(f"策略列表回测: 使用 {len(symbols)} 只股票")
         
         for i, factor in enumerate(strong_factors[:5]):
@@ -1470,8 +1868,10 @@ def _factor_frame_from_formula_set(panel: pd.DataFrame, library_name: str, facto
     library_key = library_name.lower()
     if library_key == "wq101":
         return compute_alpha101_factors(panel, factor_names=[factor_name])
-    elif library_key == "gtja191":
+    elif library_key in {"gtja191", "alpha158"}:
         library_key = "gtja191"
+        if library_name.lower() == "alpha158":
+            library_key = "alpha158"
     else:
         raise ValueError(f"Unsupported formula factor library: {library_name}")
     return compute_factor_set(panel, library_key, factor_names=[factor_name])
@@ -1568,6 +1968,15 @@ def _build_factor_research_payload(
         strat_dates.append(pd.Timestamp(date).strftime("%Y-%m-%d"))
         equity_values.append(float(current_nav))
 
+    if not equity_values and "long_short" in group_returns_df.columns:
+        current_nav = 1.0
+        for date, long_short_return in group_returns_df["long_short"].items():
+            if not np.isfinite(long_short_return):
+                continue
+            current_nav *= 1.0 + float(long_short_return)
+            strat_dates.append(pd.Timestamp(date).strftime("%Y-%m-%d"))
+            equity_values.append(float(current_nav))
+
     rank_ics = [item["rank_ic"] for item in ic_time_series if item.get("rank_ic") is not None]
     ic_values = [item["ic"] for item in ic_time_series if item.get("ic") is not None]
     coverage = float(df["factor"].notna().mean()) if len(df) else float("nan")
@@ -1604,7 +2013,133 @@ def _build_factor_research_payload(
     }
 
 
+def _group_sort_value(group_name: str) -> float:
+    try:
+        return float(group_name)
+    except (TypeError, ValueError):
+        return float("nan")
+
+
+def _long_short_rows_from_group_returns(group_returns: dict) -> list[dict]:
+    long_short_rows = group_returns.get("long_short")
+    if isinstance(long_short_rows, list) and long_short_rows:
+        return long_short_rows
+
+    numeric_groups = [
+        key
+        for key in group_returns.keys()
+        if key != "long_short" and np.isfinite(_group_sort_value(str(key)))
+    ]
+    if len(numeric_groups) < 2:
+        return []
+    min_group = min(numeric_groups, key=lambda key: _group_sort_value(str(key)))
+    max_group = max(numeric_groups, key=lambda key: _group_sort_value(str(key)))
+    min_by_date = {
+        str(item.get("date")): item.get("return")
+        for item in group_returns.get(min_group, [])
+        if isinstance(item, dict)
+    }
+    rows = []
+    for item in group_returns.get(max_group, []):
+        if not isinstance(item, dict):
+            continue
+        date = str(item.get("date"))
+        high_return = item.get("return")
+        low_return = min_by_date.get(date)
+        try:
+            spread = float(high_return) - float(low_return)
+        except (TypeError, ValueError):
+            spread = float("nan")
+        rows.append({"date": date, "return": spread})
+    return rows
+
+
+def _ensure_stratification_from_group_returns(payload: dict) -> bool:
+    stratification = payload.setdefault("stratification", {})
+    if stratification.get("equity"):
+        return False
+
+    group_returns = payload.get("group_returns") or {}
+    if not isinstance(group_returns, dict):
+        return False
+
+    rows = _long_short_rows_from_group_returns(group_returns)
+    current_nav = 1.0
+    dates = []
+    equity = []
+    for row in sorted(rows, key=lambda item: str(item.get("date") or "")):
+        try:
+            long_short_return = float(row.get("return"))
+        except (TypeError, ValueError):
+            continue
+        if not np.isfinite(long_short_return):
+            continue
+        current_nav *= 1.0 + long_short_return
+        dates.append(str(row.get("date")))
+        equity.append(float(current_nav))
+
+    if not equity:
+        return False
+    stratification["dates"] = dates
+    stratification["equity"] = equity
+    return True
+
+
+def _factor_set_candidates_for_library(library_name: str) -> set[str]:
+    normalized = library_name.lower()
+    if normalized in {"wq101", "alpha101"}:
+        return {"wq101", "alpha101"}
+    if normalized in {"gtja191", "alpha191"}:
+        return {"gtja191", "alpha191"}
+    if normalized == "alpha158":
+        return {"alpha158"}
+    return {normalized}
+
+
+def _build_factor_detail_from_latest_job(factor_id: str, library_name: str, factor_name: str) -> dict | None:
+    workspace = _workspace()
+    candidates = _factor_set_candidates_for_library(library_name)
+    jobs = sorted(list_factor_lab_jobs(workspace), key=lambda item: item.get("generated_at", ""), reverse=True)
+    for job in jobs:
+        factor_set = str(job.get("factor_set") or "").lower()
+        library = str(job.get("library") or "").lower()
+        if factor_set not in candidates and library not in candidates:
+            continue
+        requested = {str(name) for name in job.get("requested_factors") or []}
+        if requested and factor_name not in requested:
+            continue
+        artifacts = job.get("artifacts") or {}
+        panel_path = artifacts.get("panel_frame")
+        factor_path = artifacts.get("factor_frame")
+        if not panel_path or not factor_path:
+            continue
+        panel_file = Path(panel_path)
+        factor_file = Path(factor_path)
+        if not panel_file.is_file() or not factor_file.is_file():
+            continue
+        factor_frame = pd.read_csv(factor_file)
+        if factor_name not in factor_frame.columns:
+            continue
+        panel = pd.read_csv(panel_file)
+        payload = _build_factor_research_payload(
+            factor_id,
+            library_name,
+            factor_name,
+            panel,
+            factor_frame,
+            str(job.get("data_source") or "quant_api"),
+        )
+        payload["job_id"] = job.get("job_id")
+        payload["generated_at"] = job.get("generated_at")
+        return payload
+    return None
+
+
 def _build_real_factor_detail(factor_id: str, library_name: str, factor_name: str) -> dict:
+    artifact_payload = _build_factor_detail_from_latest_job(factor_id, library_name, factor_name)
+    if artifact_payload is not None:
+        return artifact_payload
+
     _load_local_env()
     client = QuantApiClient()
     symbols = get_universe_symbols("娌繁300")[:20]
