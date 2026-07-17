@@ -643,14 +643,17 @@ function renderMonitorDirectionFilters() {
 function updateConnectionStatus(ok, payload) {
   state.localConnected = ok;
   els.localStatus.className = ok ? "status-pill status-ok" : "status-pill status-bad";
-  if (CLOUD_DEMO_MODE) {
+  if (USE_SUPABASE_DASHBOARD) {
+    els.localStatus.textContent = "GitHub Pages：Supabase 只读";
+    els.localStatus.title = "当前页面由 GitHub Pages 托管，数据来自 Supabase public_dashboard_* 公开只读表";
+  } else if (CLOUD_DEMO_MODE) {
     els.localStatus.textContent = "GitHub Pages：演示模式";
     els.localStatus.title = "当前使用静态演示数据，未连接本地 Flask 服务";
   } else {
     els.localStatus.textContent = ok ? "本地 Flask：已连接" : "本地 Flask：未连接";
     els.localStatus.title = ok ? "已通过 /health 接口确认" : "未能访问 /health 接口，请确认本地 Flask 服务已启动";
   }
-  const cloudLabel = payload?.cloud_registry?.label || "未同步";
+  const cloudLabel = payload?.cloud_registry?.label || (USE_SUPABASE_DASHBOARD ? "Supabase Public Dashboard" : "未同步");
   els.cloudStatus.textContent = `云端信息库：${cloudLabel}`;
 }
 
