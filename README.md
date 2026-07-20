@@ -83,6 +83,7 @@ See [QLIB_FACTOR_WORKFLOW.md](docs/QLIB_FACTOR_WORKFLOW.md) for the full intern 
 See [ALPHA158_STARTER.md](docs/ALPHA158_STARTER.md) for the baseline model workflow.
 See [FACTOR_LAB_BACKEND_BOUNDARY.md](docs/FACTOR_LAB_BACKEND_BOUNDARY.md) for the back-end vs front-end ownership split.
 See [FACTOR_LAB_ALPHA101_WORKFLOW.md](docs/FACTOR_LAB_ALPHA101_WORKFLOW.md) for the unified Alpha101 back-end research workflow.
+See [AMAZINGDATA_ALPHA_PIPELINE.md](docs/AMAZINGDATA_ALPHA_PIPELINE.md) for the amazingdata internal-validation to external-simulation workflow.
 See [CONTRIBUTING.md](CONTRIBUTING.md) for PR, factor proposal, and experiment report conventions.
 
 ### Factor Lab Bootstrap
@@ -95,6 +96,9 @@ python -m research_core.factor_lab.cli export-alpha101 --proof-factor alpha101
 python -m research_core.factor_lab.cli export-alpha101-truth-template --n-dates 420 --n-codes 8 --seed 29
 python -m research_core.factor_lab.cli validate-alpha101-truth --truth-csv data/factor_lab/alpha101_truth_template_101f_420d_8c_s29.csv
 python -m research_core.factor_lab.cli run-alpha101-proof-batch --truth-csv data/factor_lab/alpha101_truth_template_101f_420d_8c_s29.csv --n-dates 420 --n-codes 8 --seed 29
+python -m research_core.factor_lab.cli check-amazingdata
+python -m research_core.factor_lab.cli run-factor-research --factor-set wq101 --data-source demo --n-dates 160 --n-codes 8 --seed 7
+python -m research_core.strategy_engine.cli build-alpha-strategy --validated-run runtime/factor_lab/jobs/<job_id>.json --rebalance-frequency daily --top-n 50
 ```
 
 ### Factor Lab API

@@ -79,3 +79,40 @@ class BacktestResult:
     attribution: AttributionReport | None = None
     artifacts: dict[str, str] = field(default_factory=dict)
     diagnostics: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(slots=True)
+class ExternalSimulationRequest:
+    run_id: str
+    engine: str
+    strategy_id: str
+    strategy_version: str
+    signal_path: str
+    start_time: str
+    end_time: str
+    benchmark: str = ""
+    initial_cash: float = 1_000_000.0
+    slippage_bps: float = 0.0
+    commission_bps: float = 0.0
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(slots=True)
+class ExternalSimulationPackage:
+    request: ExternalSimulationRequest
+    status: str
+    package_dir: str
+    artifacts: dict[str, str] = field(default_factory=dict)
+    checklist: list[str] = field(default_factory=list)
+    diagnostics: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(slots=True)
+class ExternalSimulationResult:
+    run_id: str
+    engine: str
+    status: str
+    metrics: PerformanceMetrics | None = None
+    source_path: str = ""
+    artifacts: dict[str, str] = field(default_factory=dict)
+    diagnostics: dict[str, Any] = field(default_factory=dict)
