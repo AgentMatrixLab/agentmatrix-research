@@ -5,10 +5,12 @@
 // 4. 新增因子库准入视觉状态、研究口径选择器、策略草稿生成，以及监控页分类/方向筛选。
 // 5. 新增独立策略构建页、成品策略模板契约、策略看板删除模式与股票池省略显示。
 const urlParams = new URLSearchParams(window.location.search);
+const hasWindowConfig = (key) => Object.prototype.hasOwnProperty.call(window, key);
 const configuredApiHost = (
-  window.FACTOR_LAB_API_HOST ||
   urlParams.get("api") ||
-  window.localStorage.getItem("FACTOR_LAB_API_HOST") ||
+  (hasWindowConfig("FACTOR_LAB_API_HOST")
+    ? window.FACTOR_LAB_API_HOST
+    : window.localStorage.getItem("FACTOR_LAB_API_HOST")) ||
   ""
 ).replace(/\/+$/, "");
 if (urlParams.get("api")) {
@@ -39,14 +41,16 @@ const SUPABASE_ANON_KEY =
   window.localStorage.getItem("FACTOR_LAB_SUPABASE_ANON_KEY") ||
   "";
 const SUPABASE_FACTOR_TABLE =
-  window.FACTOR_LAB_SUPABASE_FACTOR_TABLE ||
   urlParams.get("supabaseTable") ||
-  window.localStorage.getItem("FACTOR_LAB_SUPABASE_FACTOR_TABLE") ||
-  "public_dashboard_factors";
+  (hasWindowConfig("FACTOR_LAB_SUPABASE_FACTOR_TABLE")
+    ? window.FACTOR_LAB_SUPABASE_FACTOR_TABLE
+    : window.localStorage.getItem("FACTOR_LAB_SUPABASE_FACTOR_TABLE")) ||
+  "";
 const SUPABASE_TRUTH_SUMMARY_TABLE =
-  window.FACTOR_LAB_SUPABASE_TRUTH_SUMMARY_TABLE ||
   urlParams.get("truthSummaryTable") ||
-  window.localStorage.getItem("FACTOR_LAB_SUPABASE_TRUTH_SUMMARY_TABLE") ||
+  (hasWindowConfig("FACTOR_LAB_SUPABASE_TRUTH_SUMMARY_TABLE")
+    ? window.FACTOR_LAB_SUPABASE_TRUTH_SUMMARY_TABLE
+    : window.localStorage.getItem("FACTOR_LAB_SUPABASE_TRUTH_SUMMARY_TABLE")) ||
   "factor_truth_values_summary";
 const USE_SUPABASE_DASHBOARD = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY && !configuredApiHost);
 const ACCESS_PASSWORD =
@@ -72,7 +76,7 @@ if (urlParams.get("accessPassword")) {
 }
 const PAGE_SIZE = 50;
 const AUTO_REFRESH_INTERVAL_MS = 10000;
-const REQUEST_TIMEOUT_MS = 1800;
+const REQUEST_TIMEOUT_MS = 8000;
 const COVERAGE_WARN_THRESHOLD = 0.6;
 const COVERAGE_DANGER_THRESHOLD = 0.3;
 const LONG_SHORT_MEAN_HELP = "多空分组收益均值（日频，demo 数据）";
