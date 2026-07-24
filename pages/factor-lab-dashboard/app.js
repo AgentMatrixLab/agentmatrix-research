@@ -27,8 +27,6 @@ const API_HOST = configuredApiHost
       ? window.location.origin
       : "http://127.0.0.1:8012";
 const API_BASE = CLOUD_DEMO_MODE ? "" : `${API_HOST}/api/agents/factor-lab`;
-const DEMO_LIBRARY_URL = "./data/demo-factor-library.json";
-const STATIC_FACTOR_DETAIL_DIR = "./data/factor-details";
 const SUPABASE_URL = (
   window.FACTOR_LAB_SUPABASE_URL ||
   urlParams.get("supabaseUrl") ||
@@ -1009,25 +1007,7 @@ async function loadData() {
       return;
     }
     if (CLOUD_DEMO_MODE) {
-      const response = await fetchWithTimeout(withCacheBust(DEMO_LIBRARY_URL));
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const payload = await response.json();
-      const normalizedPayload = normalizePayload(payload);
-      state.rawFactors = normalizedPayload.factors || [];
-      updateConnectionStatus(true, payload);
-      updateQuantApiStatus({
-        token_configured: false,
-        base_url: "Static demo data",
-      });
-      els.errorPanel.classList.add("hidden");
-      renderTabs(normalizedPayload);
-      applyFilters();
-      await syncDetailFromHash();
-      if (state.view === "monitor") renderMonitor();
-      if (state.view === "strategy") renderStrategy();
-      if (state.view === "strategy-detail") renderStrategyDetail();
-      if (state.view === "tasks") renderTasks();
-      return;
+      throw new Error("Supabase is required. Static demo data has been removed.");
     }
     const healthy = await checkLocalHealth();
     if (!healthy) throw new Error("Local Flask service is offline");
@@ -5142,11 +5122,12 @@ function activeFactor() {
 
 async function loadFactorDetailData(factorId) {
   if (!factorId || state.factorDetailLoading[factorId]) return;
+  if (USE_SUPABASE_DASHBOARD || CLOUD_DEMO_MODE) {
+    return;
+  }
   state.factorDetailLoading[factorId] = true;
   try {
-    const detailUrl = CLOUD_DEMO_MODE
-      ? `${STATIC_FACTOR_DETAIL_DIR}/${staticArtifactKey(factorId)}.json`
-      : `${API_BASE}/factor/${encodeURIComponent(factorId)}`;
+    const detailUrl = `${API_BASE}/factor/${encodeURIComponent(factorId)}`;
     const response = await fetchWithTimeout(withCacheBust(detailUrl));
     if (response.ok) {
       const data = await response.json();
@@ -5161,10 +5142,6 @@ async function loadFactorDetailData(factorId) {
       renderDetail();
     }
   }
-}
-
-function staticArtifactKey(value) {
-  return String(value || "").replace(/[^A-Za-z0-9_.-]+/g, "_").replace(/^_+|_+$/g, "") || "artifact";
 }
 
 async function openDetail(factorId) {
