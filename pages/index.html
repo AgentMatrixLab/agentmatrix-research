@@ -3,223 +3,78 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>AgentMatrix Research Portal</title>
-  <meta name="description" content="AgentMatrix Research GitHub Pages 门户：仓库结构、文档导航、测试入口与常用运行命令。">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="assets/styles.css">
+  <title>Factor Lab</title>
+  <meta name="description" content="Factor Lab Supabase dashboard entry.">
+  <meta http-equiv="refresh" content="0; url=./factor-lab-dashboard/">
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #0b3551;
+      --muted: #5d7185;
+      --line: #d6e2ee;
+      --blue: #0b4f7a;
+      --bg: #f4f8fc;
+      --panel: #ffffff;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: Inter, "Microsoft YaHei", "PingFang SC", Arial, sans-serif;
+    }
+
+    main {
+      width: min(560px, calc(100vw - 40px));
+      padding: 32px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      box-shadow: 0 18px 42px rgba(37, 62, 86, 0.08);
+    }
+
+    h1 {
+      margin: 0 0 12px;
+      font-size: 28px;
+      line-height: 1.2;
+      letter-spacing: 0;
+    }
+
+    p {
+      margin: 0 0 22px;
+      color: var(--muted);
+      line-height: 1.7;
+    }
+
+    a {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 40px;
+      padding: 0 16px;
+      border-radius: 6px;
+      background: var(--blue);
+      color: #fff;
+      font-weight: 700;
+      text-decoration: none;
+    }
+  </style>
+  <script>
+    window.location.replace("./factor-lab-dashboard/");
+  </script>
 </head>
 <body>
-  <div class="page-shell">
-    <header class="hero">
-      <div class="hero-copy">
-        <p class="eyebrow">AgentMatrixLab</p>
-        <h1>AgentMatrix Research Portal</h1>
-        <p class="hero-text">
-          一个面向公开协作的仓库门户：集中展示核心模块、研究文档、测试入口与常用命令。
-          GitHub Pages 负责可视化访问，测试执行入口通过 GitHub Actions 和本地命令面板提供。
-        </p>
-        <div class="hero-actions">
-          <a class="button button-primary" href="https://github.com/AgentMatrixLab/agentmatrix-research" target="_blank" rel="noreferrer">打开 GitHub 仓库</a>
-          <a class="button button-secondary" href="https://github.com/AgentMatrixLab/agentmatrix-research/actions/workflows/factor-validation.yml" target="_blank" rel="noreferrer">打开测试工作流</a>
-        </div>
-      </div>
-      <div class="hero-status">
-        <div class="status-card">
-          <span class="status-label">主分支测试</span>
-          <img alt="Factor Validation status" src="https://img.shields.io/github/actions/workflow/status/AgentMatrixLab/agentmatrix-research/factor-validation.yml?branch=main&label=Factor%20Validation">
-        </div>
-        <div class="status-card">
-          <span class="status-label">Open PR</span>
-          <img alt="Open pull requests" src="https://img.shields.io/github/issues-pr/AgentMatrixLab/agentmatrix-research?label=Open%20PRs">
-        </div>
-        <div class="status-card">
-          <span class="status-label">仓库许可</span>
-          <img alt="License" src="https://img.shields.io/github/license/AgentMatrixLab/agentmatrix-research?label=License">
-        </div>
-      </div>
-    </header>
-
-    <main>
-      <section class="panel">
-        <div class="panel-header">
-          <div>
-            <p class="eyebrow">快速入口</p>
-            <h2>仓库内容总览</h2>
-          </div>
-          <label class="search-box" for="module-search">
-            <span>搜索模块</span>
-            <input id="module-search" type="search" placeholder="输入模块名，例如 factor_lab / qlib / backend">
-          </label>
-        </div>
-        <div id="module-grid" class="card-grid">
-          <article class="content-card" data-keywords="factor lab dashboard static snapshot github pages">
-            <h3>Factor Lab 静态快照</h3>
-            <p>脱敏后的前端看板快照：不连接 Flask / Quant API，但可查看已打包的因子列表、IC、分层和分组表现。</p>
-            <a href="./factor-lab-dashboard/">打开静态看板</a>
-          </article>
-          <article class="content-card" data-keywords="contracts contract interface strategy backtest attribution">
-            <h3>contracts</h3>
-            <p>统一的数据契约层，定义策略、回测、归因等核心接口。</p>
-            <a href="https://github.com/AgentMatrixLab/agentmatrix-research/tree/main/contracts" target="_blank" rel="noreferrer">查看目录</a>
-          </article>
-          <article class="content-card" data-keywords="factor_lab alpha101 gtja191 alpha158 validation registry">
-            <h3>research_core/factor_lab</h3>
-            <p>统一因子实验后端，包含 Alpha101、GTJA191、Alpha158、验证、证明与目录注册。</p>
-            <a href="https://github.com/AgentMatrixLab/agentmatrix-research/tree/main/research_core/factor_lab" target="_blank" rel="noreferrer">查看目录</a>
-          </article>
-          <article class="content-card" data-keywords="qlib qlib_lab mining backtest alpha158">
-            <h3>research_core/qlib_lab</h3>
-            <p>基于 Qlib 的因子挖掘、模板生成、表达式回测与 Alpha158 研究工作流。</p>
-            <a href="https://github.com/AgentMatrixLab/agentmatrix-research/tree/main/research_core/qlib_lab" target="_blank" rel="noreferrer">查看目录</a>
-          </article>
-          <article class="content-card" data-keywords="backtest adapter gm rqalpha qlib">
-            <h3>research_core/backtest_adapter</h3>
-            <p>回测适配层，连接 GM、RQAlpha、Qlib 等执行与结果解析能力。</p>
-            <a href="https://github.com/AgentMatrixLab/agentmatrix-research/tree/main/research_core/backtest_adapter" target="_blank" rel="noreferrer">查看目录</a>
-          </article>
-          <article class="content-card" data-keywords="strategy engine agent strategy sample">
-            <h3>research_core/strategy_engine</h3>
-            <p>策略引擎和样例策略集合，适合查看 agent 风格策略如何落地。</p>
-            <a href="https://github.com/AgentMatrixLab/agentmatrix-research/tree/main/research_core/strategy_engine" target="_blank" rel="noreferrer">查看目录</a>
-          </article>
-          <article class="content-card" data-keywords="data loader akshare market data">
-            <h3>research_core/data_loader</h3>
-            <p>市场数据获取工具与数据检查脚本，主要面向 AkShare 路径。</p>
-            <a href="https://github.com/AgentMatrixLab/agentmatrix-research/tree/main/research_core/data_loader" target="_blank" rel="noreferrer">查看目录</a>
-          </article>
-          <article class="content-card" data-keywords="backend flask api factor_lab document">
-            <h3>backend</h3>
-            <p>Flask API 服务入口，包括 factor lab 和文档标准化接口。</p>
-            <a href="https://github.com/AgentMatrixLab/agentmatrix-research/tree/main/backend" target="_blank" rel="noreferrer">查看目录</a>
-          </article>
-          <article class="content-card" data-keywords="docs markdown workflow contribution alpha158 review">
-            <h3>docs</h3>
-            <p>研究流程、PR 规范、Alpha158 入门、因子实验模板等文档集合。</p>
-            <a href="https://github.com/AgentMatrixLab/agentmatrix-research/tree/main/docs" target="_blank" rel="noreferrer">查看目录</a>
-          </article>
-          <article class="content-card" data-keywords="tests pytest unittest ci">
-            <h3>tests / submissions</h3>
-            <p>通用测试和投稿示例测试，适合快速定位 CI 覆盖范围与失败用例。</p>
-            <a href="https://github.com/AgentMatrixLab/agentmatrix-research/tree/main/tests" target="_blank" rel="noreferrer">查看 tests</a>
-          </article>
-        </div>
-      </section>
-
-      <section class="panel two-column">
-        <div class="panel-column">
-          <div class="panel-header">
-            <div>
-              <p class="eyebrow">文档导航</p>
-              <h2>高频文档</h2>
-            </div>
-          </div>
-          <div class="link-list">
-            <a href="https://github.com/AgentMatrixLab/agentmatrix-research/blob/main/README.md" target="_blank" rel="noreferrer">README</a>
-            <a href="https://github.com/AgentMatrixLab/agentmatrix-research/blob/main/docs/QLIB_FACTOR_WORKFLOW.md" target="_blank" rel="noreferrer">Qlib Factor Workflow</a>
-            <a href="https://github.com/AgentMatrixLab/agentmatrix-research/blob/main/docs/ALPHA158_STARTER.md" target="_blank" rel="noreferrer">Alpha158 Starter</a>
-            <a href="https://github.com/AgentMatrixLab/agentmatrix-research/blob/main/docs/FACTOR_LAB_ALPHA101_WORKFLOW.md" target="_blank" rel="noreferrer">Factor Lab Alpha101 Workflow</a>
-            <a href="https://github.com/AgentMatrixLab/agentmatrix-research/blob/main/docs/PR_REVIEW_STANDARD_CN.md" target="_blank" rel="noreferrer">PR Review Standard CN</a>
-            <a href="https://github.com/AgentMatrixLab/agentmatrix-research/blob/main/CONTRIBUTING.md" target="_blank" rel="noreferrer">Contributing</a>
-          </div>
-        </div>
-
-        <div class="panel-column">
-          <div class="panel-header">
-            <div>
-              <p class="eyebrow">测试入口</p>
-              <h2>运行与查看测试</h2>
-            </div>
-          </div>
-          <div class="link-list">
-            <a href="https://github.com/AgentMatrixLab/agentmatrix-research/actions" target="_blank" rel="noreferrer">GitHub Actions 总览</a>
-            <a href="https://github.com/AgentMatrixLab/agentmatrix-research/actions/workflows/factor-validation.yml" target="_blank" rel="noreferrer">Factor Validation 工作流</a>
-            <a href="https://github.com/AgentMatrixLab/agentmatrix-research/pulls" target="_blank" rel="noreferrer">Open PR 列表</a>
-            <a href="https://github.com/AgentMatrixLab/agentmatrix-research/tree/main/.github/workflows" target="_blank" rel="noreferrer">Workflow 源文件</a>
-          </div>
-          <p class="note">
-            说明：GitHub Pages 是静态站点，不能直接在服务器端执行 Python 测试。
-            本页面把测试能力聚合为 GitHub Actions 入口、状态徽章和可复制的命令面板。
-          </p>
-        </div>
-      </section>
-
-      <section class="panel">
-        <div class="panel-header">
-          <div>
-            <p class="eyebrow">命令面板</p>
-            <h2>本地 / CI 常用测试命令</h2>
-          </div>
-        </div>
-        <div class="command-grid">
-          <article class="command-card">
-            <h3>基础安装</h3>
-            <pre><code>pip install -r scripts/requirements.txt
-pip install -r requirements-factor-lab.txt</code></pre>
-          </article>
-          <article class="command-card">
-            <h3>核心单元测试</h3>
-            <pre><code>python -m pytest research_core/factor_lab tests/ -v --tb=short</code></pre>
-          </article>
-          <article class="command-card">
-            <h3>Submission 测试</h3>
-            <pre><code>python -m pytest submissions/momentum_20d/test_factor.py -v --tb=short</code></pre>
-          </article>
-          <article class="command-card">
-            <h3>Alpha101 Demo</h3>
-            <pre><code>python -m research_core.factor_lab.cli run-alpha101-demo \
-  --factors alpha1,alpha2 \
-  --n-dates 160 --n-codes 8 --seed 7</code></pre>
-          </article>
-          <article class="command-card">
-            <h3>Factor Set Demo</h3>
-            <pre><code>python -m research_core.factor_lab.cli run-factor-set-demo \
-  --factor-set alpha158 \
-  --n-dates 160 --n-codes 8 --seed 7</code></pre>
-          </article>
-          <article class="command-card">
-            <h3>CI 校验脚本</h3>
-            <pre><code>python scripts/ci_detect_changes.py --base-ref origin/main
-python scripts/ci_factor_validate.py \
-  --changed-json /tmp/changed_factors.json \
-  --output-dir /tmp/validation_output</code></pre>
-          </article>
-        </div>
-      </section>
-
-      <section class="panel">
-        <div class="panel-header">
-          <div>
-            <p class="eyebrow">架构摘要</p>
-            <h2>项目分层</h2>
-          </div>
-        </div>
-        <div class="architecture">
-          <div class="arch-card">
-            <span class="arch-tag">Contracts</span>
-            <p>统一输入输出模型，连接策略、回测、归因与因子研究。</p>
-          </div>
-          <div class="arch-arrow">→</div>
-          <div class="arch-card">
-            <span class="arch-tag">Research Core</span>
-            <p>承载 factor_lab、qlib_lab、strategy_engine、backtest_adapter 等核心模块。</p>
-          </div>
-          <div class="arch-arrow">→</div>
-          <div class="arch-card">
-            <span class="arch-tag">Runtime / API</span>
-            <p>通过 backend、scripts、CI workflow 暴露给前端、自动化和研究者使用。</p>
-          </div>
-        </div>
-      </section>
-    </main>
-
-    <footer class="site-footer">
-      <p>AgentMatrix Research Pages Portal</p>
-      <p>部署后默认地址预计为 <code>https://agentmatrixlab.github.io/agentmatrix-research/</code></p>
-    </footer>
-  </div>
-
-  <script src="assets/app.js"></script>
+  <main>
+    <h1>正在进入 Factor Lab 因子库</h1>
+    <p>这个 GitHub Pages 根入口已改为 Factor Lab 面板入口，页面数据只从 Supabase 读取。</p>
+    <a href="./factor-lab-dashboard/">打开 Factor Lab</a>
+  </main>
 </body>
 </html>
