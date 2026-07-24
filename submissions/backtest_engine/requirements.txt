@@ -1,0 +1,6 @@
+pyarrow>=10
+pandas>=1.5
+requests>=2.28
+numpy>=1.23
+pyqlib>=0.9  # Microsoft Qlib — 量化回测 + ML 模型
+joblib>=1.2   # 模型序列化
