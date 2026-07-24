@@ -5071,7 +5071,7 @@ function renderSettings() {
       ])}
       ${connectionCard("官方 Quant API", quantStatusText, quantStatusClass, [
         ["接入方式", "浏览器 → 本地 Flask → 官方 Quant API"],
-        ["Credential 位置", "后端环境变量（静态快照不携带）"],
+        ["Credential 位置", "后端环境变量（浏览器端不携带）"],
         ["安全说明", "前端不接触 token，不直接访问公网数据接口"],
       ])}
       ${connectionCard("Supabase 只读接入", supabaseConfigured ? "已配置" : "待接入", supabaseConfigured ? "ok" : "warn", [
