@@ -13,7 +13,7 @@ ALPHA158_ALL_FACTORS = IMPLEMENTED_ALPHA158_FACTORS
 
 
 def compute_wq101_alphas(df: pd.DataFrame, factor_names: list[str] | None = None) -> pd.DataFrame:
-    requested = list(factor_names or IMPLEMENTED_ALPHA101_FACTORS)
+    requested = list(factor_names or WQ101_ALPHA_1_10)
     invalid = [name for name in requested if name not in IMPLEMENTED_ALPHA101_FACTORS]
     if invalid:
         raise ValueError(f"Unsupported WQ101 Alpha101 factors: {invalid}")
