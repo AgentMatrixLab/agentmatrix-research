@@ -7,6 +7,7 @@ import random
 import re
 import shutil
 import sys
+from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
@@ -39,6 +40,7 @@ _load_local_env()
 
 from research_core.factor_lab import (  # noqa: E402
     FactorLabWorkspaceConfig,
+    check_amazingdata,
     get_alpha101_factor_detail,
     get_factor_lab_job,
     get_factor_lab_overview,
@@ -46,7 +48,10 @@ from research_core.factor_lab import (  # noqa: E402
     list_factor_lab_jobs,
     run_factor_set_real_data_job,
     run_alpha101_research_job,
+    run_factor_set_research_job,
 )
+from contracts.backtest import ExternalSimulationRequest  # noqa: E402
+from research_core.backtest_adapter.external_simulation import package_external_simulation  # noqa: E402
 
 from scripts.quant_api_research import (  # noqa: E402
     QUANT_API_33_FACTORS,
@@ -1021,6 +1026,12 @@ def factor_lab_jobs():
     return jsonify({"items": list_factor_lab_jobs(_workspace())})
 
 
+@app.route("/api/agents/factor-lab/data-sources/amazingdata/check", methods=["POST"])
+def factor_lab_check_amazingdata():
+    payload = request.get_json(silent=True) or {}
+    return jsonify(check_amazingdata(payload))
+
+
 @app.route("/api/agents/factor-lab/jobs", methods=["POST"])
 def factor_lab_create_job():
     payload = request.get_json(silent=True) or {}
@@ -1032,6 +1043,40 @@ def factor_lab_create_job():
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
     return jsonify(job), 201
+
+
+@app.route("/api/agents/factor-lab/factor-set/jobs", methods=["POST"])
+def factor_lab_create_factor_set_job():
+    payload = request.get_json(silent=True) or {}
+    try:
+        job = run_factor_set_research_job(payload, _workspace())
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify(job), 201
+
+
+@app.route("/api/agents/factor-lab/external-sim/packages", methods=["POST"])
+def factor_lab_create_external_sim_package():
+    payload = request.get_json(silent=True) or {}
+    try:
+        sim_request = ExternalSimulationRequest(
+            run_id=payload["run_id"],
+            engine=payload["engine"],
+            strategy_id=payload.get("strategy_id", payload["run_id"]),
+            strategy_version=payload.get("strategy_version", "v1"),
+            signal_path=payload["signal_path"],
+            start_time=payload["start_time"],
+            end_time=payload["end_time"],
+            benchmark=payload.get("benchmark", ""),
+            initial_cash=float(payload.get("initial_cash", 1_000_000.0)),
+            slippage_bps=float(payload.get("slippage_bps", 0.0)),
+            commission_bps=float(payload.get("commission_bps", 0.0)),
+            metadata=payload.get("metadata", {}),
+        )
+        package = package_external_simulation(sim_request, output_dir=payload.get("output_dir") or None)
+    except (KeyError, ValueError, FileNotFoundError) as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify(asdict(package)), 201
 
 
 @app.route("/api/agents/factor-lab/jobs/<job_id>", methods=["GET"])

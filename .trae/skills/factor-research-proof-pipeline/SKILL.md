@@ -18,6 +18,16 @@ Turn a factor idea or factor family into a repeatable back-end research bundle w
 - proof package and formal report
 - API or CLI handoff for front-end or agent orchestration
 
+For production-oriented A-share research, use `amazingdata` as the internal data source through:
+
+```bash
+python -m research_core.factor_lab.cli check-amazingdata
+python -m research_core.factor_lab.cli run-factor-research --factor-set wq101 --data-source amazingdata --start 2023-01-01 --end 2025-12-31 --universe csi800
+```
+
+If amazingdata is unavailable, stop and report the missing local ClickHouse/tunnel/config condition. Do not replace it with demo data unless the user explicitly asks for a smoke test.
+Named amazingdata universes must be index-filtered and intersected with point-in-time listing status from `ods_security_status_daily`; use `--universe all` only when coverage-based listed-equity selection is the intended research design. Warmup history may be used for factor computation, but proof/evaluation windows must be trimmed to the requested start and end dates.
+
 ## Invocation Conditions
 
 Invoke this skill when:
@@ -52,6 +62,14 @@ Do not use this skill for front-end page building. Keep UI work in the dedicated
    - `partial proof`
    - `passed proof`
 
+9. Record lifecycle promotion only when evidence supports it:
+   - `implemented` after formula tests pass
+   - `internal_validated` after real-data quality and validation gates pass
+   - `strategy_candidate` after target weights are generated from the same factor frame
+   - `external_sim_ready` after GM/PTrade/QMT package export
+   - `external_sim_passed` only after returned terminal evidence is parsed
+   - `live_ready` and `live_approved` only with explicit human approval
+
 ## Proof Rule
 
 Never claim “fully reproduced”, “zero bias”, or “100% no-error proof” unless all of the following exist:
@@ -63,6 +81,8 @@ Never claim “fully reproduced”, “zero bias”, or “100% no-error proof�
 - proof status is `passed`
 
 If the external truth source is not available, the correct wording is `partial proof`, not final proof.
+
+If only internal amazingdata validation is available, the correct wording is `internal validation passed`, not `ready for live trading`.
 
 ## Output Checklist
 

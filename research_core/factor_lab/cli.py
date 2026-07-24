@@ -9,6 +9,7 @@ from research_core.factor_lab.libraries.gtja191 import IMPLEMENTED_GTJA191_FACTO
 from research_core.factor_lab.registry import export_library_specs
 from research_core.factor_lab.runtime import FactorLabWorkspaceConfig
 from research_core.factor_lab.service import (
+    check_amazingdata,
     export_alpha101_truth_template,
     get_factor_lab_overview,
     list_alpha101_factors,
@@ -28,6 +29,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     subparsers.add_parser("init-workspace", help="Initialize factor_lab runtime directories")
     subparsers.add_parser("overview", help="Show factor_lab overview")
+    check_parser = subparsers.add_parser("check-amazingdata", help="Check amazingdata ClickHouse connectivity")
+    check_parser.add_argument("--env-file", default="", help="Optional ClickHouse env file path")
+
     subparsers.add_parser("list-alpha101", help="List Alpha101 factor specs and proof status")
     list_factor_set_parser = subparsers.add_parser("list-factor-set", help="List WQ101 or GTJA191 factor specs and proof status")
     list_factor_set_parser.add_argument("--factor-set", choices=["wq101", "gtja191", "alpha158"], required=True)
@@ -108,6 +112,23 @@ def build_parser() -> argparse.ArgumentParser:
     real_parser.add_argument("--n-dates", type=int, default=80, help="Number of daily bars per symbol")
     real_parser.add_argument("--quantile", type=float, default=0.2, help="Top/bottom quantile for long-short backtest")
 
+    research_parser = subparsers.add_parser("run-factor-research", help="Run factor_lab research on demo or amazingdata")
+    research_parser.add_argument("--factor-set", choices=["wq101", "gtja191"], required=True)
+    research_parser.add_argument("--data-source", choices=["demo", "amazingdata"], default="demo")
+    research_parser.add_argument("--factors", default="", help="Comma separated factor names")
+    research_parser.add_argument("--start", default="", help="Start date for amazingdata jobs")
+    research_parser.add_argument("--end", default="", help="End date for amazingdata jobs")
+    research_parser.add_argument("--universe", default="csi800", help="Universe label for amazingdata selection")
+    research_parser.add_argument("--symbols", default="", help="Comma separated explicit symbols")
+    research_parser.add_argument("--max-symbols", type=int, default=300, help="Maximum symbols selected from amazingdata")
+    research_parser.add_argument("--n-dates", type=int, default=160, help="Demo dates")
+    research_parser.add_argument("--n-codes", type=int, default=8, help="Demo codes")
+    research_parser.add_argument("--seed", type=int, default=7, help="Demo random seed")
+    research_parser.add_argument("--horizon", type=int, default=1, help="Forward return horizon")
+    research_parser.add_argument("--quantiles", type=int, default=5, help="Validation quantiles")
+    research_parser.add_argument("--warmup-calendar-days", type=int, default=420, help="Warmup calendar days for real data")
+    research_parser.add_argument("--env-file", default="", help="Optional amazingdata env file path")
+
     return parser
 
 
@@ -132,6 +153,11 @@ def main() -> None:
 
     if args.command == "overview":
         print(json.dumps(get_factor_lab_overview(config), ensure_ascii=False, indent=2))
+        return
+
+    if args.command == "check-amazingdata":
+        payload = {"env_file": args.env_file} if args.env_file else {}
+        print(json.dumps(check_amazingdata(payload), ensure_ascii=False, indent=2))
         return
 
     if args.command == "export-alpha101-truth-template":
@@ -242,6 +268,30 @@ def main() -> None:
             },
             config=config,
         )
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return
+
+    if args.command == "run-factor-research":
+        default_factors = WQ101_ALPHA_1_10 if args.factor_set == "wq101" else IMPLEMENTED_GTJA191_FACTORS
+        factor_names = [item.strip() for item in args.factors.split(",") if item.strip()] if args.factors else list(default_factors)
+        request_payload = {
+            "factor_set": args.factor_set,
+            "factor_names": factor_names,
+            "data_source": args.data_source,
+            "start": args.start,
+            "end": args.end,
+            "universe": args.universe,
+            "symbols": args.symbols,
+            "max_symbols": args.max_symbols,
+            "n_dates": args.n_dates,
+            "n_codes": args.n_codes,
+            "seed": args.seed,
+            "horizon": args.horizon,
+            "quantiles": args.quantiles,
+            "warmup_calendar_days": args.warmup_calendar_days,
+            "env_file": args.env_file,
+        }
+        payload = run_factor_set_research_job(request_payload, config=config)
         print(json.dumps(payload, ensure_ascii=False, indent=2))
         return
 
