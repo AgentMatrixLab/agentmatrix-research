@@ -964,7 +964,7 @@ async function checkQuantApiStatus() {
   if (CLOUD_DEMO_MODE) {
     updateQuantApiStatus({
       token_configured: false,
-      base_url: "Static demo data",
+      base_url: "Supabase required",
     });
     return null;
   }
@@ -1007,7 +1007,7 @@ async function loadData() {
       return;
     }
     if (CLOUD_DEMO_MODE) {
-      throw new Error("Supabase is required. Static demo data has been removed.");
+      throw new Error("Supabase is required. Local fallback files have been removed.");
     }
     const healthy = await checkLocalHealth();
     if (!healthy) throw new Error("Local Flask service is offline");
