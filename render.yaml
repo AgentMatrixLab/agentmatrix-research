@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: factor-lab-api
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements-factor-lab.txt
+    startCommand: gunicorn backend.factor_lab_api:app --bind 0.0.0.0:$PORT
+    envVars:
+      - key: FACTOR_LAB_PUBLIC_ORIGIN
+        value: https://miao050805-arch.github.io
+      - key: FACTOR_LAB_QUANT_API_TOKEN
+        sync: false

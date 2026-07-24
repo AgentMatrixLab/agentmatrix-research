@@ -7,6 +7,7 @@ from research_core.factor_lab.service import (
     list_alpha101_factors,
     list_factor_lab_jobs,
     run_alpha101_research_job,
+    run_factor_set_real_data_job,
     run_factor_set_research_job,
 )
 
@@ -19,5 +20,6 @@ __all__ = [
     "list_alpha101_factors",
     "list_factor_lab_jobs",
     "run_alpha101_research_job",
+    "run_factor_set_real_data_job",
     "run_factor_set_research_job",
 ]

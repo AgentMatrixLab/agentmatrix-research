@@ -37,6 +37,7 @@ from research_core.factor_lab.reporting import (
     render_factor_research_report_markdown,
 )
 from research_core.factor_lab.registry import export_library_specs
+from research_core.factor_lab.real_data import run_factor_set_real_data_job
 from research_core.factor_lab.runtime import FactorLabWorkspaceConfig, now_iso
 from research_core.factor_lab.truth import (
     export_truth_comparison,
@@ -546,7 +547,6 @@ def run_alpha101_research_job(
     for spec in specs:
         if spec.factor_name not in proof_paths:
             export_proof_template(config=workspace, spec=spec)
-
     research_report = build_alpha101_research_report(
         job_id=job_id,
         factor_names=factor_names,

@@ -9,7 +9,7 @@
 
 使用方法:
     from alpha158_library import compute_alpha158
-    
+
     # raw_data 需要包含列: open, high, low, close, vwap, volume
     # 索引为 MultiIndex (datetime, instrument)
     factors = compute_alpha158(raw_data)
