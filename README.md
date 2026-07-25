@@ -107,6 +107,22 @@ python -m research_core.strategy_engine.cli build-alpha-strategy --validated-run
 python backend/factor_lab_api.py
 ```
 
+### Factor Lab Dashboard
+
+Start the local Flask API first, then open the dashboard served by the same backend:
+
+```text
+http://127.0.0.1:8012/factor-lab-dashboard
+```
+
+The dashboard is a zero-build static frontend under `frontend/factor-lab-dashboard/`. When opened from the Flask URL above, it automatically reads:
+
+```text
+http://127.0.0.1:8012/api/agents/factor-lab
+```
+
+For a static host such as GitHub Pages, set `window.FACTOR_LAB_API_HOST` in `frontend/factor-lab-dashboard/config.js` to a deployed Flask backend URL. Do not put Quant API tokens in frontend code. Keep tokens in `.env` / backend environment variables only; runtime research artifacts under `runtime/factor_lab/` and local data under `data/factor_lab/` are intentionally ignored by git.
+
 API endpoints for front-end and agent orchestration:
 
 - `GET /api/agents/factor-lab/overview`

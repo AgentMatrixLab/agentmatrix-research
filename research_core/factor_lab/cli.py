@@ -15,6 +15,7 @@ from research_core.factor_lab.service import (
     list_alpha101_factors,
     list_factor_set_factors,
     run_factor_set_research_job,
+    run_factor_set_real_data_job,
     run_alpha101_research_job,
     run_alpha101_truth_proof_batch,
     validate_alpha101_truth_csv,
@@ -93,6 +94,15 @@ def build_parser() -> argparse.ArgumentParser:
     run_factor_set_parser.add_argument("--seed", type=int, default=42)
     run_factor_set_parser.add_argument("--truth-csv", default="")
     run_factor_set_parser.add_argument("--truth-tolerance", type=float, default=1e-12)
+
+    # ── PR #44: run-factor-set-real (real Quant API kline data) ──
+    real_parser = subparsers.add_parser("run-factor-set-real", help="Run WQ101/GTJA191 on real Quant API kline data")
+    real_parser.add_argument("--factor-set", choices=["wq101", "gtja191"], default="gtja191")
+    real_parser.add_argument("--factors", default="alpha1,alpha2,alpha3", help="Comma separated factor names")
+    real_parser.add_argument("--symbols", default="", help="Optional comma separated symbols, e.g. 000001.SZ,000002.SZ")
+    real_parser.add_argument("--n-symbols", type=int, default=12, help="Number of symbols to auto-discover when --symbols is empty")
+    real_parser.add_argument("--n-dates", type=int, default=80, help="Number of daily bars per symbol")
+    real_parser.add_argument("--quantile", type=float, default=0.2, help="Top/bottom quantile for long-short backtest")
 
     run_research_parser = subparsers.add_parser("run-factor-research", help="Run factor research with real or demo data")
     run_research_parser.add_argument("--factor-set", choices=["wq101", "gtja191", "alpha158"], required=True)
@@ -272,6 +282,23 @@ def main() -> None:
                 "data_source": "demo",
                 "truth_csv_path": args.truth_csv,
                 "truth_tolerance": args.truth_tolerance,
+            },
+            config=config,
+        )
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return
+
+    if args.command == "run-factor-set-real":
+        factor_names = [item.strip() for item in args.factors.split(",") if item.strip()]
+        symbols = [item.strip() for item in args.symbols.split(",") if item.strip()]
+        payload = run_factor_set_real_data_job(
+            {
+                "factor_set": args.factor_set,
+                "factor_names": factor_names,
+                "symbols": symbols,
+                "n_symbols": args.n_symbols,
+                "n_dates": args.n_dates,
+                "quantile": args.quantile,
             },
             config=config,
         )

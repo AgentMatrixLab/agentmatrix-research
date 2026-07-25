@@ -2,6 +2,7 @@
 *.pyc
 .venv/
 .env
+.env.local
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
@@ -18,4 +19,14 @@ runtime/factor_lab/
 runtime/strategy_engine/
 runtime/external_sim/
 runtime/gtja191/
+runtime/*.log
+desktop/node_modules/
+desktop/build/
+desktop/dist/
+desktop/release/
+desktop/release-zoom/
 .DS_Store
+
+test_kline_api.py
+test_quant_api.py
+test_json_output.py
