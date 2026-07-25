@@ -19,7 +19,6 @@ from research_core.factor_lab.service import (
     run_alpha101_truth_proof_batch,
     validate_alpha101_truth_csv,
 )
-from research_core.factor_lab.validation import export_proof_template
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -78,47 +77,103 @@ def build_parser() -> argparse.ArgumentParser:
     batch_parser.add_argument("--n-codes", type=int, default=8, help="Number of securities in demo panel")
     batch_parser.add_argument("--seed", type=int, default=29, help="Random seed for deterministic demo panel")
 
-    run_parser = subparsers.add_parser("run-alpha101-demo", help="Run deterministic Alpha101 research demo")
-    run_parser.add_argument(
-        "--factors",
-        default=",".join(IMPLEMENTED_ALPHA101_FACTORS),
-        help="Comma separated factor names",
-    )
-    run_parser.add_argument("--n-dates", type=int, default=160, help="Number of business dates in demo panel")
-    run_parser.add_argument("--n-codes", type=int, default=8, help="Number of securities in demo panel")
-    run_parser.add_argument("--seed", type=int, default=7, help="Random seed for deterministic demo panel")
-    run_parser.add_argument("--truth-csv", default="", help="Optional external truth CSV for factor-by-factor comparison")
-    run_parser.add_argument("--truth-tolerance", type=float, default=1e-12, help="Absolute tolerance for truth comparison")
+    run_demo_parser = subparsers.add_parser("run-alpha101-demo", help="Run Alpha101 demo research job")
+    run_demo_parser.add_argument("--factors", default="alpha1,alpha2,alpha3", help="Factor names")
+    run_demo_parser.add_argument("--n-dates", type=int, default=252)
+    run_demo_parser.add_argument("--n-codes", type=int, default=50)
+    run_demo_parser.add_argument("--seed", type=int, default=42)
+    run_demo_parser.add_argument("--truth-csv", default="")
+    run_demo_parser.add_argument("--truth-tolerance", type=float, default=1e-12)
 
-    factor_set_parser = subparsers.add_parser("run-factor-set-demo", help="Run deterministic WQ101/GTJA191 factor_lab demo")
-    factor_set_parser.add_argument("--factor-set", choices=["wq101", "gtja191", "alpha158"], required=True)
-    factor_set_parser.add_argument(
-        "--factors",
-        default="",
-        help="Comma separated factor names. Defaults to WQ101 Alpha1-10 or GTJA191 Alpha1-10.",
-    )
-    factor_set_parser.add_argument("--n-dates", type=int, default=160, help="Number of business dates in demo panel")
-    factor_set_parser.add_argument("--n-codes", type=int, default=8, help="Number of securities in demo panel")
-    factor_set_parser.add_argument("--seed", type=int, default=7, help="Random seed for deterministic demo panel")
-    factor_set_parser.add_argument("--truth-csv", default="", help="Optional external truth CSV for factor-by-factor comparison")
-    factor_set_parser.add_argument("--truth-tolerance", type=float, default=1e-12, help="Absolute tolerance for truth comparison")
+    run_factor_set_parser = subparsers.add_parser("run-factor-set-demo", help="Run factor set demo")
+    run_factor_set_parser.add_argument("--factor-set", choices=["wq101", "gtja191", "alpha158"], required=True)
+    run_factor_set_parser.add_argument("--factors", default="")
+    run_factor_set_parser.add_argument("--n-dates", type=int, default=252)
+    run_factor_set_parser.add_argument("--n-codes", type=int, default=50)
+    run_factor_set_parser.add_argument("--seed", type=int, default=42)
+    run_factor_set_parser.add_argument("--truth-csv", default="")
+    run_factor_set_parser.add_argument("--truth-tolerance", type=float, default=1e-12)
 
-    research_parser = subparsers.add_parser("run-factor-research", help="Run factor_lab research on demo or amazingdata")
-    research_parser.add_argument("--factor-set", choices=["wq101", "gtja191"], required=True)
-    research_parser.add_argument("--data-source", choices=["demo", "amazingdata"], default="demo")
-    research_parser.add_argument("--factors", default="", help="Comma separated factor names")
-    research_parser.add_argument("--start", default="", help="Start date for amazingdata jobs")
-    research_parser.add_argument("--end", default="", help="End date for amazingdata jobs")
-    research_parser.add_argument("--universe", default="csi800", help="Universe label for amazingdata selection")
-    research_parser.add_argument("--symbols", default="", help="Comma separated explicit symbols")
-    research_parser.add_argument("--max-symbols", type=int, default=300, help="Maximum symbols selected from amazingdata")
-    research_parser.add_argument("--n-dates", type=int, default=160, help="Demo dates")
-    research_parser.add_argument("--n-codes", type=int, default=8, help="Demo codes")
-    research_parser.add_argument("--seed", type=int, default=7, help="Demo random seed")
-    research_parser.add_argument("--horizon", type=int, default=1, help="Forward return horizon")
-    research_parser.add_argument("--quantiles", type=int, default=5, help="Validation quantiles")
-    research_parser.add_argument("--warmup-calendar-days", type=int, default=420, help="Warmup calendar days for real data")
-    research_parser.add_argument("--env-file", default="", help="Optional amazingdata env file path")
+    run_research_parser = subparsers.add_parser("run-factor-research", help="Run factor research with real or demo data")
+    run_research_parser.add_argument("--factor-set", choices=["wq101", "gtja191", "alpha158"], required=True)
+    run_research_parser.add_argument("--factors", default="")
+    run_research_parser.add_argument("--data-source", choices=["demo", "amazingdata"], default="demo")
+    run_research_parser.add_argument("--start", default="")
+    run_research_parser.add_argument("--end", default="")
+    run_research_parser.add_argument("--universe", default="csi300")
+    run_research_parser.add_argument("--symbols", default="")
+    run_research_parser.add_argument("--max-symbols", type=int, default=300)
+    run_research_parser.add_argument("--n-dates", type=int, default=252)
+    run_research_parser.add_argument("--n-codes", type=int, default=50)
+    run_research_parser.add_argument("--seed", type=int, default=42)
+    run_research_parser.add_argument("--horizon", type=int, default=5)
+    run_research_parser.add_argument("--quantiles", type=int, default=5)
+    run_research_parser.add_argument("--warmup-calendar-days", type=int, default=504)
+    run_research_parser.add_argument("--env-file", default="")
+
+    # ── NEW: explore command (agent-first one-click pipeline) ──
+    explore_parser = subparsers.add_parser(
+        "explore",
+        help="🚀 One-click factor exploration with auto-data + validation gates",
+    )
+    explore_parser.add_argument(
+        "--goal", default="",
+        help="Human-readable goal, e.g. 'low volatility quality factors'",
+    )
+    explore_parser.add_argument(
+        "--universe", default="csi300",
+        choices=["csi300", "csi500", "csi800", "all"],
+        help="Stock universe (default: csi300)",
+    )
+    explore_parser.add_argument(
+        "--factor-set", default="alpha101",
+        choices=["alpha101", "wq101", "gtja191", "alpha158"],
+        help="Factor family to explore",
+    )
+    explore_parser.add_argument(
+        "--factors", default="",
+        help="Comma-separated factor names; omit for auto top-10",
+    )
+    explore_parser.add_argument(
+        "--start", default="2023-01-01",
+        help="Start date for data",
+    )
+    explore_parser.add_argument(
+        "--end", default="2025-12-31",
+        help="End date for data",
+    )
+    explore_parser.add_argument(
+        "--top-n", type=int, default=10,
+        help="Number of top factors to report",
+    )
+    explore_parser.add_argument(
+        "--cache-dir", default="/tmp/agentmatrix_cache",
+        help="Cache directory for market data",
+    )
+    explore_parser.add_argument(
+        "--output", default="",
+        help="Output JSON file path (default: stdout)",
+    )
+    explore_parser.add_argument(
+        "--format", default="json",
+        choices=["json", "markdown"],
+        help="Output format",
+    )
+
+    # ── NEW: gate command (standalone validation gate) ──
+    gate_parser = subparsers.add_parser(
+        "gate",
+        help="🔐 Run validation gates on factor evaluation results",
+    )
+    gate_parser.add_argument(
+        "--input", required=True,
+        help="Path to factor evaluation JSON",
+    )
+    gate_parser.add_argument(
+        "--format", default="json",
+        choices=["json", "markdown"],
+        help="Output format",
+    )
 
     return parser
 
@@ -126,20 +181,11 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
-
     config = FactorLabWorkspaceConfig()
 
     if args.command == "init-workspace":
-        payload = {key: str(value) for key, value in config.ensure_directories().items()}
-        print(json.dumps(payload, ensure_ascii=False, indent=2))
-        return
-
-    if args.command == "export-alpha101":
-        specs = alpha101_specs()
-        payload = export_library_specs(config=config, library="alpha101", specs=specs)
-        proof_factor = next((item for item in specs if item.factor_name == args.proof_factor), specs[0])
-        payload["proof_path"] = export_proof_template(config=config, spec=proof_factor)
-        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        config.init_dirs()
+        print(json.dumps({"ok": True, "workspace": str(config.workspace_dir)}))
         return
 
     if args.command == "overview":
@@ -147,51 +193,7 @@ def main() -> None:
         return
 
     if args.command == "check-amazingdata":
-        payload = {"env_file": args.env_file} if args.env_file else {}
-        print(json.dumps(check_amazingdata(payload), ensure_ascii=False, indent=2))
-        return
-
-    if args.command == "export-alpha101-truth-template":
-        factor_names = [item.strip() for item in args.factors.split(",") if item.strip()]
-        payload = export_alpha101_truth_template(
-            {
-                "factor_names": factor_names,
-                "n_dates": args.n_dates,
-                "n_codes": args.n_codes,
-                "seed": args.seed,
-                "template_name": args.template_name,
-            },
-            config=config,
-        )
-        print(json.dumps(payload, ensure_ascii=False, indent=2))
-        return
-
-    if args.command == "validate-alpha101-truth":
-        factor_names = [item.strip() for item in args.factors.split(",") if item.strip()]
-        payload = validate_alpha101_truth_csv(
-            {
-                "factor_names": factor_names,
-                "truth_csv_path": args.truth_csv,
-            },
-            config=config,
-        )
-        print(json.dumps(payload, ensure_ascii=False, indent=2))
-        return
-
-    if args.command == "run-alpha101-proof-batch":
-        factor_names = [item.strip() for item in args.factors.split(",") if item.strip()]
-        payload = run_alpha101_truth_proof_batch(
-            {
-                "factor_names": factor_names,
-                "truth_csv_path": args.truth_csv,
-                "truth_tolerance": args.truth_tolerance,
-                "n_dates": args.n_dates,
-                "n_codes": args.n_codes,
-                "seed": args.seed,
-                "data_source": "demo",
-            },
-            config=config,
-        )
+        payload = check_amazingdata({"env_file": args.env_file} if args.env_file else None)
         print(json.dumps(payload, ensure_ascii=False, indent=2))
         return
 
@@ -199,8 +201,39 @@ def main() -> None:
         print(json.dumps({"items": list_alpha101_factors(config)}, ensure_ascii=False, indent=2))
         return
 
-    if args.command == "list-factor-set":
-        print(json.dumps({"items": list_factor_set_factors(args.factor_set, config)}, ensure_ascii=False, indent=2))
+    if args.command == "export-alpha101":
+        payload = export_library_specs(proof_factor=args.proof_factor, config=config)
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return
+
+    if args.command == "export-alpha101-truth-template":
+        factor_names = [item.strip() for item in args.factors.split(",") if item.strip()]
+        from research_core.factor_lab.truth import build_truth_template
+        df = build_truth_template(factor_names=factor_names, n_dates=args.n_dates, n_codes=args.n_codes, seed=args.seed)
+        template_name = args.template_name or f"alpha101_truth_{args.n_dates}d_{args.n_codes}c"
+        out = config.workspace_dir / f"{template_name}.csv"
+        df.to_csv(out, index=False)
+        print(json.dumps({"ok": True, "path": str(out), "shape": list(df.shape)}))
+        return
+
+    if args.command == "validate-alpha101-truth":
+        factor_names = [item.strip() for item in args.factors.split(",") if item.strip()]
+        payload = validate_alpha101_truth_csv(args.truth_csv, factor_names)
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return
+
+    if args.command == "run-alpha101-proof-batch":
+        factor_names = [item.strip() for item in args.factors.split(",") if item.strip()]
+        payload = run_alpha101_truth_proof_batch(
+            args.truth_csv,
+            factor_names=factor_names,
+            truth_tolerance=args.truth_tolerance,
+            n_dates=args.n_dates,
+            n_codes=args.n_codes,
+            seed=args.seed,
+            config=config,
+        )
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
         return
 
     if args.command == "run-alpha101-demo":
@@ -267,6 +300,64 @@ def main() -> None:
         }
         payload = run_factor_set_research_job(request_payload, config=config)
         print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return
+
+    # ── NEW: explore command ─────────────────────────────────
+    if args.command == "explore":
+        from research_core.factor_lab.agent_pipeline import explore, explore_to_markdown
+
+        factor_list = None
+        if args.factors:
+            factor_list = [f.strip() for f in args.factors.split(",") if f.strip()]
+
+        result = explore(
+            goal=args.goal or f"explore {args.factor_set} on {args.universe}",
+            universe=args.universe,
+            factor_set=args.factor_set,
+            factors=factor_list,
+            start=args.start,
+            end=args.end,
+            top_n=args.top_n,
+            cache_dir=args.cache_dir,
+            workspace=config,
+        )
+
+        if args.format == "markdown":
+            print(explore_to_markdown(result))
+        else:
+            print(json.dumps({
+                "gate_verdict": result.gate_verdict,
+                "factors_tested": result.factors_tested,
+                "factors_passed": result.factors_passed,
+                "elapsed_seconds": result.elapsed_seconds,
+                "universe": result.universe,
+                "n_stocks": result.n_stocks,
+                "top_factors": result.top_factors,
+                "summary": result.summary,
+                "next_actions": result.next_actions,
+            }, ensure_ascii=False, indent=2))
+        return
+
+    # ── NEW: gate command ────────────────────────────────────
+    if args.command == "gate":
+        from research_core.factor_lab.validation_gate import ValidationGate
+
+        with open(args.input, "r") as f:
+            data = json.load(f)
+
+        gate = ValidationGate()
+        factors = data if isinstance(data, list) else data.get("factors", [data])
+        verdicts = gate.batch_evaluate(factors)
+
+        if args.format == "markdown":
+            print(gate.summary_markdown(verdicts))
+        else:
+            output = {
+                "passed": sum(1 for v in verdicts if v.passed),
+                "total": len(verdicts),
+                "verdicts": [v.to_dict() for v in verdicts],
+            }
+            print(json.dumps(output, ensure_ascii=False, indent=2))
         return
 
 
