@@ -59,7 +59,7 @@ def validate_alpha101_factors(
 ) -> dict[str, Any]:
     """Run alpha101 validation on specified factors."""
     cmd = [
-        "python", "-m", "research_core.factor_lab.cli",
+        sys.executable, "-m", "research_core.factor_lab.cli",
         "run-alpha101-demo",
         "--factors", ",".join(factors),
         "--n-dates", str(n_dates),
@@ -207,7 +207,7 @@ def validate_submission(sub_dir: str) -> dict[str, Any]:
 def validate_pipeline_smoke() -> dict[str, Any]:
     result = run_cli_command(
         [
-            "python", "-m", "research_core.factor_lab.cli",
+            sys.executable, "-m", "research_core.factor_lab.cli",
             "run-factor-research",
             "--factor-set", "wq101",
             "--data-source", "demo",
