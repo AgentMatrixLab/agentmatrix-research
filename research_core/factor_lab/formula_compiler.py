@@ -265,6 +265,18 @@ DEFAULT_FIELD_MAP: dict[str, str] = {
 }
 
 
+def _extract_field_name(node: Expr) -> str:
+    """Extract the column name from a Field AST node, applying the field_map."""
+    if isinstance(node, Field):
+        return DEFAULT_FIELD_MAP.get(node.name.upper(), node.name.lower())
+    # If it's not a bare field (e.g., a string literal or computed expr),
+    # fall back to using the expression directly.
+    raise ValueError(
+        f"INDNEUTRALIZE group argument must be a field name (e.g. sector, industry), "
+        f"got {type(node).__name__}"
+    )
+
+
 # ── Operator registry ───────────────────────────────────────────────────
 
 # (python_callable, num_series_args) — the last positional arg is always the
@@ -280,7 +292,7 @@ _PANEL_OPERATORS: dict[str, tuple[str, int]] = {
     "MIN":           ("ts_min",                1),
     "DECAY_LINEAR":  ("ts_decay_linear",       1),
     "SCALE":         ("cross_sectional_scale", 1),
-    "INDNEUTRALIZE": ("indneutralize",         2),   # (value_expr, group_field)
+    "INDNEUTRALIZE": ("indneutralize",         1),   # (value_expr, group_field_name)
     "CORR":          ("rolling_corr",          2),
     "COV":           ("rolling_cov",           2),
 }
@@ -346,6 +358,11 @@ class CodeGenerator:
 
         if isinstance(node, Field):
             col = self.field_map.get(node.name.upper(), node.name.lower())
+            # VWAP is a computed field, not a raw DataFrame column
+            if col == "vwap":
+                var = self._next_var()
+                self.statements.append(f"{var} = compute_vwap(df)")
+                return var
             return f'df["{col}"]'
 
         # ── unary ───────────────────────────────────────────────────
@@ -406,7 +423,13 @@ class CodeGenerator:
                 arg_vars = [self._gen(a) for a in node.args]
                 var = self._next_var()
                 py_func = _SERIES_OPERATORS[func_name]
-                self.statements.append(f"{var} = {py_func}({', '.join(arg_vars)})")
+                if func_name == "LOG":
+                    # Safe log: replace zeros/negatives with NaN first
+                    self.statements.append(
+                        f"{var} = np.log(pd.Series({arg_vars[0]}).replace(0, np.nan).clip(lower=1e-30))"
+                    )
+                else:
+                    self.statements.append(f"{var} = {py_func}({', '.join(arg_vars)})")
                 return var
 
             # Long-panel operators that need df.assign
@@ -432,11 +455,11 @@ class CodeGenerator:
                             f"{var} = {py_func}({assign}, \"{col_name}\", scale={scale})"
                         )
                     elif func_name == "INDNEUTRALIZE":
-                        # Second arg is a group-column name (a field, not an expression)
-                        # param_vars[0] is the group column reference
-                        group_col = param_vars[0] if param_vars else f'"{self.field_map.get("INDUSTRY", "industry")}"'
+                        # Second arg is a group-column FIELD NAME (not an expression).
+                        # Extract the actual column name from the AST directly.
+                        group_col_name = _extract_field_name(node.args[1])
                         self.statements.append(
-                            f"{var} = {py_func}({assign}, \"{col_name}\", {group_col})"
+                            f"{var} = {py_func}({assign}, \"{col_name}\", \"{group_col_name}\")"
                         )
                     else:
                         # TS_RANK, DELTA, MEAN, STD, SUM, MAX, MIN, DECAY_LINEAR
