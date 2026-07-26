@@ -40,6 +40,7 @@ def run_factor_backtest(
     end_time: str,
     factor_expression: str | None = None,
     factor_id: str | None = None,
+    top_k: int | None = None,
     top_pct: float = 0.1,
     horizon: int = 5,
     long_short: bool = False,          # ← 已改回 v1 默认值 False
@@ -78,6 +79,7 @@ def run_factor_backtest(
     nav = 1.0
     peak = 1.0
     drawdowns: list[float] = []
+    resolved_top_pct: float | None = None
 
     for i in range(len(daily_dates) - horizon):
         rebal_date = daily_dates[i]
@@ -91,8 +93,16 @@ def run_factor_backtest(
 
         section = section.sort_values('factor', ascending=False)
         n = len(section)
-        long_n = int(n * top_pct)
-        short_n = int(n * top_pct)
+        if top_k is not None:
+            long_n = min(top_k, n)
+            short_n = min(top_k, n)
+            if resolved_top_pct is None:
+                resolved_top_pct = long_n / n if n else 0.0
+        else:
+            long_n = max(1, int(n * top_pct))
+            short_n = max(1, int(n * top_pct))
+            if resolved_top_pct is None:
+                resolved_top_pct = long_n / n if n else 0.0
 
         long_stocks = section.head(long_n).index
         short_stocks = section.tail(short_n).index
@@ -181,7 +191,8 @@ def run_factor_backtest(
         diagnostics={
             "factor_id": definition.factor_id,
             "expression": definition.expression,
-            "top_pct": top_pct,
+            "top_k": top_k,
+            "top_pct": resolved_top_pct if resolved_top_pct is not None else top_pct,
             "horizon": horizon,
             "long_short": long_short,
             "neutralize": neutralize,
