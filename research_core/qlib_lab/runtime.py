@@ -1,4 +1,3 @@
-from common.paths import data_path, runtime_path, ensure_cross_platform, get_platform_aware_command
 from __future__ import annotations
 
 import os
@@ -6,7 +5,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from common.paths import data_path, runtime_path
+from common.paths import data_path, ensure_cross_platform, runtime_path
 
 
 REGION_ALIASES = {
