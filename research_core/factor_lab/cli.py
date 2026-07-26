@@ -20,6 +20,7 @@ from research_core.factor_lab.service import (
     run_alpha101_truth_proof_batch,
     validate_alpha101_truth_csv,
 )
+from research_core.factor_lab.validation import export_proof_template
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -33,7 +34,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     subparsers.add_parser("list-alpha101", help="List Alpha101 factor specs and proof status")
     list_factor_set_parser = subparsers.add_parser("list-factor-set", help="List WQ101 or GTJA191 factor specs and proof status")
-    list_factor_set_parser.add_argument("--factor-set", choices=["wq101", "gtja191", "alpha158"], required=True)
+    list_factor_set_parser.add_argument("--factor-set", choices=["wq101", "gtja191", "alpha158", "barra"], required=True)
 
     catalog_parser = subparsers.add_parser("export-alpha101", help="Export Alpha101 catalog and spec payload")
     catalog_parser.add_argument("--proof-factor", default="alpha1", help="Also export one proof template for the selected factor")
@@ -87,7 +88,7 @@ def build_parser() -> argparse.ArgumentParser:
     run_demo_parser.add_argument("--truth-tolerance", type=float, default=1e-12)
 
     run_factor_set_parser = subparsers.add_parser("run-factor-set-demo", help="Run factor set demo")
-    run_factor_set_parser.add_argument("--factor-set", choices=["wq101", "gtja191", "alpha158"], required=True)
+    run_factor_set_parser.add_argument("--factor-set", choices=["wq101", "gtja191", "alpha158", "barra"], required=True)
     run_factor_set_parser.add_argument("--factors", default="")
     run_factor_set_parser.add_argument("--n-dates", type=int, default=252)
     run_factor_set_parser.add_argument("--n-codes", type=int, default=50)
@@ -105,7 +106,7 @@ def build_parser() -> argparse.ArgumentParser:
     real_parser.add_argument("--quantile", type=float, default=0.2, help="Top/bottom quantile for long-short backtest")
 
     run_research_parser = subparsers.add_parser("run-factor-research", help="Run factor research with real or demo data")
-    run_research_parser.add_argument("--factor-set", choices=["wq101", "gtja191", "alpha158"], required=True)
+    run_research_parser.add_argument("--factor-set", choices=["wq101", "gtja191", "alpha158", "barra"], required=True)
     run_research_parser.add_argument("--factors", default="")
     run_research_parser.add_argument("--data-source", choices=["demo", "amazingdata"], default="demo")
     run_research_parser.add_argument("--start", default="")
@@ -137,7 +138,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     explore_parser.add_argument(
         "--factor-set", default="alpha101",
-        choices=["alpha101", "wq101", "gtja191", "alpha158"],
+        choices=["alpha101", "wq101", "gtja191", "alpha158", "barra"],
         help="Factor family to explore",
     )
     explore_parser.add_argument(
@@ -194,8 +195,8 @@ def main() -> None:
     config = FactorLabWorkspaceConfig()
 
     if args.command == "init-workspace":
-        config.init_dirs()
-        print(json.dumps({"ok": True, "workspace": str(config.workspace_dir)}))
+        payload = {key: str(value) for key, value in config.ensure_directories().items()}
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
         return
 
     if args.command == "overview":
@@ -203,27 +204,39 @@ def main() -> None:
         return
 
     if args.command == "check-amazingdata":
-        payload = check_amazingdata({"env_file": args.env_file} if args.env_file else None)
-        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        payload = {"env_file": args.env_file} if args.env_file else {}
+        print(json.dumps(check_amazingdata(payload), ensure_ascii=False, indent=2))
         return
 
     if args.command == "list-alpha101":
         print(json.dumps({"items": list_alpha101_factors(config)}, ensure_ascii=False, indent=2))
         return
 
+    if args.command == "list-factor-set":
+        print(json.dumps({"items": list_factor_set_factors(args.factor_set, config)}, ensure_ascii=False, indent=2))
+        return
+
     if args.command == "export-alpha101":
-        payload = export_library_specs(proof_factor=args.proof_factor, config=config)
+        specs = alpha101_specs()
+        payload = export_library_specs(config=config, library="alpha101", specs=specs)
+        proof_factor = next((item for item in specs if item.factor_name == args.proof_factor), specs[0])
+        payload["proof_path"] = export_proof_template(config=config, spec=proof_factor)
         print(json.dumps(payload, ensure_ascii=False, indent=2))
         return
 
     if args.command == "export-alpha101-truth-template":
         factor_names = [item.strip() for item in args.factors.split(",") if item.strip()]
-        from research_core.factor_lab.truth import build_truth_template
-        df = build_truth_template(factor_names=factor_names, n_dates=args.n_dates, n_codes=args.n_codes, seed=args.seed)
-        template_name = args.template_name or f"alpha101_truth_{args.n_dates}d_{args.n_codes}c"
-        out = config.workspace_dir / f"{template_name}.csv"
-        df.to_csv(out, index=False)
-        print(json.dumps({"ok": True, "path": str(out), "shape": list(df.shape)}))
+        payload = export_alpha101_truth_template(
+            {
+                "factor_names": factor_names,
+                "n_dates": args.n_dates,
+                "n_codes": args.n_codes,
+                "seed": args.seed,
+                "template_name": args.template_name,
+            },
+            config=config,
+        )
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
         return
 
     if args.command == "validate-alpha101-truth":
@@ -306,7 +319,13 @@ def main() -> None:
         return
 
     if args.command == "run-factor-research":
-        default_factors = WQ101_ALPHA_1_10 if args.factor_set == "wq101" else IMPLEMENTED_GTJA191_FACTORS
+        if args.factor_set == "wq101":
+            default_factors = WQ101_ALPHA_1_10
+        elif args.factor_set == "gtja191":
+            default_factors = IMPLEMENTED_GTJA191_FACTORS
+        else:
+            from research_core.factor_lab.libraries.factor_sets import ALPHA158_ALL_FACTORS
+            default_factors = ALPHA158_ALL_FACTORS
         factor_names = [item.strip() for item in args.factors.split(",") if item.strip()] if args.factors else list(default_factors)
         request_payload = {
             "factor_set": args.factor_set,
@@ -385,6 +404,53 @@ def main() -> None:
                 "verdicts": [v.to_dict() for v in verdicts],
             }
             print(json.dumps(output, ensure_ascii=False, indent=2))
+        return
+
+    # ── evaluate command (full IC evaluation pipeline) ──
+    eval_parser = subparsers.add_parser(
+        "evaluate",
+        help="Full factor IC evaluation (rank IC, decay, turnover, sector neutrality)",
+    )
+    eval_parser.add_argument("--factor-csv", required=True, help="CSV with date,code,factor_value,next_return,[sector]")
+    eval_parser.add_argument("--factor-name", default="factor", help="Factor display name")
+    eval_parser.add_argument("--sector-col", default="sector", help="Sector column name (if available)")
+    eval_parser.add_argument("--output-json", default="", help="Optional JSON output path")
+    eval_parser.add_argument("--ic-threshold", type=float, default=0.02, help="Min |IC| to pass")
+    eval_parser.add_argument("--turnover-warn", type=float, default=0.7, help="Turnover rate warning threshold")
+
+    if args.command == "evaluate":
+        import pandas as pd
+        from research_core.factor_lab.evaluation import evaluate_factor, evaluation_summary
+
+        df = pd.read_csv(args.factor_csv)
+        if "date" in df.columns:
+            df["date"] = pd.to_datetime(df["date"])
+
+        report = evaluate_factor(
+            df, args.factor_name,
+            factor_col="factor_value", return_col="next_return",
+            sector_col=args.sector_col if args.sector_col in df.columns else "sector",
+            ic_threshold=args.ic_threshold, turnover_warn=args.turnover_warn,
+        )
+
+        print(evaluation_summary(report))
+        if report.warnings:
+            for w in report.warnings:
+                print(f"  ⚠️  {w}")
+        if args.output_json:
+            import json
+            out = {
+                "factor_name": report.factor_name,
+                "status": report.status,
+                "mean_rank_ic": report.ic_eval.mean_rank_ic if report.ic_eval else None,
+                "rank_icir": report.ic_eval.rank_icir if report.ic_eval else None,
+                "ic_positive_ratio": report.ic_eval.ic_positive_ratio if report.ic_eval else None,
+                "mean_turnover": report.turnover.mean_turnover if report.turnover else None,
+                "ic_decay": report.ic_eval.decay_series.to_dict() if report.ic_eval else {},
+                "warnings": report.warnings,
+            }
+            with open(args.output_json, "w") as f:
+                json.dump(out, f, indent=2, ensure_ascii=False)
         return
 
 
