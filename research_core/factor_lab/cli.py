@@ -186,6 +186,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="Output format",
     )
 
+    # ── evaluate command ──
+    eval_parser = subparsers.add_parser(
+        "evaluate",
+        help="📊 Full factor IC evaluation (rank IC, decay, turnover, sector neutrality)",
+    )
+    eval_parser.add_argument("--factor-csv", required=True, help="CSV with date,code,factor_value,next_return,[sector]")
+    eval_parser.add_argument("--factor-name", default="factor", help="Factor display name")
+    eval_parser.add_argument("--sector-col", default="sector", help="Sector column name (if available)")
+    eval_parser.add_argument("--output-json", default="", help="Optional JSON output path")
+    eval_parser.add_argument("--ic-threshold", type=float, default=0.02, help="Min |IC| to pass")
+    eval_parser.add_argument("--turnover-warn", type=float, default=0.7, help="Turnover rate warning threshold")
+
     return parser
 
 
@@ -406,18 +418,7 @@ def main() -> None:
             print(json.dumps(output, ensure_ascii=False, indent=2))
         return
 
-    # ── evaluate command (full IC evaluation pipeline) ──
-    eval_parser = subparsers.add_parser(
-        "evaluate",
-        help="Full factor IC evaluation (rank IC, decay, turnover, sector neutrality)",
-    )
-    eval_parser.add_argument("--factor-csv", required=True, help="CSV with date,code,factor_value,next_return,[sector]")
-    eval_parser.add_argument("--factor-name", default="factor", help="Factor display name")
-    eval_parser.add_argument("--sector-col", default="sector", help="Sector column name (if available)")
-    eval_parser.add_argument("--output-json", default="", help="Optional JSON output path")
-    eval_parser.add_argument("--ic-threshold", type=float, default=0.02, help="Min |IC| to pass")
-    eval_parser.add_argument("--turnover-warn", type=float, default=0.7, help="Turnover rate warning threshold")
-
+    # ── evaluate command handler ──
     if args.command == "evaluate":
         import pandas as pd
         from research_core.factor_lab.evaluation import evaluate_factor, evaluation_summary

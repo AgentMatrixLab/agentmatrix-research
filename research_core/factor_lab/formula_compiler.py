@@ -104,7 +104,7 @@ _TOKEN_RE = re.compile(r"""
     \s*(?:
         ([A-Za-z_][A-Za-z0-9_]*)               |  # identifier
         ([0-9]*\.?[0-9]+(?:[eE][+-]?[0-9]+)?) |  # number
-        ([+\-*/^(),])                          |  # operator / paren / comma
+        (>=|<=|!=|==|[+\-*/^(),<>])            |  # operator / paren / comma / comparison
         (.+)                                      # error
     )
 """, re.VERBOSE)
@@ -182,7 +182,15 @@ class Parser:
             false_val = self._if_expr()
             self.expect(")")
             return IfExpr(cond, true_val, false_val)
-        return self._add_sub()
+        return self._comparison()
+
+    def _comparison(self) -> Expr:
+        left = self._add_sub()
+        while self.peek()[1] in ("<", ">", "<=", ">=", "==", "!="):
+            op = self.consume()[1]
+            right = self._add_sub()
+            left = BinOp(op, left, right)
+        return left
 
     def _add_sub(self) -> Expr:
         left = self._mul_div()
@@ -357,6 +365,9 @@ class CodeGenerator:
                 self.statements.append(f"{var} = safe_div({left}, {right})")
             elif node.op == "^":
                 self.statements.append(f"{var} = signed_power({left}, {right})")
+            elif node.op in ("<", ">", "<=", ">=", "==", "!="):
+                # Comparison operators → boolean Series
+                self.statements.append(f"{var} = {left} {node.op} {right}")
             else:
                 self.statements.append(f"{var} = {left} {node.op} {right}")
             return var
@@ -367,8 +378,10 @@ class CodeGenerator:
             true_val = self._gen(node.true_val)
             false_val = self._gen(node.false_val)
             var = self._next_var()
+            # Use pd.Series(np.where(...)) to ensure we always get a Series,
+            # even when true_val/false_val are scalars.
             self.statements.append(
-                f"{var} = np.where({cond}.astype(bool), {true_val}, {false_val})"
+                f"{var} = pd.Series(np.where({cond}.astype(bool), {true_val}, {false_val}), index=df.index)"
             )
             return var
 
@@ -406,10 +419,14 @@ class CodeGenerator:
                 param_vars = arg_vars[num_series:]
 
                 if num_series == 1:
-                    # e.g. RANK(x), TS_RANK(x, d)
                     col_name = var
                     assign = f"df.assign({col_name}={series_vars[0]})"
-                    if func_name == "SCALE":
+                    if func_name == "RANK":
+                        # RANK takes no extra parameters
+                        self.statements.append(
+                            f"{var} = {py_func}({assign}, \"{col_name}\")"
+                        )
+                    elif func_name == "SCALE":
                         scale = param_vars[0] if param_vars else "1.0"
                         self.statements.append(
                             f"{var} = {py_func}({assign}, \"{col_name}\", scale={scale})"

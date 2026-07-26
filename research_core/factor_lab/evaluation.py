@@ -417,10 +417,33 @@ def evaluation_summary(report: FactorEvaluationReport) -> str:
     return " | ".join(parts)
 
 
+def compute_forward_returns(df, periods=1, price_col="close", date_col="date", code_col="code"):
+    """Compute forward returns for factor evaluation."""
+    df_sorted = df.sort_values([code_col, date_col]).copy()
+    df_sorted["_fwd_price"] = df_sorted.groupby(code_col)[price_col].shift(-periods)
+    df_sorted["next_return"] = (df_sorted["_fwd_price"] - df_sorted[price_col]) / df_sorted[price_col].replace(0, np.nan)
+    return df_sorted["next_return"]
+
+
+# Backward-compatible shims for existing service.py imports
+
+
+def build_factor_evaluation_report(df, factor_name, **kwargs):
+    """Legacy wrapper → new evaluation pipeline."""
+    return evaluate_factor(df, factor_name, **kwargs)
+
+
+def build_alpha101_evaluation_report(df, factor_name, **kwargs):
+    """Legacy wrapper for alpha101 evaluation."""
+    return evaluate_factor(df, factor_name, factor_col=factor_name, **kwargs)
+
+
 __all__ = [
     "ICResult", "ICIREvaluation", "TurnoverResult",
     "SectorNeutralityResult", "FactorEvaluationReport",
     "compute_ic", "evaluate_ic", "compute_turnover",
     "test_sector_neutrality", "compute_factor_correlation",
     "flag_redundant_factors", "evaluate_factor", "evaluation_summary",
+    "build_factor_evaluation_report", "build_alpha101_evaluation_report",
+    "compute_forward_returns",
 ]
