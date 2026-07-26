@@ -14,9 +14,9 @@ ALPHA158_ALL_FACTORS = IMPLEMENTED_ALPHA158_FACTORS
 
 def compute_wq101_alphas(df: pd.DataFrame, factor_names: list[str] | None = None) -> pd.DataFrame:
     requested = list(factor_names or WQ101_ALPHA_1_10)
-    invalid = [name for name in requested if name not in WQ101_ALPHA_1_10]
+    invalid = [name for name in requested if name not in IMPLEMENTED_ALPHA101_FACTORS]
     if invalid:
-        raise ValueError(f"Unsupported WQ101 Alpha101 1-10 factors: {invalid}")
+        raise ValueError(f"Unsupported WQ101 Alpha101 factors: {invalid}")
     return compute_alpha101_factors(df, factor_names=requested)
 
 
@@ -67,7 +67,7 @@ def compute_factor_set(df: pd.DataFrame, factor_set: str, factor_names: list[str
 def factor_set_specs(factor_set: str):
     normalized = factor_set.lower()
     if normalized in {"wq101", "alpha101"}:
-        return [spec for spec in alpha101_specs() if spec.factor_name in WQ101_ALPHA_1_10]
+        return [spec for spec in alpha101_specs() if spec.factor_name in IMPLEMENTED_ALPHA101_FACTORS]
     if normalized in {"gtja191", "alpha191"}:
         return gtja191_specs()
     if normalized in {"alpha158"}:

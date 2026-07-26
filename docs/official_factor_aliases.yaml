@@ -1,0 +1,12 @@
+# Official Quant API factor aliases.
+#
+# Keep this list conservative. Do not add fuzzy or LLM-guessed mappings here.
+# Format:
+#
+# aliases:
+#   internal_factor_id:
+#     official_factor_id: QuantAPI:momentum_1m
+#     method: manual
+#     note: "Confirmed by research team on YYYY-MM-DD."
+
+aliases: {}
