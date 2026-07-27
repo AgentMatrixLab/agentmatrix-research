@@ -428,14 +428,56 @@ def compute_forward_returns(df, periods=1, price_col="close", date_col="date", c
 # Backward-compatible shims for existing service.py imports
 
 
-def build_factor_evaluation_report(df, factor_name, **kwargs):
-    """Legacy wrapper → new evaluation pipeline."""
-    return evaluate_factor(df, factor_name, **kwargs)
+def build_factor_evaluation_report(
+    panel: pd.DataFrame,
+    factor_frame: pd.DataFrame,
+    *,
+    factor_names: list[str],
+    library: str,
+) -> dict[str, Any]:
+    """Legacy wrapper — compatible with service.py callers. Returns per-factor IC summary."""
+    metrics: dict[str, dict[str, float]] = {}
+    for fname in factor_names:
+        if fname not in factor_frame.columns:
+            continue
+        merged = panel[["date", "code", "close"]].merge(
+            factor_frame[["date", "code", fname]], on=["date", "code"], how="left"
+        )
+        merged["forward_return_1d"] = compute_forward_returns(
+            panel[["date", "code", "close"]].sort_values(["code", "date"]).reset_index(drop=True),
+            price_col="close",
+        )
+        ic_series = merged.groupby("date").apply(
+            lambda g: g[[fname, "forward_return_1d"]].dropna().corr(method="spearman").iloc[0, 1]
+            if len(g.dropna(subset=[fname, "forward_return_1d"])) >= 3
+            else None
+        ).dropna()
+        n_total = int(panel["code"].nunique() * panel["date"].nunique())
+        n_obs = int(merged[fname].notna().sum())
+        metrics[fname] = {
+            "coverage_ratio": round(n_obs / max(n_total, 1), 4),
+            "rank_ic_mean": round(float(ic_series.mean()), 6) if len(ic_series) > 0 else 0.0,
+            "rank_ic_ir": round(float(ic_series.mean() / max(ic_series.std(), 1e-9)), 6) if len(ic_series) > 0 else 0.0,
+            "long_short_mean": round(float(ic_series.mean()), 6) if len(ic_series) > 0 else 0.0,
+        }
+    return {
+        "library": library,
+        "dataset": {
+            "rows": int(len(panel)),
+            "codes": int(panel["code"].nunique()),
+            "dates": int(panel["date"].nunique()),
+        },
+        "summary": {"metrics": metrics, "factor_count": len(metrics)},
+    }
 
 
-def build_alpha101_evaluation_report(df, factor_name, **kwargs):
-    """Legacy wrapper for alpha101 evaluation."""
-    return evaluate_factor(df, factor_name, factor_col=factor_name, **kwargs)
+def build_alpha101_evaluation_report(df, factor_frame, *, factor_names=None, **kwargs):
+    """Legacy wrapper for alpha101 evaluation. Delegates to build_factor_evaluation_report."""
+    if factor_names is None:
+        factor_names = kwargs.pop("factor_names", [])
+    return build_factor_evaluation_report(
+        df, factor_frame, factor_names=list(factor_names), library=kwargs.get("library", "Alpha101")
+    )
 
 
 __all__ = [
