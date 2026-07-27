@@ -459,6 +459,9 @@ def build_factor_evaluation_report(
             "rank_ic_mean": round(float(ic_series.mean()), 6) if len(ic_series) > 0 else 0.0,
             "rank_ic_ir": round(float(ic_series.mean() / max(ic_series.std(), 1e-9)), 6) if len(ic_series) > 0 else 0.0,
             "long_short_mean": round(float(ic_series.mean()), 6) if len(ic_series) > 0 else 0.0,
+            # Required by validation.py:build_validation_report
+            "non_null_count": n_obs,
+            "cross_section_count": int(panel["date"].nunique()),
         }
     return {
         "library": library,

@@ -439,7 +439,6 @@ def main() -> None:
             for w in report.warnings:
                 print(f"  ⚠️  {w}")
         if args.output_json:
-            import json
             out = {
                 "factor_name": report.factor_name,
                 "status": report.status,
