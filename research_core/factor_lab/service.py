@@ -209,8 +209,12 @@ def get_factor_lab_overview(config: FactorLabWorkspaceConfig | None = None) -> d
             {
                 "library": "Barra",
                 "catalog_name": "barra",
-                "status": "planned-bridge",
-                "notes": "待引入真实财务字段口径和风险因子真值。",
+                "spec_count": len(factor_set_specs("barra")),
+                "implemented_count": len(factor_set_specs("barra")),
+                "planned_count": 0,
+                "runtime_root": str(workspace.runtime_root),
+                "status": "active-incremental",
+                "notes": "Barra CNE5 四因子 BP/EY/Lev/NLS 已从回测引擎 barra_4factor 策略提取并接入 factor_lab。",
             },
         ],
     }

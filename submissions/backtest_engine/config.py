@@ -1,17 +1,42 @@
 """
 全局配置 — 改这里就行
+
+路径解析 (双模式):
+  1. 仓库模式: agentmatrix-research 内运行时, 自动检测并跳转到仓库 data/backtest_engine/
+  2. 独立模式: 直接在 submissions/backtest_engine/ 下运行, 用本地 data/ 目录
+  环境变量 BACKTEST_ENGINE_DATA_DIR / BACKTEST_ENGINE_RESULTS_DIR 可强制覆盖
+
+API Token: 使用环境变量 SIM_API_TOKEN, 未设置时从独立模式默认值读取
 """
 import os
 
 # ========== 雷菱 API ==========
 API_BASE = "http://115.159.73.134:8765"
-API_TOKEN = "sk-admin-pNxt77hQYi4druTaMnmJz8GxN5rw49I7"
+API_TOKEN = os.environ.get(
+    "SIM_API_TOKEN",
+    ""  # 独立模式默认值由下游使用方提供
+)
 
-# ========== 本地数据路径 ==========
+# ========== 本地数据路径 (双模式) ==========
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))  # 自动检测项目根目录
-DATA_DIR = os.path.join(BASE_DIR, "data")  # 项目自包含
+
+try:
+    # 仓库模式: agentmatrix-research 内运行
+    from common.paths import data_path, runtime_path  # type: ignore
+    _IN_REPO = True
+    _DEFAULT_DATA_DIR = str(data_path("backtest_engine"))
+    _DEFAULT_RESULTS_DIR = str(runtime_path("backtest_engine", "results"))
+except ImportError:
+    # 独立模式: submissions/backtest_engine/ 下直接运行
+    _IN_REPO = False
+    _DEFAULT_DATA_DIR = os.path.join(BASE_DIR, "data")
+    _DEFAULT_RESULTS_DIR = os.path.join(BASE_DIR, "results")
+
+# 环境变量可覆盖所有模式的默认值
+DATA_DIR = os.environ.get("BACKTEST_ENGINE_DATA_DIR", _DEFAULT_DATA_DIR)
+RESULTS_DIR = os.environ.get("BACKTEST_ENGINE_RESULTS_DIR", _DEFAULT_RESULTS_DIR)
+
 STRATEGY_DIR = os.path.join(BASE_DIR, "strategies")
-RESULTS_DIR = os.path.join(BASE_DIR, "results")
 OUTPUT_DIR = RESULTS_DIR  # generate_report 输出目录
 
 # ========== 回测参数 ==========

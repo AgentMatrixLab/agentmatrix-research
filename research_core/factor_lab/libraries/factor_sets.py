@@ -3,6 +3,7 @@ from __future__ import annotations
 import pandas as pd
 
 from research_core.factor_lab.libraries.alpha101 import IMPLEMENTED_ALPHA101_FACTORS, alpha101_specs, compute_alpha101_factors
+from research_core.factor_lab.libraries.barra import IMPLEMENTED_BARRA_FACTORS, barra_specs, compute_barra_factors
 from research_core.factor_lab.libraries.gtja191 import IMPLEMENTED_GTJA191_FACTORS, compute_gtja191_alphas, gtja191_specs
 
 
@@ -23,6 +24,8 @@ def compute_factor_set(df: pd.DataFrame, factor_set: str, factor_names: list[str
         return compute_wq101_alphas(df, factor_names=factor_names)
     if normalized in {"gtja191", "alpha191"}:
         return compute_gtja191_alphas(df, factor_names=factor_names)
+    if normalized in {"barra", "barra_style"}:
+        return compute_barra_factors(df, factor_names=factor_names)
     raise ValueError(f"Unsupported factor_set: {factor_set}")
 
 
@@ -32,6 +35,8 @@ def factor_set_specs(factor_set: str):
         return [spec for spec in alpha101_specs() if spec.factor_name in WQ101_ALPHA_1_10]
     if normalized in {"gtja191", "alpha191"}:
         return gtja191_specs()
+    if normalized in {"barra", "barra_style"}:
+        return barra_specs()
     raise ValueError(f"Unsupported factor_set: {factor_set}")
 
 
@@ -41,13 +46,18 @@ def factor_set_library_name(factor_set: str) -> str:
         return "Alpha101"
     if normalized in {"gtja191", "alpha191"}:
         return "GTJA191"
+    if normalized in {"barra", "barra_style"}:
+        return "Barra"
     raise ValueError(f"Unsupported factor_set: {factor_set}")
 
 
 __all__ = [
     "IMPLEMENTED_ALPHA101_FACTORS",
+    "IMPLEMENTED_BARRA_FACTORS",
     "IMPLEMENTED_GTJA191_FACTORS",
     "WQ101_ALPHA_1_10",
+    "barra_specs",
+    "compute_barra_factors",
     "compute_factor_set",
     "compute_gtja191_alphas",
     "compute_wq101_alphas",
