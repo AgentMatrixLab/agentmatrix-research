@@ -483,6 +483,10 @@ def build_alpha101_evaluation_report(df, factor_frame, *, factor_names=None, **k
     )
 
 
+# backward-compat alias — ci_factor_validate.py still imports this name
+summarize_factor_frame = build_factor_evaluation_report
+
+
 __all__ = [
     "ICResult", "ICIREvaluation", "TurnoverResult",
     "SectorNeutralityResult", "FactorEvaluationReport",
@@ -490,5 +494,5 @@ __all__ = [
     "test_sector_neutrality", "compute_factor_correlation",
     "flag_redundant_factors", "evaluate_factor", "evaluation_summary",
     "build_factor_evaluation_report", "build_alpha101_evaluation_report",
-    "compute_forward_returns",
+    "compute_forward_returns", "summarize_factor_frame",
 ]
