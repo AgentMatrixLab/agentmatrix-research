@@ -33,6 +33,30 @@ DEFAULT_EXPRESSIONS = [
     ),
 ]
 
+# ── Multi-LLM provider support ──
+_PROVIDER_PRESETS: dict[str, tuple[str, str, str]] = {
+    "openai":    ("https://api.openai.com/v1",       "OPENAI_API_KEY",      "gpt-4.1-mini"),
+    "deepseek":  ("https://api.deepseek.com",        "DEEPSEEK_API_KEY",    "deepseek-chat"),
+    "qwen":      ("https://dashscope.aliyuncs.com/compatible-mode/v1", "QWEN_API_KEY", "qwen-plus"),
+    "zhipu":     ("https://open.bigmodel.cn/api/paas/v4", "ZHIPU_API_KEY",  "glm-4"),
+    "moonshot":  ("https://api.moonshot.cn/v1",       "MOONSHOT_API_KEY",    "moonshot-v1-8k"),
+    "custom":    ("",                                  "QFACTOR_API_KEY",     "gpt-4.1-mini"),
+}
+
+
+def _get_llm_config(provider: str) -> tuple[str, str, str]:
+    preset = _PROVIDER_PRESETS.get(provider)
+    if preset is None:
+        base_url = provider
+        api_key_env = "QFACTOR_API_KEY"
+        default_model = "gpt-4.1-mini"
+    else:
+        base_url, api_key_env, default_model = preset
+    base_url = os.getenv("QFACTOR_BASE_URL", base_url)
+    model = os.getenv("QFACTOR_MODEL", default_model)
+    api_key = os.getenv("QFACTOR_API_KEY") or os.getenv(api_key_env) or os.getenv("OPENAI_API_KEY", "")
+    return base_url, api_key, model
+
 
 class AIFactorMiner:
     def __init__(self, factor_lab: QlibFactorLab):
