@@ -12,34 +12,30 @@ from __future__ import annotations
 
 import pandas as pd
 
-from research_core.factor_lab.mining_bridge import (
-    parse_expression, _compute_directly,
-)
+try:
+    from research_core.factor_lab.mining_bridge import (
+        parse_expression, _compute_directly,
+    )
+except ImportError:
+    parse_expression = None
+    _compute_directly = lambda *a, **kw: None
 
 
 def compute_expressions(
     panel: pd.DataFrame,
     expressions: list[str],
 ) -> pd.DataFrame:
-    """Compute factor values directly from expressions (no spec registration needed).
-
-    Args:
-        panel: pd.DataFrame with [date, code, open, high, low, close, volume]
-        expressions: list of Qlib expression strings
-
-    Returns:
-        pd.DataFrame with [date, code, *expressions_as_columns]
-    """
+    """Compute factor values directly from expressions (no spec registration needed)."""
     result = panel[["date", "code"]].copy()
     for expr in expressions:
-        # Use expression as column name (safe version)
         col = expr.replace("$", "").replace(" ", "_").replace("(", "_").replace(")", "_").replace("/", "_").replace("-", "_")
-        parsed = parse_expression(expr)
-        if parsed is not None:
-            values = _compute_directly(panel, parsed)
-            if values is not None:
-                result[col] = values.values
-                continue
+        if parse_expression is not None:
+            parsed = parse_expression(expr)
+            if parsed is not None:
+                values = _compute_directly(panel, parsed)
+                if values is not None:
+                    result[col] = values.values
+                    continue
         result[col] = float("nan")
     return result
 
@@ -48,15 +44,7 @@ def compute_ai_factors(
     panel: pd.DataFrame,
     factor_names: list[str],
 ) -> pd.DataFrame:
-    """Compute AI factor values from OHLCV panel (registered factors only).
-
-    Args:
-        panel: pd.DataFrame with [date, code, open, high, low, close, volume]
-        factor_names: list of registered factor names
-
-    Returns:
-        pd.DataFrame with [date, code, *factor_names]
-    """
+    """Compute AI factor values from OHLCV panel (registered factors only)."""
     from research_core.factor_lab.libraries.ai_factors.specs import ai_factors_specs
     spec_map = {s.factor_name: s for s in ai_factors_specs()}
 
@@ -70,11 +58,12 @@ def compute_ai_factors(
         if not expression:
             result[name] = float("nan")
             continue
-        parsed = parse_expression(expression)
-        if parsed is not None:
-            values = _compute_directly(panel, parsed)
-            if values is not None:
-                result[name] = values.values
-                continue
+        if parse_expression is not None:
+            parsed = parse_expression(expression)
+            if parsed is not None:
+                values = _compute_directly(panel, parsed)
+                if values is not None:
+                    result[name] = values.values
+                    continue
         result[name] = float("nan")
     return result
