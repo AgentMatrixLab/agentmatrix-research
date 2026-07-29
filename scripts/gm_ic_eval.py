@@ -3,10 +3,11 @@
 Usage: python gm_ic_eval.py <TOKEN> <factor_name>
 Computes factor via GM SDK, evaluates IC against price returns.
 """
-import sys, numpy as np, pandas as pd
+import sys, os, numpy as np, pandas as pd
 
-PROJECT_DIR = "C:/Users/lorenzoteng/.goldminer3/projects"
-sys.path.insert(0, PROJECT_DIR)
+PROJECT_DIR = os.environ.get("GM_PROJECT_DIR", "")
+if PROJECT_DIR:
+    sys.path.insert(0, PROJECT_DIR)
 
 STOCKS = [
     "SHSE.600519","SHSE.600036","SHSE.601318","SHSE.600900","SHSE.601166",
