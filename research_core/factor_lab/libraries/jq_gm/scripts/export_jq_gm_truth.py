@@ -8,7 +8,13 @@ export_jq_gm_truth.py — 在 GM 掘金终端里直接运行。
 """
 
 import pandas as pd
-from gm_factor_lib import calc_factors
+
+try:
+    from gm_factor_lib import calc_factors
+    _GM_AVAILABLE = True
+except ImportError:
+    _GM_AVAILABLE = False
+    print("WARNING: gm_factor_lib not available (GM terminal required)")
 
 # ── 31 个在 v78 达到 MISMATCH=0 的因子 ──
 
