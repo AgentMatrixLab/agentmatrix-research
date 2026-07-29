@@ -78,6 +78,34 @@ const REQUEST_TIMEOUT_MS = 8000;
 const COVERAGE_WARN_THRESHOLD = 0.6;
 const COVERAGE_DANGER_THRESHOLD = 0.3;
 const LONG_SHORT_MEAN_HELP = "多空分组收益均值（日频，demo 数据）";
+const FACTOR_TABLE_LABELS = [
+  "Select",
+  "Factor",
+  "Library",
+  "Market",
+  "Category",
+  "Proof",
+  "Truth",
+  "Coverage",
+  "IC Mean",
+  "IR",
+  "Long-short",
+  "Checked",
+  "Reuse",
+];
+const MONITOR_TABLE_LABELS = [
+  "Status",
+  "Factor",
+  "Source",
+  "IC_IR",
+  "IC Mean",
+  "Coverage",
+  "Recent IC",
+  "IC Profile",
+  "Direction",
+  "Validation",
+  "Market",
+];
 const ENABLE_AGENT_TASK_DEBUG = true;
 const FACTOR_INTAKE_CONTRACT_DOC = "docs/FACTOR_LAB_INTAKE_REPRODUCTION_CONTRACT.md";
 // AI 任务调试入口暂时关闭。恢复时打开 ENABLE_AGENT_TASK_DEBUG，并恢复 index.html 中对应入口。
@@ -699,6 +727,14 @@ function updateRefreshButton(loading) {
   els.refreshButton.classList.toggle("is-loading", loading);
   els.refreshButton.textContent = loading ? "刷新中..." : "刷新";
   els.refreshButton.setAttribute("aria-busy", String(loading));
+}
+
+function applyTableLabels(row, labels) {
+  Array.from(row.children).forEach((cell, index) => {
+    if (labels[index]) {
+      cell.dataset.label = labels[index];
+    }
+  });
 }
 
 function withCacheBust(url) {
@@ -1466,6 +1502,23 @@ function renderTable() {
   const start = (state.page - 1) * PAGE_SIZE;
   const pageItems = state.filteredFactors.slice(start, start + PAGE_SIZE);
 
+  if (!pageItems.length) {
+    const row = document.createElement("tr");
+    row.className = "empty-row";
+    row.innerHTML = `
+      <td colspan="13" class="empty-cell">
+        <div class="empty-state">
+          <strong>No factors match the current filters.</strong>
+          <span>Adjust market, category, validation, or search filters. The dashboard only reads live Supabase or local API data.</span>
+        </div>
+      </td>
+    `;
+    els.tableBody.appendChild(row);
+    els.pageSummary.textContent = `显示 0-0 / 共 0 个因子`;
+    renderPagination();
+    return;
+  }
+
   pageItems.forEach((factor) => {
     const [proofText, proofClass] = proofBadge(factor.proof_status);
     const openable = canOpenFactor(factor);
@@ -1473,7 +1526,6 @@ function renderTable() {
     const displayName = compactName(factor.factor_name);
     const coverageTone = coverageClass(factor.coverage_ratio);
     const coverageHelp = coverageTitle(factor.coverage_ratio);
-    const marketDetailText = marketDetail(factor);
     const categoryText = factor.metadata?.truth_summary_source ? "真值库" : jqFactorCategory(factor);
     const categoryDetailText = factor.metadata?.truth_summary_source ? "" : factor.subcategory || "";
     const row = document.createElement("tr");
@@ -1495,7 +1547,7 @@ function renderTable() {
         </button>
       </td>
       <td>${escapeHtml(factor.library)}</td>
-      <td>${marketChipHtml(factor)}${marketDetailText ? `<span class="factor-subcategory">${escapeHtml(marketDetailText)}</span>` : ""}</td>
+      <td>${marketChipHtml(factor)}</td>
       <td>${escapeHtml(categoryText)}${categoryDetailText ? `<span class="factor-subcategory">${escapeHtml(categoryDetailText)}</span>` : ""}</td>
       <td><span class="badge ${proofClass}">${proofText}</span></td>
       <td>${truthBadgeHtml(factor)}</td>
@@ -1506,6 +1558,7 @@ function renderTable() {
       <td>${formatDate(factor.latest_checked_at)}</td>
       <td><span class="recommendation ${recommendationClass(factor.reuse_recommendation)}">${escapeHtml(factor.reuse_recommendation)}</span></td>
     `;
+    applyTableLabels(row, FACTOR_TABLE_LABELS);
     const checkbox = row.querySelector("input");
     checkbox.addEventListener("pointerdown", (event) => {
       event.stopPropagation();
@@ -1752,12 +1805,10 @@ function monitorValidationHtml(factor) {
 function monitorMarketHtml(factor) {
   const hints = monitorHints(factor);
   const hint = hints.includes("覆盖率过低") ? `<span class="hint-chip">覆盖率过低</span>` : "";
-  const detail = marketDetail(factor);
   return `
     <span class="market-cell">
       ${marketChipHtml(factor)}
       ${hint}
-      <span class="monitor-source-sub">${escapeHtml(detail)}</span>
     </span>
   `;
 }
@@ -1868,6 +1919,20 @@ function renderMonitor() {
 
   if (!factors.length) {
     els.monitorTableBody.innerHTML = `
+      <tr class="empty-row">
+        <td colspan="11" class="empty-cell">
+          <div class="empty-state">
+            <strong>No monitor rows in this view.</strong>
+            <span>Try another market, category, direction, or IR bucket. Live data still comes from Supabase or the local API.</span>
+          </div>
+        </td>
+      </tr>
+    `;
+    return;
+  }
+
+  if (!factors.length) {
+    els.monitorTableBody.innerHTML = `
       <tr>
         <td colspan="11" class="empty-cell">当前筛选下没有可展示的因子。</td>
       </tr>
@@ -1913,6 +1978,7 @@ function renderMonitor() {
     })
     .join("");
 
+  els.monitorTableBody.querySelectorAll("tr").forEach((row) => applyTableLabels(row, MONITOR_TABLE_LABELS));
   els.monitorTableBody.querySelectorAll("[data-factor-id]").forEach((button) => {
     button.addEventListener("click", () => openDetail(button.dataset.factorId));
   });
@@ -5641,11 +5707,11 @@ function renderStratificationChart(detailData) {
   const maxVal = axis.max;
   const range = maxVal - minVal || 0.4;
   const totalLength = equity.length;
-  const plot = { left: 68, top: 24, right: 884, bottom: 250 };
+  const plot = { left: 74, top: 26, right: 884, bottom: 252 };
   const width = plot.right - plot.left;
   const height = plot.bottom - plot.top;
   
-  let html = `<svg viewBox="0 0 920 310" class="research-svg">`;
+  let html = `<svg viewBox="0 0 920 316" class="research-svg">`;
   
   html += `<line x1="${plot.left}" y1="${plot.top}" x2="${plot.left}" y2="${plot.bottom}" stroke="#dbe4f0" stroke-width="1" />`;
   html += `<line x1="${plot.left}" y1="${plot.bottom}" x2="${plot.right}" y2="${plot.bottom}" stroke="#dbe4f0" stroke-width="1" />`;
@@ -5656,11 +5722,11 @@ function renderStratificationChart(detailData) {
     html += `<text x="${plot.left - 12}" y="${y + 4}" fill="#5f7189" font-size="12" text-anchor="end">${formatCompactAxisTick(val, range)}</text>`;
   });
   
-  const xTicks = evenIndexTicks(dates, 8);
+  const xTicks = evenIndexTicks(dates, 7);
   xTicks.forEach((tick) => {
     const x = plot.left + (tick.index / Math.max(totalLength - 1, 1)) * width;
     html += `<line x1="${x}" y1="${plot.bottom}" x2="${x}" y2="${plot.bottom + 8}" stroke="#dbe4f0" stroke-width="1" />`;
-    html += `<text x="${x}" y="${plot.bottom + 28}" fill="#5f7189" font-size="12" text-anchor="middle">${tick.label}</text>`;
+    html += `<text x="${x}" y="${plot.bottom + 32}" fill="#5f7189" font-size="12" text-anchor="middle">${tick.label}</text>`;
   });
   
   const points = [];
@@ -5836,7 +5902,7 @@ function renderIcTimeSeriesChartV2(detailData) {
   const maxVal = axis.max;
   const range = maxVal - minVal || 1;
   const totalLength = icSeries.length;
-  const plot = { left: 58, top: 28, right: 424, bottom: 158 };
+  const plot = { left: 62, top: 30, right: 426, bottom: 164 };
   const width = plot.right - plot.left;
   const height = plot.bottom - plot.top;
   const zeroY = Math.max(plot.top, Math.min(plot.bottom, plot.bottom - ((0 - minVal) / range) * height));
@@ -5844,7 +5910,7 @@ function renderIcTimeSeriesChartV2(detailData) {
   const visibleBars = Math.ceil(totalLength / displayStep);
   const barWidth = Math.max(3.5, Math.min(8, width / Math.max(visibleBars, 1) - 2));
 
-  let html = `<svg viewBox="0 0 452 220" class="research-svg">`;
+  let html = `<svg viewBox="0 0 452 224" class="research-svg">`;
   html += `<line x1="${plot.left}" y1="${plot.top}" x2="${plot.left}" y2="${plot.bottom}" stroke="#dbe4f0" stroke-width="1" />`;
   html += `<line x1="${plot.left}" y1="${plot.bottom}" x2="${plot.right}" y2="${plot.bottom}" stroke="#dbe4f0" stroke-width="1" />`;
   html += `<text x="${plot.left}" y="16" fill="#5f7189" font-size="12" font-weight="700">IC 值</text>`;
@@ -5868,10 +5934,10 @@ function renderIcTimeSeriesChartV2(detailData) {
     html += `<rect x="${(x - barWidth / 2).toFixed(2)}" y="${(isPositive ? clampedY : zeroY).toFixed(2)}" width="${barWidth.toFixed(2)}" height="${barHeight.toFixed(2)}" rx="1.4" fill="${isPositive ? "#23a66f" : "#e05252"}" opacity="0.66" />`;
   }
 
-  evenIndexTicks(dates, 5).forEach((tick) => {
+  evenIndexTicks(dates, 4).forEach((tick) => {
     const x = plot.left + (tick.index / Math.max(totalLength - 1, 1)) * width;
     html += `<line x1="${x}" y1="${plot.bottom}" x2="${x}" y2="${plot.bottom + 8}" stroke="#dbe4f0" stroke-width="1" />`;
-    html += `<text x="${x}" y="${plot.bottom + 29}" fill="#5f7189" font-size="12" text-anchor="middle">${tick.label}</text>`;
+    html += `<text x="${x}" y="${plot.bottom + 31}" fill="#5f7189" font-size="12" text-anchor="middle">${tick.label}</text>`;
   });
 
   html += `</svg>`;
@@ -5918,7 +5984,7 @@ function renderGroupPerformanceChartV2(detailData) {
   const minVal = axis.min;
   const maxVal = axis.max;
   const range = maxVal - minVal || 0.02;
-  const plot = { left: 58, top: 28, right: 424, bottom: 158 };
+  const plot = { left: 62, top: 30, right: 426, bottom: 164 };
   const width = plot.right - plot.left;
   const height = plot.bottom - plot.top;
   const zeroY = Math.max(plot.top, Math.min(plot.bottom, plot.bottom - ((0 - minVal) / range) * height));
@@ -5926,7 +5992,7 @@ function renderGroupPerformanceChartV2(detailData) {
   const barWidth = Math.max(10, Math.min(22, slotWidth * 0.52));
   const palette = ["#d8e9ff", "#bad7ff", "#93c0ff", "#67a1f2", "#3f7ddd", "#245fc5", "#1f4ca3", "#1b3d86", "#18356e", "#112a58"];
 
-  let html = `<svg viewBox="0 0 452 220" class="research-svg">`;
+  let html = `<svg viewBox="0 0 452 224" class="research-svg">`;
   html += `<line x1="${plot.left}" y1="${plot.top}" x2="${plot.left}" y2="${plot.bottom}" stroke="#dbe4f0" stroke-width="1" />`;
   html += `<line x1="${plot.left}" y1="${plot.bottom}" x2="${plot.right}" y2="${plot.bottom}" stroke="#dbe4f0" stroke-width="1" />`;
   html += `<text x="${plot.left}" y="16" fill="#5f7189" font-size="12" font-weight="700">日均收益</text>`;
@@ -5947,7 +6013,7 @@ function renderGroupPerformanceChartV2(detailData) {
     const isPositive = item.value >= 0;
     const color = item.longShort ? "#f97316" : palette[index % palette.length];
     html += `<rect x="${(x - barWidth / 2).toFixed(2)}" y="${(isPositive ? clampedY : zeroY).toFixed(2)}" width="${barWidth.toFixed(2)}" height="${barHeight.toFixed(2)}" rx="2" fill="${color}" />`;
-    html += `<text x="${x.toFixed(2)}" y="${plot.bottom + 27}" fill="#5f7189" font-size="11" text-anchor="middle">${item.label}</text>`;
+    html += `<text x="${x.toFixed(2)}" y="${plot.bottom + 31}" fill="#5f7189" font-size="11" text-anchor="middle">${item.label}</text>`;
   });
 
   html += `</svg>`;

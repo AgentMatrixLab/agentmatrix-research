@@ -10,9 +10,9 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Factor Lab 因子库</title>
-    <link rel="stylesheet" href="./styles.css?v=20260722-research-chart-polish" />
+    <link rel="stylesheet" href="./styles.css?v=20260729-design-pass" />
   </head>
   <body class="auth-locked">
     <section id="loginView" class="login-view" aria-label="登录">
@@ -98,6 +98,13 @@
         </header>
 
         <section id="libraryView" class="content hidden">
+          <section class="library-head">
+            <div>
+              <h2>因子库</h2>
+              <p>统一展示已接入云端信息库的因子、真值覆盖、复现状态和复用建议。这里用于快速筛选、查看和进入单因子详情。</p>
+            </div>
+          </section>
+
           <section class="category-panel" aria-label="因子分类">
             <div class="filter-row market-filter-row">
               <div class="filter-label">市场：</div>
@@ -428,6 +435,6 @@
       </main>
     </div>
     <script src="./config.js?v=20260722-truth-summary-row-fix"></script>
-    <script src="./app.js?v=20260724-supabase-only"></script>
+    <script src="./app.js?v=20260729-design-pass"></script>
   </body>
 </html>
