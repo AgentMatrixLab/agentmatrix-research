@@ -1058,6 +1058,3 @@ def run_jq_gm_truth_proof_batch(
         "proof_batch_summary": report_payload["summary"],
         "artifacts": job["artifacts"],
     }
-
-
-

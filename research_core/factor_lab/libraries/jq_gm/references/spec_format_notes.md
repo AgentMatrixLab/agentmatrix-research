@@ -84,7 +84,7 @@
 ### 15. validation_targets — 验证阈值 ★
 - **类型**: `list[ValidationThreshold]`（默认 `[]`)
 - **结构**: `{metric, operator, value, description}`
-- **示例**: 
+- **示例**:
   ```
   {metric: "formula_match_ratio", operator: ">=", value: 1.0}
   {metric: "field_mapping_match_ratio", operator: ">=", value: 1.0}
