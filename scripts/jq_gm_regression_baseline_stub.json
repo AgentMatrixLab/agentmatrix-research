@@ -1,0 +1,108 @@
+{
+  "_meta": {
+    "description": "Auto-generated stub regression baseline.",
+    "note": "Detects code changes, NOT correctness.",
+    "seed": 42,
+    "n_dates": 60,
+    "n_codes": 20,
+    "expression_count": 24
+  },
+  "expressions": {
+    "Ref_close,_5____close___1": {
+      "count": 1100,
+      "mean": 0.4034023696018501
+    },
+    "Ref_close,_10____close___1": {
+      "count": 1000,
+      "mean": 0.37407381065414097
+    },
+    "Ref_close,_20____close___1": {
+      "count": 800,
+      "mean": 0.3977209018655896
+    },
+    "close___Ref_close,_5____1": {
+      "count": 1100,
+      "mean": 0.4034023696018501
+    },
+    "close___Ref_close,_20____1": {
+      "count": 800,
+      "mean": 0.3977209018655896
+    },
+    "volume___Mean_volume,_5_": {
+      "count": 1120,
+      "mean": 1.005671958274719
+    },
+    "volume___Mean_volume,_10_": {
+      "count": 1020,
+      "mean": 1.0017812878915975
+    },
+    "volume___Mean_volume,_20_": {
+      "count": 820,
+      "mean": 1.0124589906794002
+    },
+    "Std_close,_5_": {
+      "count": 1100,
+      "mean": 1.1526383620511627
+    },
+    "Std_close,_10_": {
+      "count": 1000,
+      "mean": 1.1980169351523786
+    },
+    "Std_close,_20_": {
+      "count": 800,
+      "mean": 1.2393419265559469
+    },
+    "Std_Ref_close,_1____close,_5_": {
+      "count": 1100,
+      "mean": 1.1526383620511627
+    },
+    "Std_Ref_close,_1____close,_10_": {
+      "count": 1000,
+      "mean": 1.1980169351523786
+    },
+    "Std_Ref_close,_1____close,_20_": {
+      "count": 800,
+      "mean": 1.2393419265559469
+    },
+    "Mean_close,_5_": {
+      "count": 1120,
+      "mean": 53.801972533046396
+    },
+    "Mean_close,_10_": {
+      "count": 1020,
+      "mean": 53.88581102384341
+    },
+    "Mean_close,_20_": {
+      "count": 820,
+      "mean": 53.80683521111627
+    },
+    "Mean_close,_60_": {
+      "count": 20,
+      "mean": 53.67525596068354
+    },
+    "high___low": {
+      "count": 1200,
+      "mean": 1.3957333287920914
+    },
+    "Corr_close,_volume,_10_": {
+      "count": 1020,
+      "mean": 0.002078913887614818
+    },
+    "Corr_close,_volume,_20_": {
+      "count": 820,
+      "mean": -0.004260819420595322
+    },
+    "close___Ref_close,_5_": {
+      "count": 1100,
+      "mean": 0.25948320539467146
+    },
+    "close___Ref_close,_10_": {
+      "count": 1000,
+      "mean": -0.40984185387213656
+    },
+    "close___Ref_close,_20_": {
+      "count": 800,
+      "mean": -0.15913838109334946
+    }
+  }
+}
