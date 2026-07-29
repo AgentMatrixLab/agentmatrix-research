@@ -131,27 +131,52 @@ class AIFactorMiner:
         end_time: str,
         horizon: int = 5,
         count: int = 5,
+        rounds: int = 1,
         author: str = "ai",
+        verify_fn: Any = None,
+        feedback_fn: Any = None,
     ) -> dict[str, Any]:
-        proposals = self.propose_candidates(theme=theme, count=count)
-        results: list[dict[str, Any]] = []
-        for candidate in proposals:
-            result = self.factor_lab.mine_expression(
-                name=candidate.name,
-                expression=candidate.expression,
-                description=candidate.description or candidate.rationale,
-                start_time=start_time,
-                end_time=end_time,
-                horizon=horizon,
-                source="ai",
-                author=author,
-                tags=candidate.tags,
-            )
-            result["candidate"] = asdict(candidate)
-            results.append(result)
+        """Multi-round auto mining with feedback loop.
+
+        Args:
+            rounds: number of mining rounds (default 1 = single round)
+            verify_fn: optional verification function(proposals) -> dict
+            feedback_fn: optional feedback function(verify_results) -> str
+        """
+        all_results: list[dict[str, Any]] = []
+        feedback: str = self.last_feedback or ""
+
+        for rnd in range(rounds):
+            proposals = self.propose_candidates(theme=theme, count=count, feedback=feedback)
+            results: list[dict[str, Any]] = []
+
+            for candidate in proposals:
+                result = self.factor_lab.mine_expression(
+                    name=candidate.name,
+                    expression=candidate.expression,
+                    description=candidate.description or candidate.rationale,
+                    start_time=start_time,
+                    end_time=end_time,
+                    horizon=horizon,
+                    source="ai",
+                    author=author,
+                    tags=candidate.tags,
+                )
+                result["candidate"] = asdict(candidate)
+                result["round"] = rnd + 1
+                results.append(result)
+
+            # Run verification if available
+            if verify_fn and callable(verify_fn):
+                verify_results = verify_fn(proposals)
+                if feedback_fn and callable(feedback_fn):
+                    feedback = feedback_fn(verify_results)
+                    self.last_feedback = feedback
+
+            all_results.extend(results)
 
         ranked = sorted(
-            results,
+            all_results,
             key=lambda item: (
                 item["top_metrics"].get("ic_mean", 0.0),
                 item["top_metrics"].get("long_short_spread", 0.0),
@@ -160,6 +185,7 @@ class AIFactorMiner:
         )
         return {
             "theme": theme,
-            "generated_count": len(results),
+            "rounds": rounds,
+            "generated_count": len(all_results),
             "results": ranked,
         }
