@@ -40,7 +40,7 @@ def run(args=None):
     print(f"因子: {factor_path}")
     factor_fn = load_factor_function(factor_path)
 
-    from factor_qualify.data import load_full_data, compute_factor
+    from research_core.factor_lab.factor_qualify.data import load_full_data, compute_factor
     df = load_full_data()
     print(f"数据: {len(df)}行, {df['code'].nunique()}只股票, {df['date'].min().date()}~{df['date'].max().date()}")
 
@@ -50,10 +50,10 @@ def run(args=None):
     df = df.dropna(subset=['factor_value','ret']).reset_index(drop=True)
 
     print(f"有效因子值: {len(df)}行")
-    from factor_qualify.validate import run_validation
+    from research_core.factor_lab.factor_qualify.validate import run_validation
     result = run_validation(df, 'factor_value', 'ret')
 
-    from factor_qualify.report import generate_report, print_summary
+    from research_core.factor_lab.factor_qualify.report import generate_report, print_summary
     report = generate_report(result, output_path)
     result['report'] = report
     print_summary(result)
