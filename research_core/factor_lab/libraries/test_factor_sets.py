@@ -7,7 +7,7 @@ import pandas as pd
 from research_core.factor_lab.demo_data import build_alpha101_demo_panel
 from research_core.factor_lab.libraries.alpha101 import compute_alpha101_factors
 from research_core.factor_lab.libraries.factor_sets import (
-    WQ101_ALPHA_1_10,
+    WQ101_ALPHA_1_101,
     compute_factor_set,
     compute_gtja191_alphas,
     compute_wq101_alphas,
@@ -27,9 +27,9 @@ class FactorSetComputeTest(unittest.TestCase):
 
     def test_compute_wq101_alphas_matches_factor_lab_alpha101_mainline(self) -> None:
         wq101 = compute_wq101_alphas(self.panel)
-        mainline = compute_alpha101_factors(self.panel, factor_names=list(WQ101_ALPHA_1_10))
+        mainline = compute_alpha101_factors(self.panel, factor_names=list(WQ101_ALPHA_1_101))
 
-        self._assert_factor_frame(wq101, WQ101_ALPHA_1_10)
+        self._assert_factor_frame(wq101, WQ101_ALPHA_1_101)
         self.assertTrue(wq101.equals(mainline))
         anchor = wq101[(wq101["date"] == pd.Timestamp("2021-02-04")) & (wq101["code"] == "stock_001")].iloc[0]
         self.assertEqual(anchor["alpha1"], -0.25)

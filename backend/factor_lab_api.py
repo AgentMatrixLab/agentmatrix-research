@@ -32,7 +32,20 @@ def _load_local_env() -> None:
 
 _load_local_env()
 
-from research_core.factor_lab import (  # noqa: E402
+import math
+
+def _sanitize_json(obj):
+    if isinstance(obj, float):
+        if math.isnan(obj) or math.isinf(obj):
+            return None
+        return obj
+    if isinstance(obj, dict):
+        return {k: _sanitize_json(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_sanitize_json(v) for v in obj]
+    return obj
+
+from research_core.factor_lab import (
     FactorLabWorkspaceConfig,
     get_alpha101_factor_detail,
     get_factor_lab_job,
@@ -161,9 +174,11 @@ def factor_lab_factor_library():
     return jsonify(build_factor_library_view(_workspace()))
 
 
-@app.route("/api/agents/factor-lab/health", methods=["GET"])
+@app.route("/api/agents/factor-lab/health")
 def factor_lab_health():
-    return jsonify({"status": "ok", "service": "factor_lab", "local_flask": True})
+    import os
+    tok = os.environ.get("FACTOR_LAB_QUANT_API_TOKEN", "")
+    return jsonify({"status": "ok","backend": "factor-lab","token_configured": bool(tok),"token_prefix": tok[:10]+"..." if tok else "none"})
 
 
 @app.route("/api/agents/factor-lab/quant-api/status", methods=["GET"])
@@ -500,7 +515,77 @@ def factor_lab_job_artifact(job_id: str, artifact_kind: str):
     return send_file(path, as_attachment=False, download_name=path.name)
 
 
+@app.route("/api/agents/factor-lab/stratification", methods=["POST"])
+def factor_lab_stratification():
+    import importlib, sys, research_core.factor_lab.service as svc_mod, research_core.factor_lab.cache as cache_mod
+    importlib.reload(cache_mod)
+    importlib.reload(svc_mod)
+    from research_core.factor_lab.service import run_stratified_analysis_job
+    payload = request.get_json(silent=True) or {}
+    try:
+        result = run_stratified_analysis_job(payload, _workspace())
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    return jsonify(_sanitize_json(result))
+
+
+# ----------------------------------------------------------
+# Auto-Research Pipeline
+# ----------------------------------------------------------
+
+@app.route("/api/agents/factor-lab/factors/research", methods=["POST"])
+def factor_lab_trigger_research():
+    from research_core.factor_lab.service import trigger_factor_research
+    payload = request.get_json(silent=True) or {}
+    try:
+        job = trigger_factor_research(payload, _workspace())
+        return jsonify(job), 202
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/api/agents/factor-lab/factors/research/<job_id>", methods=["GET"])
+def factor_lab_research_status(job_id):
+    from research_core.factor_lab.service import get_factor_research_status
+    try:
+        job = get_factor_research_status(job_id, _workspace())
+        if job is None:
+            return jsonify({"error": "Job not found"}), 404
+        return jsonify(job)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+# ----------------------------------------------------------
+# Custom Factor Upload
+# ----------------------------------------------------------
+
+@app.route("/api/agents/factor-lab/factors/upload", methods=["POST"])
+def factor_lab_upload_factor():
+    if "file" not in request.files:
+        return jsonify({"error": "No file uploaded"}), 400
+    file = request.files["file"]
+    if not file.filename.endswith(".py"):
+        return jsonify({"error": "Only .py files accepted"}), 400
+    
+    name = file.filename[:-3]  # strip .py
+    from research_core.factor_lab.libraries.factor_sets import UPLOADS_DIR
+    dest = UPLOADS_DIR / f"{name}.py"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    file.save(str(dest))
+    
+    # Auto-trigger research
+    from research_core.factor_lab.service import trigger_factor_research
+    job = trigger_factor_research({"factor_name": name, "factor_set": "custom"}, _workspace())
+    
+    return jsonify({"status": "uploaded", "factor_name": name, "job": job}), 202
+
+
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "8012"))
-    host = os.getenv("HOST", "127.0.0.1")
+    app.run(host="0.0.0.0", port=port, debug=False)
     app.run(host=host, port=port, debug=False)

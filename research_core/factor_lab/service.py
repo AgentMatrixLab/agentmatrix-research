@@ -27,6 +27,7 @@ from research_core.factor_lab.reporting import (
 from research_core.factor_lab.registry import export_library_specs
 from research_core.factor_lab.real_data import run_factor_set_real_data_job
 from research_core.factor_lab.runtime import FactorLabWorkspaceConfig, now_iso
+from research_core.factor_lab.stratified import compute_stratified_analysis
 from research_core.factor_lab.truth import (
     export_truth_comparison,
     load_truth_frame,
@@ -538,6 +539,64 @@ def run_factor_set_research_job(
     return job
 
 
+def run_stratified_analysis_job(
+    payload: dict[str, Any] | None = None,
+    config: FactorLabWorkspaceConfig | None = None,
+) -> dict[str, Any]:
+    request_payload = payload or {}
+    workspace = config or FactorLabWorkspaceConfig()
+    workspace.ensure_directories()
+    factor_name = str(request_payload.get("factor_name", "alpha1"))
+    factor_set = str(request_payload.get("factor_set", "alpha101")).lower()
+    n_groups = int(request_payload.get("n_groups", 10))
+    n_dates = int(request_payload.get("n_dates", 160))
+    n_codes = int(request_payload.get("n_codes", 50))
+    seed = int(request_payload.get("seed", 7))
+    data_source = request_payload.get("data_source", "demo")
+    from research_core.factor_lab.libraries.factor_sets import compute_factor_set, factor_set_library_name, factor_set_specs
+    available = [s.factor_name for s in factor_set_specs(factor_set)]
+    if factor_name not in available:
+        raise ValueError(f"Factor '{factor_name}' not found in factor_set '{factor_set}'.")
+    library = factor_set_library_name(factor_set)
+
+    # --- Cache check ---
+    from research_core.factor_lab.cache import load_cached_result, save_cached_result
+    cached = load_cached_result(workspace, library, factor_name, request_payload)
+    if cached:
+        cached["_cached"] = True
+        return cached
+
+    if data_source == "real":
+        from research_core.factor_lab.real_data import fetch_quant_kline_panel
+        from research_core.data_loader.quant_api_client import QuantApiError
+        n_symbols = int(request_payload.get("n_symbols", 50))
+        real_dates = max(int(request_payload.get("n_dates", 1500)), 1500)
+        try:
+            panel = fetch_quant_kline_panel(n_symbols=n_symbols, n_dates=real_dates)
+        except QuantApiError as e:
+            raise ValueError(f"真实数据API不可用 ({e})。请检查 Quant API 服务状态或使用 demo 数据。")
+        except Exception as e:
+            raise ValueError(f"真实数据加载失败: {e}")
+    else:
+        panel = build_alpha101_demo_panel(n_dates=n_dates, n_codes=n_codes, seed=seed)
+    factor_frame = compute_factor_set(panel, factor_set, factor_names=[factor_name])
+    result = compute_stratified_analysis(panel, factor_frame, factor_name=factor_name, n_groups=n_groups)
+    result["factor_set"] = factor_set
+    result["library"] = library
+    result["generated_at"] = now_iso()
+
+    # Persist result to cache
+    print(f"[CACHE] Saving {library}/{factor_name} to {workspace.results_data_path(library, factor_name)}", flush=True)
+    save_cached_result(workspace, library, factor_name, request_payload, result)
+    print(f"[CACHE] Saved OK", flush=True)
+
+    job_id = request_payload.get("job_id") or f"strat-{uuid4().hex[:8]}"
+    s_json_path = workspace.report_path(f"{job_id}_{factor_name}_stratified", suffix=".json")
+    s_json_path.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+    result["_artifact_path"] = str(s_json_path)
+    return result
+
+
 def run_alpha101_truth_proof_batch(
     payload: dict[str, Any] | None = None,
     config: FactorLabWorkspaceConfig | None = None,
@@ -565,3 +624,84 @@ def run_alpha101_truth_proof_batch(
         "proof_batch_summary": report_payload["summary"],
         "artifacts": job["artifacts"],
     }
+
+
+import threading
+
+def trigger_factor_research(
+    payload: dict[str, Any] | None = None,
+    config: FactorLabWorkspaceConfig | None = None,
+) -> dict[str, Any]:
+    request_payload = payload or {}
+    workspace = config or FactorLabWorkspaceConfig()
+    workspace.ensure_directories()
+
+    factor_name = str(request_payload.get("factor_name"))
+    factor_set = str(request_payload.get("factor_set", "alpha101")).lower()
+
+    job_id = request_payload.get("job_id") or f"auto-{factor_set}-{factor_name}-{uuid4().hex[:6]}"
+    job = {
+        "job_id": job_id,
+        "factor_name": factor_name,
+        "factor_set": factor_set,
+        "status": "running",
+        "started_at": now_iso(),
+    }
+    workspace.job_path(job_id).write_text(json.dumps(job, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    def _run():
+        steps = []
+        try:
+            # Step 1: Validate factor exists
+            job["current_step"] = "validating factor"
+            from research_core.factor_lab.libraries.factor_sets import factor_set_specs
+            specs = factor_set_specs(factor_set)
+            available = [s.factor_name for s in specs]
+            if factor_name not in available:
+                msg = f"Factor '{factor_name}' not implemented in '{factor_set}'. Available ({len(available)}): {available}"
+                raise ValueError(msg)
+            steps.append("factor validated")
+
+            # Step 2: Run full research pipeline
+            job["current_step"] = "computing factor + evaluation + proof + report"
+            result = run_factor_set_research_job({
+                "factor_set": factor_set,
+                "factor_names": [factor_name],
+                "n_dates": 160, "n_codes": 50, "seed": 7,
+                "job_id": job_id,
+            }, config=workspace)
+            steps.append("research pipeline completed")
+
+            # Merge result into job — put artifacts at top level for factor-library
+            job["status"] = result.get("status", "completed")
+            job["library"] = result.get("library")
+            job["data_source"] = result.get("data_source")
+            job["generated_at"] = result.get("generated_at", now_iso())
+            job["artifacts"] = result.get("artifacts", {})
+            job["requested_factors"] = result.get("requested_factors", [factor_name])
+            job["steps"] = steps
+        except Exception as exc:
+            job["status"] = "failed"
+            job["error"] = str(exc)
+            job["steps"] = steps
+            job["failed_step"] = job.get("current_step", "unknown")
+        job["finished_at"] = now_iso()
+        workspace.job_path(job_id).write_text(json.dumps(job, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    threading.Thread(target=_run, daemon=True).start()
+    return job
+
+
+def get_factor_research_status(
+    job_id: str,
+    config: FactorLabWorkspaceConfig | None = None,
+) -> dict[str, Any] | None:
+    workspace = config or FactorLabWorkspaceConfig()
+    return _read_json_if_exists(workspace.job_path(job_id))
+
+
+def list_factor_research_jobs(
+    config: FactorLabWorkspaceConfig | None = None,
+) -> list[dict[str, Any]]:
+    workspace = config or FactorLabWorkspaceConfig()
+    return list_factor_lab_jobs(config=workspace)

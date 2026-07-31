@@ -366,7 +366,7 @@ function recommendationClass(value) {
 }
 
 function canOpenFactor(factor) {
-  return Boolean(factor?.latest_job_id) && factor?.proof_status !== "missing";
+  return factor?.proof_status !== "missing" || Boolean(factor?.latest_job_id);
 }
 
 function factorReplicationStatus(factor) {
@@ -699,7 +699,7 @@ async function loadData() {
       renderTabs(normalizedPayload);
       applyFilters();
       syncDetailFromHash();
-      if (state.view === "detail") renderDetail();
+      if (state.view === "detail" && !state._isAutoRefresh) renderDetail();
       if (state.view === "monitor") renderMonitor();
       if (state.view === "strategy") renderStrategy();
       if (state.view === "strategy-detail") renderStrategyDetail();
@@ -719,7 +719,7 @@ async function loadData() {
     renderTabs(normalizedPayload);
     applyFilters();
     syncDetailFromHash();
-    if (state.view === "detail") renderDetail();
+    if (state.view === "detail" && !state._isAutoRefresh) renderDetail();
     if (state.view === "monitor") renderMonitor();
     if (state.view === "strategy") renderStrategy();
     if (state.view === "strategy-detail") renderStrategyDetail();
@@ -746,7 +746,10 @@ function startAutoRefresh() {
   if (state.autoRefreshTimer) {
     window.clearInterval(state.autoRefreshTimer);
   }
-  state.autoRefreshTimer = window.setInterval(loadData, AUTO_REFRESH_INTERVAL_MS);
+  state.autoRefreshTimer = window.setInterval(function() {
+    state._isAutoRefresh = true;
+    loadData().finally(function() { state._isAutoRefresh = false; });
+  }, AUTO_REFRESH_INTERVAL_MS);
 }
 
 function normalizePayload(payload) {
@@ -860,6 +863,12 @@ function jqFactorCategory(factor) {
   if (category.includes("价值") || category.includes("规模")) return "风险因子-风格因子";
   if (library.includes("barra")) return "风险因子-新风格因子";
   return "技术指标因子";
+}
+
+function jqFactorSet(factor) {
+  var lib = (factor?.library || "").toLowerCase();
+  var m = {"alpha101":"alpha101","wq101":"alpha101","gtja191":"gtja191","alpha191":"gtja191"};
+  return m[lib] || "alpha101";
 }
 
 function compareFactors(left, right) {
@@ -1056,8 +1065,9 @@ function renderTable() {
       </td>
       <td>
         <button class="factor-link" type="button" data-factor-id="${escapeHtml(factor.id)}" ${openable ? "" : "disabled"} title="${escapeHtml(factor.factor_name)} · ${openable ? "查看单因子详情" : "未复现，暂无详情报告"}">
-          ${escapeHtml(displayName)}${admission.weak ? '<span class="weak-tag">弱</span>' : ""}
-        </button>
+                  ${escapeHtml(displayName)}${admission.weak ? '<span class="weak-tag">弱</span>' : ""}
+                </button>
+                ${!openable && factor.proof_status === "missing" ? `<button class="research-trigger compact" type="button" onclick="triggerFactorResearch(function(n){var p=n.split('_');return p.length>=3?p[p.length-2]+p[p.length-1].replace(/^0+/,''):n;}('${escapeHtml(factor.factor_name)}'),'${escapeHtml(jqFactorSet(factor))}',this)" style="margin-left:6px;font-size:11px">研究</button>` : ""}
       </td>
       <td>${escapeHtml(factor.library)}</td>
       <td>${escapeHtml(jqFactorCategory(factor))}<span class="factor-subcategory">${escapeHtml(factor.subcategory || "")}</span></td>
@@ -1092,9 +1102,9 @@ function renderTable() {
       if (openable) openDetail(factor.id);
     });
     row.addEventListener("dblclick", () => {
-      if (openable) openDetail(factor.id);
-    });
-    els.tableBody.appendChild(row);
+          if (openable) openDetail(factor.id);
+        });
+        els.tableBody.appendChild(row);
   });
 
   const end = Math.min(start + pageItems.length, state.filteredFactors.length);
@@ -3162,34 +3172,35 @@ function renderAnalysisPanel(factor) {
       <article class="research-card stratification-card">
         <header>
           <strong>单因子分层研究 / Factor Stratification Analysis</strong>
-          <span>区间：当前复现样本区间 · 频率：日频</span>
+          <span id="stratDesc">区间：当前复现样本区间 · 频率：日频</span>
         </header>
-        <div class="chart-placeholder chart-large">
-          <div class="placeholder-mark">◇</div>
-          <strong>待接入真实数据 API</strong>
-          <span>当前仅作为研究级分层回测占位，不代表可交易策略收益。</span>
-        </div>
+        <div id="stratChart" class="chart-placeholder chart-large"></div>
+        <div id="stratMethod" style="display:none;margin-top:8px;font-size:12px;color:#657184;line-height:1.5;"></div>
       </article>
       <div class="side-charts">
         <article class="research-card">
           <header>
             <strong>IC 时序 / IC Time Series</strong>
-            <span>区间：当前复现样本区间</span>
+            <span id="icRange">区间：当前复现样本区间</span>
           </header>
-          <div class="chart-placeholder">
-            <strong>等待时序数据</strong>
-          </div>
+          <div id="icChart" class="chart-placeholder"></div>
+          <div id="icNote" style="display:none;margin-top:4px;font-size:11px;color:#657184;"></div>
         </article>
         <article class="research-card">
           <header>
-            <strong>分组表现 / Group Performance</strong>
-            <span>区间：当前复现样本区间</span>
+            <strong>分层指标 / Stratification Metrics</strong>
+            <span id="stratMetricsRange">区间：当前复现样本区间</span>
           </header>
-          <div class="chart-placeholder">
-            <strong>等待分组收益数据</strong>
-          </div>
+          <div id="stratMetrics" class="chart-placeholder"></div>
         </article>
       </div>
+    </section>
+
+    <section class="metric-grid" id="stratMetricCards">
+      ${metricCard("Rank IC", "—", "IC Mean")}
+      ${metricCard("IC IR", "—", "IC IR")}
+      ${metricCard("Long-Short 年化", "—", "Annual Return")}
+      ${metricCard("Long-Short Sharpe", "—", "Sharpe Ratio")}
     </section>
 
     <section class="info-strip">
@@ -3504,5 +3515,269 @@ function clearResearchResults() {
   document.getElementById("researchResultsBody").innerHTML = "";
   document.getElementById("researchJobId").textContent = "";
 }
+
+// ============================================================
+// Factor Stratification Analysis
+// ============================================================
+
+function _factorSetForLibrary(library) { var m={"Alpha101":"alpha101","GTJA191":"gtja191","WQ101":"alpha101","Alpha191":"gtja191"}; return m[library]||"alpha101"; }
+
+async function loadStratificationData(factor) {
+  var ce=document.getElementById("stratChart"); if(!ce)return;
+  var ie=document.getElementById("icChart"),me=document.getElementById("stratMetrics"),ca=document.getElementById("stratMetricCards"),re=document.getElementById("stratMetricsRange"),de=document.getElementById("stratDesc"),me2=document.getElementById("stratMethod"),ne=document.getElementById("icNote");
+  var fs=_factorSetForLibrary(factor.library);
+  try{
+    var fn=factor.factor_name; if(fn.indexOf('_alpha_')>-1||fn.indexOf('_beta_')>-1){var parts=fn.split('_');fn=parts[parts.length-2]+parts[parts.length-1].replace(/^0+/,'');} var r=await fetch(API_BASE+"/stratification",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({factor_name:fn,factor_set:fs,n_groups:10,n_dates:120,n_codes:50,data_source:"real"})});
+    if(!r.ok)throw new Error("HTTP "+r.status);
+    var d=await r.json(); if(d.error)throw new Error(d.error);
+    if(de&&d.description){var dd=d.description;de.textContent=dd.universe+" · "+dd.rebalance_frequency+" · "+dd.holding_period+"持有 · "+dd.grouping_method;}
+    if(me2&&d.description){me2.style.display="block";var d2=d.description;me2.innerHTML="<b>分组说明：</b>Group"+d.n_groups+" = "+(d2.group_labels[String(d.n_groups)]||"")+"，Group1 = "+(d2.group_labels["1"]||"")+"。<br><b>收益计算：</b>每日调仓，T+"+d.description.holding_period.replace("T+","")+"日收益，等权配置，不计交易成本。";}
+    _renderNavCanvas(ce,d); _renderICCanvas(ie,d); _renderGroupMetrics(me,d);
+        if(re)re.textContent="截面数："+d.dataset.n_cross_sections;
+        if (ne) { ne.style.display = 'block'; ne.textContent = 'IC = 每日因子值与T+1收益的横截面相关系数，反映因子预测下一期收益的能力。纵轴：Rank IC 值，0 线以上表示正向预测。'; }
+        if(ca){var m2=d.metrics||{},ls2=d.long_short;ca.innerHTML=[metricCard("Rank IC",formatNumber(m2.rank_ic_mean,4),"IC Mean"),metricCard("IC IR",formatNumber(m2.rank_ic_ir,4),"IC IR"),metricCard("Long-Short 年化",formatNumber(m2.long_short_annual_return,4),"Annual Return"),metricCard("Long-Short Sharpe",formatNumber(m2.long_short_sharpe,2),"t="+formatNumber(ls2.t_stat,2)+" 胜率="+formatRatio(ls2.win_rate))].join("");}
+        // Cache for DOM reconstruction
+        d._key = factor.factor_name + "|" + (factor.library || "");
+        _stratLastData = d;
+  }catch(e){if(ce)ce.innerHTML='<div class="chart-placeholder"><strong>分层数据加载失败</strong><span>'+e.message+'</span></div>';}
+}
+
+function _renderNavCanvas(container, data) {
+  // ECharts-powered interactive chart
+  var nav = data.group_nav;
+  if (!nav || !nav.dates || !nav.dates.length) { container.innerHTML = '<strong>暂无分层研究数据</strong>'; return; }
+  var cum = nav.cumulative;
+  var groups = Object.keys(cum).sort(function(a, b) { return parseInt(a) - parseInt(b); });
+  if (!groups.length) { container.innerHTML = '<strong>暂无分层研究数据</strong>'; return; }
+
+  container.innerHTML = '';
+    container.classList.remove('chart-placeholder');
+    container.style.cssText = 'height:420px;background:#f7f9ff;';
+
+    // Reuse or create ECharts instance
+    var chart = container._echart;
+    if (!chart) {
+      chart = echarts.init(container);
+      container._echart = chart;
+    }
+
+    var dates = nav.dates;
+    var colors = ['#d93025','#e76f00','#e7a600','#13a15a','#0b7a4a','#073d61','#5b2c8e','#8e2c5b','#2c5b8e','#2c8e5b'];
+
+  // Build series: groups + Long-Short
+  var series = [];
+  groups.forEach(function(g, gi) {
+    series.push({
+      name: 'G' + g + '（' + (gi === 0 ? '低因子组' : gi === groups.length - 1 ? '高因子组' : '') + '）',
+      type: 'line', data: cum[g], smooth: false, symbol: 'none',
+      lineStyle: { color: colors[gi % 10], width: 1.5 },
+    });
+  });
+
+  // Long-Short curve
+  var lsCum = []; var lsRun = 1.0;
+  for (var i = 0; i < data.daily_series.length; i++) {
+    var lsv = data.daily_series[i].long_short;
+    if (lsv != null) lsRun *= (1.0 + lsv);
+    lsCum.push(lsRun);
+  }
+  if (lsCum.length > 1) {
+    series.push({
+      name: 'Long-Short（多空）', type: 'line', data: lsCum, symbol: 'none',
+      lineStyle: { color: '#111c2d', width: 2.5, type: 'dashed' },
+    });
+  }
+
+  var option = {
+    tooltip: {
+      trigger: 'axis',
+      axisPointer: { type: 'cross', crossStyle: { color: '#999' } },
+      valueFormatter: function(v) { return v != null ? v.toFixed(3) : '-'; },
+      backgroundColor: 'rgba(255,255,255,0.95)',
+      borderColor: '#d7dee9',
+      textStyle: { color: '#111c2d', fontSize: 12 },
+    },
+    legend: {
+      bottom: 0, left: 'center', type: 'scroll',
+      textStyle: { fontSize: 11, color: '#657184' },
+      itemWidth: 14, itemHeight: 8,
+    },
+    grid: { top: 12, right: 16, bottom: 44, left: 50 },
+    xAxis: { type: 'category', data: dates, axisLine: { lineStyle: { color: '#b8c2d1' } },
+          axisLabel: { show: true, fontSize: 9, color: '#657184', interval: Math.max(Math.floor(dates.length / 8), 1),
+            formatter: function(v) { return v ? v.slice(5) : ''; } } },
+        yAxis: {
+          type: 'value', name: '累计净值', nameTextStyle: { color: '#657184', fontSize: 10 },
+          axisLabel: { formatter: function(v) { return v.toFixed(2); }, fontSize: 9 },
+          splitLine: { lineStyle: { color: '#d7dee9', type: 'dashed' } },
+          scale: true,
+        },
+        series: series,
+      };
+
+      chart.setOption(option, true);
+      chart.resize();
+
+      // Y-axis legend below chart
+      var noteEl = document.getElementById('stratMethod');
+      if (noteEl) {
+        noteEl.style.display = 'block';
+        if (noteEl.innerHTML.indexOf('纵轴') === -1) {
+          noteEl.innerHTML += '<br><span style="color:#657184">纵轴：累计净值（起始 1.0，表示 T+1 日收益复利累计）</span>';
+        }
+      }
+}
+
+function _renderICCanvas(container, data) {
+  var ds = data.daily_series;
+  if (!ds || !ds.length) { container.innerHTML = '<strong>暂无 IC 时序数据</strong>'; return; }
+
+  container.innerHTML = '';
+    container.classList.remove('chart-placeholder');
+    container.style.cssText = 'height:220px;background:#f7f9ff;';
+
+    var chart = container._echart;
+    if (!chart) { chart = echarts.init(container); container._echart = chart; }
+
+  var dates = ds.map(function(d) { return d.date; });
+  var icVals = ds.map(function(d) { return d.rank_ic; });
+  var icMean = data.ic_summary.rank_ic_mean;
+
+  chart.setOption({
+    tooltip: {
+      trigger: 'axis',
+      axisPointer: { type: 'cross' },
+      valueFormatter: function(v) { return v != null ? v.toFixed(4) : '-'; },
+      backgroundColor: 'rgba(255,255,255,0.95)',
+      borderColor: '#d7dee9',
+    },
+    grid: { top: 8, right: 10, bottom: 24, left: 40 },
+    xAxis: { type: 'category', data: dates,
+      axisLabel: { show: true, fontSize: 8, color: '#657184', interval: Math.max(Math.floor(dates.length / 6), 1),
+        formatter: function(v) { return v ? v.slice(5) : ''; } },
+      axisLine: { lineStyle: { color: '#b8c2d1' } } },
+    yAxis: {
+      type: 'value', name: 'Rank IC', nameTextStyle: { color: '#657184', fontSize: 9 },
+      axisLabel: { formatter: function(v) { return v.toFixed(2); }, fontSize: 9 },
+      splitLine: { lineStyle: { color: '#d7dee9', type: 'dashed' } },
+    },
+    series: [
+      {
+        name: 'Rank IC', type: 'line', data: icVals, symbol: 'none',
+        lineStyle: { color: '#073d61', width: 1 },
+        markLine: {
+          silent: true, symbol: 'none',
+          data: [{ yAxis: icMean, name: 'mean=' + icMean.toFixed(4),
+            lineStyle: { color: '#d93025', type: 'dashed', width: 0.8 },
+            label: { formatter: 'mean={c}', fontSize: 9, color: '#d93025' } }],
+        },
+      },
+    ],
+  }, true);
+  chart.resize();
+}
+
+function _renderGroupMetrics(container,data){
+  var gr=data.group_returns,gs=Object.keys(gr).sort(function(a,b){return parseInt(a)-parseInt(b);});
+  if(!gs.length){container.innerHTML='<strong>暂无分组数据</strong>';return;}
+  var h='<table style="width:100%;font-size:11px;border-collapse:collapse;"><thead><tr><th>分组</th><th>年化收益</th><th>t值</th><th>胜率</th></tr></thead><tbody>';
+  gs.forEach(function(g){var s=gr[g],a=s.annual_return!=null?formatNumber(s.annual_return,4):formatNumber(s.mean,6),c=s.annual_return>0?'#13a15a':'#d93025';h+='<tr><td><b>G'+g+'</b></td><td style="color:'+c+'">'+a+'</td><td>'+formatNumber(s.t_stat,2)+'</td><td>'+formatRatio(s.win_rate)+'</td></tr>';});
+  h+='</tbody></table>';container.innerHTML=h;container.classList.remove("chart-placeholder");
+}
+
+// ====== Auto Research Pipeline ======
+function triggerFactorResearch(factorName, factorSet, buttonEl) {
+  if (!factorName) return;
+  buttonEl.disabled = true;
+  buttonEl.textContent = "研究中...";
+  fetch(API_BASE + "/factors/research", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({factor_name: factorName, factor_set: factorSet})
+  })
+    .then(function(r) { return r.json(); })
+    .then(function(job) {
+      if (job.error) throw new Error(job.error);
+      pollResearchJob(job.job_id, 0, buttonEl, factorName);
+    })
+    .catch(function(e) {
+      console.error("Research trigger failed:", e, "URL:", API_BASE + "/factors/research");
+      var msg = e && e.message ? e.message : String(e);
+      if (msg.length > 20) msg = msg.substring(0, 18) + "..";
+      buttonEl.textContent = msg || "失败";
+      buttonEl.title = e && e.message ? e.message : String(e);
+      buttonEl.disabled = false;
+    });
+}
+
+function pollResearchJob(jobId, attempts, buttonEl, factorName) {
+  var maxAttempts = 60;
+  fetch(API_BASE + "/factors/research/" + jobId)
+    .then(function(r) { return r.json(); })
+    .then(function(job) {
+      if (job.status === "completed") {
+        buttonEl.textContent = "完成";
+        buttonEl.style.color = "#13a15a";
+        // Refresh the factor table so the factor becomes clickable
+        setTimeout(loadData, 500);
+      } else if (job.status === "failed") {
+        buttonEl.textContent = "失败";
+        buttonEl.disabled = false;
+      } else if (attempts < maxAttempts) {
+        buttonEl.textContent = "研究中 " + Math.round((attempts / maxAttempts) * 100) + "%";
+        setTimeout(function() { pollResearchJob(jobId, attempts + 1, buttonEl, factorName); }, 3000);
+      } else {
+        buttonEl.textContent = "超时";
+        buttonEl.disabled = false;
+      }
+    })
+    .catch(function(e) {
+      if (attempts < maxAttempts) {
+        setTimeout(function() { pollResearchJob(jobId, attempts + 1, buttonEl, factorName); }, 3000);
+      } else {
+        buttonEl.textContent = "超时";
+        buttonEl.disabled = false;
+      }
+    });
+}
+
+var _ora2 = renderAnalysisPanel;
+var _stratFactorKey = null;
+var _stratLastData = null;
+if (typeof _DEBUG_ === "undefined") { var _DEBUG_ = true; console.log("FACTOR_LAB API_BASE:", API_BASE, "CLOUD_DEMO:", CLOUD_DEMO_MODE, "API_HOST:", API_HOST); }
+
+renderAnalysisPanel = function(factor) {
+  var h = _ora2(factor);
+  var key = factor.factor_name + "|" + (factor.library || "");
+  // Always schedule a render — innerHTML destroys DOM, so we must rebuild
+  if (_stratFactorKey !== key) {
+    _stratFactorKey = key;
+    _stratLastData = null;
+    setTimeout(function() { loadStratificationData(factor); }, 50);
+  } else if (_stratLastData && _stratLastData._key === key) {
+    // Same factor — DOM was destroyed by innerHTML, rebuild from cache
+    setTimeout(function() {
+      var d = _stratLastData;
+      var ce = document.getElementById("stratChart");
+      if (!ce) return;
+      _renderNavCanvas(ce, d);
+      var ie = document.getElementById("icChart");
+      if (ie) _renderICCanvas(ie, d);
+      var me = document.getElementById("stratMetrics");
+      if (me) _renderGroupMetrics(me, d);
+      var re = document.getElementById("stratMetricsRange");
+      if (re) re.textContent = "截面数：" + d.dataset.n_cross_sections;
+      var ca = document.getElementById("stratMetricCards");
+      if (ca) { var m2 = d.metrics || {}, ls2 = d.long_short; ca.innerHTML = [metricCard("Rank IC", formatNumber(m2.rank_ic_mean, 4), "IC Mean"), metricCard("IC IR", formatNumber(m2.rank_ic_ir, 4), "IC IR"), metricCard("Long-Short 年化", formatNumber(m2.long_short_annual_return, 4), "Annual Return"), metricCard("Long-Short Sharpe", formatNumber(m2.long_short_sharpe, 2), "t=" + formatNumber(ls2.t_stat, 2) + " 胜率=" + formatRatio(ls2.win_rate))].join(""); }
+      var de = document.getElementById("stratDesc");
+      if (de && d.description) { var dd = d.description; de.textContent = dd.universe + " · " + dd.rebalance_frequency + " · " + dd.holding_period + "持有 · " + dd.grouping_method; }
+      var me2 = document.getElementById("stratMethod");
+      if (me2 && d.description) { me2.style.display = "block"; var d2 = d.description; me2.innerHTML = "<b>分组说明：</b>Group" + d.n_groups + " = " + (d2.group_labels[String(d.n_groups)] || "") + "，Group1 = " + (d2.group_labels["1"] || "") + "。<br><b>收益计算：</b>每日调仓，T+" + d.description.holding_period.replace("T+", "") + "日收益，等权配置，不计交易成本。"; }
+      var ne = document.getElementById("icNote");
+      if (ne) { ne.style.display = 'block'; ne.textContent = 'IC = 每日因子值与T+1收益的横截面相关系数，反映因子预测下一期收益的能力。纵轴：Rank IC 值，0 线以上表示正向预测。'; }
+    }, 50);
+  }
+  return h;
+};
 
 bindResearchEvents();

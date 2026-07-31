@@ -28,6 +28,7 @@ class FactorLabWorkspaceConfig:
             "frames_dir": self.runtime_root / "frames",
             "samples_dir": self.runtime_root / "samples",
             "truth_dir": self.runtime_root / "truth",
+            "results_dir": self.runtime_root / "results",
         }
         for path in paths.values():
             path.mkdir(parents=True, exist_ok=True)
@@ -56,3 +57,12 @@ class FactorLabWorkspaceConfig:
 
     def job_path(self, job_id: str) -> Path:
         return self.runtime_root / "jobs" / f"{job_id}.json"
+
+    def results_path(self, library: str, factor_name: str) -> Path:
+        return self.runtime_root / "results" / f"{library.lower()}_{factor_name.lower()}"
+
+    def results_meta_path(self, library: str, factor_name: str) -> Path:
+        return self.results_path(library, factor_name) / "meta.json"
+
+    def results_data_path(self, library: str, factor_name: str) -> Path:
+        return self.results_path(library, factor_name) / "stratification.json"
