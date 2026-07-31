@@ -1,0 +1,942 @@
+#!/usr/bin/env python3
+"""
+Agent API — Unified entry point for AI agents.
+
+This module wraps all framework capabilities behind a single, self-documenting
+Python API. AI agents only need to know two things:
+
+1. ``discover()`` — see what the framework can do
+2. ``explore_factors()`` / ``build_strategy()`` / ... — call specific capabilities
+
+Every function returns structured, JSON-serializable results with actionable
+``next_actions`` when applicable. Errors are caught and returned as structured
+dicts with ``error`` + ``suggested_fix`` fields, never raw tracebacks.
+
+Quick start::
+
+    from research_core.agent_api import discover, explore_factors
+
+    # Step 1: Discover capabilities
+    print(discover())
+
+    # Step 2: Explore factors
+    result = explore_factors(goal="momentum factors", universe="csi300")
+    print(result["gate_verdict"], result["summary"])
+"""
+
+from __future__ import annotations
+
+import json
+import traceback
+from typing import Any, Optional
+
+from research_core.agent_manifest import get_manifest
+
+
+# ── Helper: safe wrapper ────────────────────────────────────────────────────
+
+def _safe_call(func, *args, **kwargs) -> dict[str, Any]:
+    """Call func and catch all exceptions, returning structured error dicts."""
+    try:
+        result = func(*args, **kwargs)
+        # Convert dataclass to dict if needed
+        if hasattr(result, "__dict__") and not isinstance(result, dict):
+            if hasattr(result, "to_dict"):
+                return result.to_dict()
+            return _dataclass_to_dict(result)
+        return result if isinstance(result, dict) else {"result": result}
+    except ImportError as e:
+        return {
+            "error": f"Missing dependency: {e}",
+            "suggested_fix": f"Install required packages: pip install -r scripts/requirements.txt -r requirements-factor-lab.txt",
+            "missing_module": str(e).replace("No module named ", "").strip("'\""),
+        }
+    except FileNotFoundError as e:
+        return {
+            "error": f"File not found: {e}",
+            "suggested_fix": "Check that the file path is correct and the file exists. Use overview() to see workspace paths.",
+            "file": str(e),
+        }
+    except Exception as e:
+        return {
+            "error": str(e),
+            "error_type": type(e).__name__,
+            "suggested_fix": "Check the error message above. Call discover() to see available capabilities and their parameters.",
+            "traceback": traceback.format_exc().split("\n")[-5:],
+        }
+
+
+def _dataclass_to_dict(obj) -> dict[str, Any]:
+    """Recursively convert a dataclass to a dict."""
+    import dataclasses
+    if dataclasses.is_dataclass(obj):
+        return {k: _dataclass_to_dict(v) for k, v in dataclasses.asdict(obj).items()}
+    if isinstance(obj, list):
+        return [_dataclass_to_dict(v) for v in obj]
+    if isinstance(obj, dict):
+        return {k: _dataclass_to_dict(v) for k, v in obj.items()}
+    return obj
+
+
+# ── Meta capabilities ──────────────────────────────────────────────────────
+
+def discover() -> dict[str, Any]:
+    """
+    List all framework capabilities with parameters and examples.
+
+    **Always call this first** to understand what the framework can do.
+
+    Returns:
+        Dict with 'framework', 'version', 'capabilities' list.
+    """
+    return get_manifest()
+
+
+def overview() -> dict[str, Any]:
+    """
+    Get framework overview: workspace paths, available factor families,
+    installed libraries, and runtime status.
+
+    Returns:
+        Dict with workspace, factor_families, libraries, runtime_status.
+    """
+    return _safe_call(_overview_impl)
+
+
+def _overview_impl() -> dict[str, Any]:
+    from research_core.factor_lab.runtime import FactorLabWorkspaceConfig
+    from research_core.factor_lab.libraries.alpha101 import IMPLEMENTED_ALPHA101_FACTORS
+    from research_core.factor_lab.libraries.gtja191 import IMPLEMENTED_GTJA191_FACTORS
+
+    config = FactorLabWorkspaceConfig()
+
+    factor_families = {
+        "alpha101": {"implemented": len(IMPLEMENTED_ALPHA101_FACTORS), "total": 101},
+        "wq101": {"implemented": 10, "total": 101},
+        "gtja191": {"implemented": len(IMPLEMENTED_GTJA191_FACTORS), "total": 191},
+        "alpha158": {"implemented": 158, "total": 158},
+        "barra": {"implemented": 10, "total": 10},
+    }
+
+    return {
+        "framework": "AgentMatrix Research",
+        "workspace": {
+            "data_root": str(config.data_root),
+            "runtime_root": str(config.runtime_root),
+            "example_specs_path": str(config.specs_path("alpha101")),
+            "example_job_path": str(config.job_path("demo_job")),
+        },
+        "factor_families": factor_families,
+        "backtest_engines": ["gm", "rqalpha", "qlib"],
+        "external_sim_engines": ["gm", "ptrade", "qmt"],
+        "data_sources": ["demo", "amazingdata", "akshare"],
+        "next_actions": [
+            "Call explore_factors() to run factor exploration",
+            "Call list_factors('alpha101') to see available factors",
+            "Call check_data_source() to verify data connectivity",
+        ],
+    }
+
+
+def check_data_source(env_file: str = "") -> dict[str, Any]:
+    """
+    Check connectivity and status of the amazingdata ClickHouse data source.
+
+    Args:
+        env_file: Optional path to ClickHouse env file.
+
+    Returns:
+        Dict with connected, tables, error.
+    """
+    return _safe_call(_check_data_source_impl, env_file)
+
+
+def _check_data_source_impl(env_file: str) -> dict[str, Any]:
+    from research_core.factor_lab.service import check_amazingdata
+
+    payload = {"env_file": env_file} if env_file else None
+    result = check_amazingdata(payload)
+
+    return {
+        "connected": result.get("ok", False),
+        "details": result,
+        "next_actions": (
+            ["Data source is ready. Call explore_factors() with data_source='amazingdata'."]
+            if result.get("ok")
+            else ["Data source not available. Use demo data for testing: explore_factors()"]
+        ),
+    }
+
+
+# ── Factor research capabilities ───────────────────────────────────────────
+
+def explore_factors(
+    goal: str = "",
+    universe: str = "csi300",
+    factor_set: str = "alpha101",
+    factors: Optional[list[str]] = None,
+    start: str = "2023-01-01",
+    end: str = "2025-12-31",
+    horizon: int = 5,
+    top_n: int = 10,
+    auto: bool = True,
+    cache_dir: str = "",
+) -> dict[str, Any]:
+    """
+    One-click factor exploration: auto-fetch market data, compute factors,
+    evaluate IC/IR/OOS, run validation gates, return a structured verdict.
+
+    This is the **main entry point** for factor research.
+
+    Args:
+        goal: Human-readable research goal (e.g. "low volatility quality factors").
+        universe: Stock universe — "csi300", "csi500", "csi800", "all".
+        factor_set: Factor family — "alpha101", "wq101", "gtja191", "alpha158", "barra".
+        factors: Specific factor names, or None for auto top-N.
+        start: Start date (YYYY-MM-DD).
+        end: End date (YYYY-MM-DD).
+        horizon: Forward return horizon in days.
+        top_n: Number of top factors to report.
+        auto: If True, auto-fetch data and auto-select factors.
+        cache_dir: Cache directory for market data.
+
+    Returns:
+        Dict with gate_verdict (🟢/🟡/🔴), factors_tested, factors_passed,
+        top_factors, summary, next_actions.
+    """
+    return _safe_call(
+        _explore_factors_impl,
+        goal=goal, universe=universe, factor_set=factor_set,
+        factors=factors, start=start, end=end, horizon=horizon,
+        top_n=top_n, auto=auto, cache_dir=cache_dir,
+    )
+
+
+def _explore_factors_impl(**kwargs) -> dict[str, Any]:
+    from research_core.factor_lab.agent_pipeline import explore, explore_to_markdown
+
+    result = explore(**kwargs)
+    return {
+        "goal": result.goal,
+        "universe": result.universe,
+        "n_stocks": result.n_stocks,
+        "date_range": result.date_range,
+        "elapsed_seconds": result.elapsed_seconds,
+        "factors_tested": result.factors_tested,
+        "factors_passed": result.factors_passed,
+        "top_factors": result.top_factors,
+        "gate_verdict": result.gate_verdict,
+        "gate_details": {
+            "passed": result.gate_details.get("passed", 0),
+            "total": result.gate_details.get("total", 0),
+        },
+        "summary": result.summary,
+        "next_actions": result.next_actions,
+        "markdown_report": explore_to_markdown(result),
+    }
+
+
+def validate_factor(
+    factor_name: str,
+    ic_mean: float,
+    ic_ir: float,
+    oos_retention: float = 0.0,
+    decay_pct: float = 0.0,
+    ic_std: float = 0.0,
+    cost_resilience: Optional[bool] = None,
+    sector_neutrality: Optional[float] = None,
+    segment_consistency: Optional[int] = None,
+) -> dict[str, Any]:
+    """
+    Run the 7-gate validation system on a single factor's metrics.
+
+    Gates: OOS retention, IC significance, IC IR, time decay, cost resilience,
+    sector neutrality, segment consistency.
+
+    Args:
+        factor_name: Factor identifier.
+        ic_mean: Mean Information Coefficient.
+        ic_ir: IC Information Ratio (mean / std).
+        oos_retention: Out-of-sample IC retention ratio (0-1).
+        decay_pct: IC time decay percentage.
+        ic_std: IC standard deviation.
+        cost_resilience: Whether factor survives 50bp cost (optional).
+        sector_neutrality: IC retention after sector neutralization (optional).
+        segment_consistency: Number of profitable regimes out of 3 (optional).
+
+    Returns:
+        Dict with 'passed' (bool), 'gates' dict, 'fail_reasons', 'pass_reasons'.
+    """
+    return _safe_call(
+        _validate_factor_impl,
+        factor_name=factor_name, ic_mean=ic_mean, ic_ir=ic_ir,
+        oos_retention=oos_retention, decay_pct=decay_pct, ic_std=ic_std,
+        cost_resilience=cost_resilience, sector_neutrality=sector_neutrality,
+        segment_consistency=segment_consistency,
+    )
+
+
+def _validate_factor_impl(**kwargs) -> dict[str, Any]:
+    from research_core.factor_lab.validation_gate import ValidationGate
+
+    gate = ValidationGate()
+    verdict = gate.evaluate(**kwargs)
+    result = verdict.to_dict()
+    result["next_actions"] = (
+        [f"Factor '{verdict.factor_name}' passed. Call build_strategy() to create target weights."]
+        if verdict.passed
+        else [f"Factor '{verdict.factor_name}' failed gates: {', '.join(verdict.fail_reasons)}",
+              "Try different factor parameters or a different factor family."]
+    )
+    return result
+
+
+def evaluate_factor_csv(
+    factor_csv: str,
+    factor_name: str = "factor",
+    sector_col: str = "sector",
+    ic_threshold: float = 0.02,
+    turnover_warn: float = 0.7,
+) -> dict[str, Any]:
+    """
+    Full IC evaluation from a CSV file.
+
+    The CSV must contain columns: date, code, factor_value, next_return.
+    Optional: sector.
+
+    Args:
+        factor_csv: Path to CSV file.
+        factor_name: Display name for the factor.
+        sector_col: Column name for sector (if available).
+        ic_threshold: Minimum |IC| to pass.
+        turnover_warn: Turnover rate warning threshold.
+
+    Returns:
+        Dict with factor_name, status, mean_rank_ic, rank_icir,
+        ic_positive_ratio, mean_turnover, warnings.
+    """
+    return _safe_call(
+        _evaluate_factor_csv_impl,
+        factor_csv=factor_csv, factor_name=factor_name,
+        sector_col=sector_col, ic_threshold=ic_threshold,
+        turnover_warn=turnover_warn,
+    )
+
+
+def _evaluate_factor_csv_impl(**kwargs) -> dict[str, Any]:
+    import pandas as pd
+    from research_core.factor_lab.evaluation import evaluate_factor, evaluation_summary
+
+    factor_csv = kwargs.pop("factor_csv")
+    factor_name = kwargs.pop("factor_name")
+    sector_col = kwargs.pop("sector_col")
+
+    df = pd.read_csv(factor_csv)
+    if "date" in df.columns:
+        df["date"] = pd.to_datetime(df["date"])
+
+    report = evaluate_factor(
+        df, factor_name,
+        factor_col="factor_value", return_col="next_return",
+        sector_col=sector_col if sector_col in df.columns else "sector",
+        **kwargs,
+    )
+
+    return {
+        "factor_name": report.factor_name,
+        "status": report.status,
+        "mean_rank_ic": report.ic_eval.mean_rank_ic if report.ic_eval else None,
+        "rank_icir": report.ic_eval.rank_icir if report.ic_eval else None,
+        "ic_positive_ratio": report.ic_eval.ic_positive_ratio if report.ic_eval else None,
+        "mean_turnover": report.turnover.mean_turnover if report.turnover else None,
+        "warnings": report.warnings,
+        "next_actions": (
+            [f"Factor '{factor_name}' looks good. Call validate_factor() for gate evaluation."]
+            if report.status == "pass"
+            else [f"Factor '{factor_name}' has issues. Check warnings."]
+        ),
+    }
+
+
+def list_factors(factor_set: str = "alpha101") -> dict[str, Any]:
+    """
+    List all available factors in a given factor family.
+
+    Args:
+        factor_set: "alpha101", "wq101", "gtja191", "alpha158", "barra".
+
+    Returns:
+        Dict with 'items' list (each has factor_name, implemented, proof_status).
+    """
+    return _safe_call(_list_factors_impl, factor_set)
+
+
+def _list_factors_impl(factor_set: str) -> dict[str, Any]:
+    from research_core.factor_lab.runtime import FactorLabWorkspaceConfig
+    from research_core.factor_lab.service import (
+        list_alpha101_factors,
+        list_factor_set_factors,
+    )
+
+    config = FactorLabWorkspaceConfig()
+
+    if factor_set == "alpha101":
+        items = list_alpha101_factors(config)
+    else:
+        items = list_factor_set_factors(factor_set, config)
+
+    return {
+        "factor_set": factor_set,
+        "count": len(items),
+        "items": items,
+        "next_actions": [
+            f"Call explore_factors(factor_set='{factor_set}') to evaluate these factors.",
+            f"Call explore_factors(factors=['{items[0]['factor_name' if 'factor_name' in items[0] else 'name']}']) to test a specific factor.",
+        ] if items else ["No factors found. Try a different factor_set."],
+    }
+
+
+# ── Strategy building capabilities ─────────────────────────────────────────
+
+def build_strategy(
+    validated_run_path: str,
+    factor_names: Optional[list[str]] = None,
+    rebalance_frequency: str = "daily",
+    top_n: int = 50,
+    long_short: bool = False,
+    as_of: str = "",
+    start: str = "",
+    end: str = "",
+    output_dir: str = "",
+) -> dict[str, Any]:
+    """
+    Build target weight signals from a validated factor research run.
+
+    Args:
+        validated_run_path: Path to factor_lab job JSON.
+        factor_names: Specific factors to use (default: job's requested_factors).
+        rebalance_frequency: "single", "daily", "weekly", "monthly".
+        top_n: Number of names to hold per side.
+        long_short: Build long-short weights instead of long-only.
+        as_of: Single snapshot date (forces "single" frequency).
+        start: First signal date for multi-date exports.
+        end: Last signal date for multi-date exports.
+        output_dir: Optional output directory.
+
+    Returns:
+        Dict with strategy_id, signal_path, n_dates, n_positions.
+    """
+    return _safe_call(
+        _build_strategy_impl,
+        validated_run_path=validated_run_path,
+        factor_names=factor_names,
+        rebalance_frequency=rebalance_frequency,
+        top_n=top_n, long_short=long_short,
+        as_of=as_of, start=start, end=end,
+        output_dir=output_dir or None,
+    )
+
+
+def _build_strategy_impl(**kwargs) -> dict[str, Any]:
+    from research_core.strategy_engine.alpha_strategy import build_alpha_strategy_package
+
+    payload = build_alpha_strategy_package(**kwargs)
+    result = _dataclass_to_dict(payload) if hasattr(payload, "__dict__") else payload
+    result["next_actions"] = [
+        f"Strategy signals built at {result.get('signal_path', 'output')}.",
+        "Call package_backtest() to package for external simulation.",
+    ]
+    return result
+
+
+# ── Backtest capabilities ──────────────────────────────────────────────────
+
+def package_backtest(
+    engine: str,
+    signal_path: str,
+    strategy_id: str = "alpha_strategy",
+    start: str = "",
+    end: str = "",
+    benchmark: str = "",
+    initial_cash: float = 1_000_000.0,
+    slippage_bps: float = 0.0,
+    commission_bps: float = 0.0,
+    run_id: str = "",
+    output_dir: str = "",
+) -> dict[str, Any]:
+    """
+    Package target weight signals for external backtest engines.
+
+    Args:
+        engine: "gm" (掘金), "ptrade", or "qmt".
+        signal_path: Path to target weights CSV.
+        strategy_id: Strategy identifier.
+        start: Simulation start time.
+        end: Simulation end time.
+        benchmark: Benchmark symbol.
+        initial_cash: Initial capital.
+        slippage_bps: Slippage in basis points.
+        commission_bps: Commission in basis points.
+        run_id: Simulation run ID (auto-generated if empty).
+        output_dir: Optional output directory.
+
+    Returns:
+        Dict with run_id, engine, package_path, files.
+    """
+    return _safe_call(
+        _package_backtest_impl,
+        engine=engine, signal_path=signal_path,
+        strategy_id=strategy_id, start=start, end=end,
+        benchmark=benchmark, initial_cash=initial_cash,
+        slippage_bps=slippage_bps, commission_bps=commission_bps,
+        run_id=run_id, output_dir=output_dir or None,
+    )
+
+
+def _package_backtest_impl(**kwargs) -> dict[str, Any]:
+    from dataclasses import asdict
+    from contracts.backtest import ExternalSimulationRequest
+    from research_core.backtest_adapter.external_simulation import package_external_simulation
+
+    engine = kwargs.pop("engine")
+    signal_path = kwargs.pop("signal_path")
+    strategy_id = kwargs.pop("strategy_id")
+    run_id = kwargs.pop("run_id") or f"{strategy_id}_{engine}"
+
+    request = ExternalSimulationRequest(
+        run_id=run_id,
+        engine=engine,
+        strategy_id=strategy_id,
+        strategy_version="v1",
+        signal_path=signal_path,
+        start_time=kwargs.get("start", ""),
+        end_time=kwargs.get("end", ""),
+        benchmark=kwargs.get("benchmark", ""),
+        initial_cash=kwargs.get("initial_cash", 1_000_000.0),
+        slippage_bps=kwargs.get("slippage_bps", 0.0),
+        commission_bps=kwargs.get("commission_bps", 0.0),
+    )
+    output_dir = kwargs.get("output_dir")
+    package = package_external_simulation(request, output_dir=output_dir)
+    result = _dataclass_to_dict(package)
+    result["next_actions"] = [
+        f"Package ready for {engine}. Run the simulation in the engine terminal.",
+        "After simulation, call parse_backtest_result() to parse the result.",
+    ]
+    return result
+
+
+def parse_backtest_result(
+    engine: str,
+    run_id: str,
+    result_path: str,
+) -> dict[str, Any]:
+    """
+    Parse an external backtest engine's result file into a standardized result.
+
+    Args:
+        engine: "gm", "ptrade", or "qmt".
+        run_id: Simulation run ID.
+        result_path: Path to the engine's result file.
+
+    Returns:
+        Dict with run_id, engine, metrics, equity_curve, trades.
+    """
+    return _safe_call(
+        _parse_backtest_result_impl,
+        engine=engine, run_id=run_id, result_path=result_path,
+    )
+
+
+def _parse_backtest_result_impl(**kwargs) -> dict[str, Any]:
+    from research_core.backtest_adapter.external_simulation import parse_external_simulation_result
+
+    result = parse_external_simulation_result(**kwargs)
+    data = _dataclass_to_dict(result)
+    data["next_actions"] = [
+        "Review performance metrics. If satisfactory, consider live deployment.",
+        "If metrics are poor, go back to explore_factors() with different parameters.",
+    ]
+    return data
+
+
+# ── Qlib Lab capabilities ──────────────────────────────────────────────────
+
+def mine_factor(
+    name: str,
+    expression: str,
+    description: str = "",
+    start: str = "2021-01-01",
+    end: str = "2024-12-31",
+) -> dict[str, Any]:
+    """
+    Mine a single factor using Qlib expression syntax.
+
+    Args:
+        name: Factor name.
+        expression: Qlib expression (e.g. "Ref($close, 5) / $close - 1").
+        description: Human-readable description.
+        start: Start date.
+        end: End date.
+
+    Returns:
+        Dict with factor_name, expression, ic_mean, ic_ir, status.
+    """
+    return _safe_call(
+        _mine_factor_impl,
+        name=name, expression=expression,
+        description=description, start=start, end=end,
+    )
+
+
+def _mine_factor_impl(**kwargs) -> dict[str, Any]:
+    from research_core.qlib_lab.cli import main as qlib_main
+    import sys
+
+    name = kwargs["name"]
+    expression = kwargs["expression"]
+    description = kwargs.get("description", "")
+    start = kwargs.get("start", "2021-01-01")
+    end = kwargs.get("end", "2024-12-31")
+
+    # Build CLI args and call
+    old_argv = sys.argv
+    sys.argv = [
+        "qlib_lab", "mine-factor",
+        "--name", name,
+        "--expression", expression,
+        "--description", description or f"Factor: {name}",
+        "--start", start,
+        "--end", end,
+    ]
+    try:
+        qlib_main()
+        return {
+            "factor_name": name,
+            "expression": expression,
+            "status": "completed",
+            "next_actions": [
+                "Check the output for IC metrics.",
+                "Call validate_factor() to run validation gates.",
+                "Call qlib_backtest() with this expression for a full backtest.",
+            ],
+        }
+    finally:
+        sys.argv = old_argv
+
+
+def auto_mine(
+    theme: str,
+    start: str = "2021-01-01",
+    end: str = "2024-12-31",
+) -> dict[str, Any]:
+    """
+    AI-assisted automatic factor mining.
+
+    Args:
+        theme: Natural language factor theme (e.g. "mid-cap momentum with turnover confirmation").
+        start: Start date.
+        end: End date.
+
+    Returns:
+        Dict with theme, candidates, best_factor, best_ic.
+    """
+    return _safe_call(
+        _auto_mine_impl,
+        theme=theme, start=start, end=end,
+    )
+
+
+def _auto_mine_impl(**kwargs) -> dict[str, Any]:
+    from research_core.qlib_lab.cli import main as qlib_main
+    import sys
+
+    theme = kwargs["theme"]
+    start = kwargs.get("start", "2021-01-01")
+    end = kwargs.get("end", "2024-12-31")
+
+    old_argv = sys.argv
+    sys.argv = [
+        "qlib_lab", "auto-mine",
+        "--theme", theme,
+        "--start", start,
+        "--end", end,
+    ]
+    try:
+        qlib_main()
+        return {
+            "theme": theme,
+            "status": "completed",
+            "next_actions": [
+                "Check the output for candidate factors.",
+                "Call mine_factor() to test a specific expression.",
+                "Call qlib_backtest() for a full backtest on the best candidate.",
+            ],
+        }
+    finally:
+        sys.argv = old_argv
+
+
+def qlib_backtest(
+    factor_expression: str,
+    start: str = "2021-01-01",
+    end: str = "2024-12-31",
+) -> dict[str, Any]:
+    """
+    Run a Qlib factor-expression backtest.
+
+    Args:
+        factor_expression: Qlib expression (e.g. "($close / Ref($close, 20) - 1)").
+        start: Start date.
+        end: End date.
+
+    Returns:
+        Dict with expression, annualized_return, sharpe_ratio, max_drawdown.
+    """
+    return _safe_call(
+        _qlib_backtest_impl,
+        factor_expression=factor_expression,
+        start=start, end=end,
+    )
+
+
+def _qlib_backtest_impl(**kwargs) -> dict[str, Any]:
+    from research_core.qlib_lab.cli import main as qlib_main
+    import sys
+
+    expression = kwargs["factor_expression"]
+    start = kwargs.get("start", "2021-01-01")
+    end = kwargs.get("end", "2024-12-31")
+
+    old_argv = sys.argv
+    sys.argv = [
+        "qlib_lab", "backtest",
+        "--factor-expression", expression,
+        "--start", start,
+        "--end", end,
+    ]
+    try:
+        qlib_main()
+        return {
+            "expression": expression,
+            "status": "completed",
+            "next_actions": [
+                "Check the output for performance metrics.",
+                "If Sharpe > 1, call build_strategy() to create tradeable signals.",
+            ],
+        }
+    finally:
+        sys.argv = old_argv
+
+
+# ── CLI entry point ────────────────────────────────────────────────────────
+
+def _build_cli():
+    """Build the unified agent CLI parser."""
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        prog="research_core.agent_api",
+        description="AgentMatrix Research — Unified Agent API CLI",
+        epilog="Call 'discover' first to see all available capabilities.",
+    )
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    # discover
+    sub.add_parser("discover", help="List all capabilities")
+
+    # overview
+    sub.add_parser("overview", help="Framework overview")
+
+    # check-data
+    cd = sub.add_parser("check-data", help="Check data source connectivity")
+    cd.add_argument("--env-file", default="")
+
+    # explore
+    ex = sub.add_parser("explore", help="One-click factor exploration")
+    ex.add_argument("--goal", default="")
+    ex.add_argument("--universe", default="csi300", choices=["csi300", "csi500", "csi800", "all"])
+    ex.add_argument("--factor-set", default="alpha101", choices=["alpha101", "wq101", "gtja191", "alpha158", "barra"])
+    ex.add_argument("--factors", default="")
+    ex.add_argument("--start", default="2023-01-01")
+    ex.add_argument("--end", default="2025-12-31")
+    ex.add_argument("--horizon", type=int, default=5)
+    ex.add_argument("--top-n", type=int, default=10)
+    ex.add_argument("--cache-dir", default="/tmp/agentmatrix_cache")
+    ex.add_argument("--format", default="json", choices=["json", "markdown"])
+
+    # validate
+    va = sub.add_parser("validate", help="Run validation gates on factor metrics")
+    va.add_argument("--factor-name", required=True)
+    va.add_argument("--ic-mean", type=float, required=True)
+    va.add_argument("--ic-ir", type=float, required=True)
+    va.add_argument("--oos-retention", type=float, default=0.0)
+    va.add_argument("--decay-pct", type=float, default=0.0)
+    va.add_argument("--ic-std", type=float, default=0.0)
+
+    # evaluate-csv
+    ev = sub.add_parser("evaluate-csv", help="Evaluate factor from CSV file")
+    ev.add_argument("--factor-csv", required=True)
+    ev.add_argument("--factor-name", default="factor")
+    ev.add_argument("--sector-col", default="sector")
+    ev.add_argument("--ic-threshold", type=float, default=0.02)
+    ev.add_argument("--turnover-warn", type=float, default=0.7)
+
+    # list-factors
+    lf = sub.add_parser("list-factors", help="List available factors")
+    lf.add_argument("--factor-set", default="alpha101", choices=["alpha101", "wq101", "gtja191", "alpha158", "barra"])
+
+    # build
+    bd = sub.add_parser("build", help="Build strategy from validated factor run")
+    bd.add_argument("--validated-run", required=True)
+    bd.add_argument("--factors", default="")
+    bd.add_argument("--rebalance-frequency", default="daily", choices=["single", "daily", "weekly", "monthly"])
+    bd.add_argument("--top-n", type=int, default=50)
+    bd.add_argument("--long-short", action="store_true")
+    bd.add_argument("--as-of", default="")
+    bd.add_argument("--start", default="")
+    bd.add_argument("--end", default="")
+    bd.add_argument("--output-dir", default="")
+
+    # package
+    pk = sub.add_parser("package", help="Package signals for external simulation")
+    pk.add_argument("--engine", required=True, choices=["gm", "ptrade", "qmt"])
+    pk.add_argument("--signal-path", required=True)
+    pk.add_argument("--strategy", default="alpha_strategy")
+    pk.add_argument("--start", required=True)
+    pk.add_argument("--end", required=True)
+    pk.add_argument("--benchmark", default="")
+    pk.add_argument("--initial-cash", type=float, default=1_000_000.0)
+    pk.add_argument("--slippage-bps", type=float, default=0.0)
+    pk.add_argument("--commission-bps", type=float, default=0.0)
+    pk.add_argument("--run-id", default="")
+    pk.add_argument("--output-dir", default="")
+
+    # parse-result
+    pr = sub.add_parser("parse-result", help="Parse external simulation result")
+    pr.add_argument("--engine", required=True, choices=["gm", "ptrade", "qmt"])
+    pr.add_argument("--run-id", required=True)
+    pr.add_argument("--result-path", required=True)
+
+    # mine
+    mn = sub.add_parser("mine", help="Mine a single factor via Qlib")
+    mn.add_argument("--name", required=True)
+    mn.add_argument("--expression", required=True)
+    mn.add_argument("--description", default="")
+    mn.add_argument("--start", default="2021-01-01")
+    mn.add_argument("--end", default="2024-12-31")
+
+    # auto-mine
+    am = sub.add_parser("auto-mine", help="AI-assisted factor mining")
+    am.add_argument("--theme", required=True)
+    am.add_argument("--start", default="2021-01-01")
+    am.add_argument("--end", default="2024-12-31")
+
+    # qlib-backtest
+    qb = sub.add_parser("qlib-backtest", help="Qlib expression backtest")
+    qb.add_argument("--factor-expression", required=True)
+    qb.add_argument("--start", default="2021-01-01")
+    qb.add_argument("--end", default="2024-12-31")
+
+    return parser
+
+
+def main():
+    """CLI entry point for python -m research_core.agent_api."""
+    parser = _build_cli()
+    args = parser.parse_args()
+
+    if args.command == "discover":
+        print(json.dumps(discover(), ensure_ascii=False, indent=2))
+
+    elif args.command == "overview":
+        print(json.dumps(overview(), ensure_ascii=False, indent=2))
+
+    elif args.command == "check-data":
+        print(json.dumps(check_data_source(args.env_file), ensure_ascii=False, indent=2))
+
+    elif args.command == "explore":
+        factor_list = None
+        if args.factors:
+            factor_list = [f.strip() for f in args.factors.split(",") if f.strip()]
+        result = explore_factors(
+            goal=args.goal, universe=args.universe, factor_set=args.factor_set,
+            factors=factor_list, start=args.start, end=args.end,
+            horizon=args.horizon, top_n=args.top_n, cache_dir=args.cache_dir,
+        )
+        if args.format == "markdown" and "markdown_report" in result:
+            print(result["markdown_report"])
+        else:
+            print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+
+    elif args.command == "validate":
+        result = validate_factor(
+            factor_name=args.factor_name, ic_mean=args.ic_mean,
+            ic_ir=args.ic_ir, oos_retention=args.oos_retention,
+            decay_pct=args.decay_pct, ic_std=args.ic_std,
+        )
+        print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+
+    elif args.command == "evaluate-csv":
+        result = evaluate_factor_csv(
+            factor_csv=args.factor_csv, factor_name=args.factor_name,
+            sector_col=args.sector_col, ic_threshold=args.ic_threshold,
+            turnover_warn=args.turnover_warn,
+        )
+        print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+
+    elif args.command == "list-factors":
+        result = list_factors(args.factor_set)
+        print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+
+    elif args.command == "build":
+        factor_names = None
+        if args.factors:
+            factor_names = [f.strip() for f in args.factors.split(",") if f.strip()]
+        result = build_strategy(
+            validated_run_path=args.validated_run,
+            factor_names=factor_names,
+            rebalance_frequency=args.rebalance_frequency,
+            top_n=args.top_n, long_short=args.long_short,
+            as_of=args.as_of, start=args.start, end=args.end,
+            output_dir=args.output_dir,
+        )
+        print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+
+    elif args.command == "package":
+        result = package_backtest(
+            engine=args.engine, signal_path=args.signal_path,
+            strategy_id=args.strategy, start=args.start, end=args.end,
+            benchmark=args.benchmark, initial_cash=args.initial_cash,
+            slippage_bps=args.slippage_bps, commission_bps=args.commission_bps,
+            run_id=args.run_id, output_dir=args.output_dir,
+        )
+        print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+
+    elif args.command == "parse-result":
+        result = parse_backtest_result(
+            engine=args.engine, run_id=args.run_id, result_path=args.result_path,
+        )
+        print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+
+    elif args.command == "mine":
+        result = mine_factor(
+            name=args.name, expression=args.expression,
+            description=args.description, start=args.start, end=args.end,
+        )
+        print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+
+    elif args.command == "auto-mine":
+        result = auto_mine(theme=args.theme, start=args.start, end=args.end)
+        print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+
+    elif args.command == "qlib-backtest":
+        result = qlib_backtest(
+            factor_expression=args.factor_expression,
+            start=args.start, end=args.end,
+        )
+        print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+
+
+if __name__ == "__main__":
+    main()
