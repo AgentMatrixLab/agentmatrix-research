@@ -3289,6 +3289,7 @@ function agentTaskRows() {
       progress: Number.isFinite(progress) ? Math.max(0, Math.min(100, progress)) : meta.progress,
       status: meta.appStatus,
       sourceStatus: task.status || "submitted",
+      truthExecution: task.truth_execution || null,
       stages,
       artifacts,
     };
@@ -3332,6 +3333,32 @@ function renderTaskStats(rows) {
     .join("");
 }
 
+function renderTruthExecution(truth) {
+  const statusMap = {
+    passed: ["对照通过", "badge-green"],
+    failed: ["对照未通过", "badge-orange"],
+    not_comparable: ["未完成对照（库内无标准真值）", "badge-gray"],
+  };
+  const [label, badge] = statusMap[truth.truth_status] || [truth.truth_status || "未知", "badge-gray"];
+  const fmtPct = (v) => (typeof v === "number" ? `${(v * 100).toFixed(2)}%` : "暂无");
+  const fmtErr = (v) => (typeof v === "number" ? v.toExponential(3) : "暂无");
+  return `
+    <section class="truth-execution-panel">
+      <header>
+        <strong>真值对照结果</strong>
+        <span class="badge ${badge}">${escapeHtml(label)}</span>
+      </header>
+      <div class="truth-metric-grid">
+        <span>裁决 decision：<strong>${escapeHtml(truth.decision || "暂无")}</strong></span>
+        <span>覆盖率 overlap：<strong>${fmtPct(truth.overlap_ratio)}</strong></span>
+        <span>逐点命中率：<strong>${fmtPct(truth.exact_match_ratio)}</strong></span>
+        <span>最大绝对误差：<strong>${fmtErr(truth.max_abs_error)}</strong></span>
+        <span>产物目录：<strong>${escapeHtml(truth.artifacts_dir || "暂无")}</strong></span>
+      </div>
+    </section>
+  `;
+}
+
 function renderTaskStagePanel(row) {
   if (!els.taskStagePanel || !row) return;
   els.taskStagePanel.innerHTML = `
@@ -3354,6 +3381,7 @@ function renderTaskStagePanel(row) {
         )
         .join("")}
     </div>
+    ${row.truthExecution ? renderTruthExecution(row.truthExecution) : ""}
     <footer>
       <strong>关联产物</strong>
       <span>${escapeHtml(row.artifacts)}</span>
@@ -3461,8 +3489,8 @@ async function loadAgentTasks() {
     if (!response.ok) return;
     const payload = await response.json();
     state.agentTasks = Array.isArray(payload.items) ? payload.items : [];
+   state.agentTasksLoaded = true;
   } finally {
-    state.agentTasksLoaded = true;
     renderAgentTask();
     if (state.view === "tasks") renderTasks();
   }
@@ -4654,7 +4682,7 @@ async function submitAgentTask() {
     skill_name: skillName,
     instruction:
       (taskType === "truth_compare"
-        ? "请将外部因子值与当前因子库做对比，中间不要询问用户，最终给出复用和入库建议。"
+        ? "用户上传因子值对照测试"
         : "请按数据入口契约读取 code.py、experiment_data.csv、paper.pdf、research_report.pdf，自动复现研报因子，中间不要询问用户，最终给出入库建议。"),
     package: {
       input_mode: state.intakeInputMode,
@@ -5249,6 +5277,7 @@ function renderView() {
   }
   if (taskMode) {
     renderTasks();
+    loadAgentTasks();
   }
   if (agentTaskMode) {
     renderAgentTask();
