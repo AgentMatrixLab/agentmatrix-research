@@ -465,9 +465,12 @@ function factorReplicationStatus(factor) {
 }
 
 function factorAlphaTier(factor) {
-  // 临时映射：后端正式字段 alpha_tier 到位前，用 IR 近似分层。IR>0.3 strong，0.1~0.3 weak，<0.1 dead。
+  // 临时映射：后端正式字段 alpha_tier 到位前，用 IR 近似分层。
+  // IR>0.3 strong，0.1~0.3 weak，<0.1 dead，null/缺失 → missing。
   if (factor?.alpha_tier) return factor.alpha_tier;
-  const ir = Math.abs(toFiniteNumber(factor?.rank_ic_ir) ?? 0);
+  const rawIr = toFiniteNumber(factor?.rank_ic_ir);
+  if (rawIr === null) return "missing";
+  const ir = Math.abs(rawIr);
   if (ir > 0.3) return "strong";
   if (ir >= 0.1) return "weak";
   return "dead";
@@ -477,7 +480,7 @@ function factorAdmission(factor) {
   const replication = factorReplicationStatus(factor);
   const alphaTier = factorAlphaTier(factor);
   const inLibrary = replication === "passed";
-  const agentReadable = inLibrary && alphaTier !== "dead";
+  const agentReadable = inLibrary && alphaTier !== "dead" && alphaTier !== "missing";
   return {
     replication,
     alphaTier,
