@@ -82,6 +82,19 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     parser = build_parser()
+    compare_parser = subparsers.add_parser("compare-factors", help="Compare IC and correlation of factors")
+    compare_parser.add_argument("factor_ids", nargs="+", help="Factor IDs to compare")
+    compare_parser.add_argument("--start", default="2020-01-01")
+    compare_parser.add_argument("--end", default="2024-12-31")
+
+    redundant_parser = subparsers.add_parser("check-redundancy", help="Check if new factor is redundant")
+    redundant_parser.add_argument("factor_id", help="New factor ID")
+    redundant_parser.add_argument("--threshold", type=float, default=0.7)
+
+    cluster_parser = subparsers.add_parser("cluster-factors", help="Cluster factors by correlation")
+    cluster_parser.add_argument("--n-clusters", type=int, default=5)
+    cluster_parser.add_argument("--threshold", type=float, default=0.5)
+
     args = parser.parse_args()
 
     config = QlibWorkspaceConfig.from_env()
