@@ -91,7 +91,39 @@ class QlibFactorLab:
             metadata={"registered_at": _now_iso(), **(metadata or {})},
         )
         save_factor_definition(definition)
+        # Check for existing factor with same name — increment version
+        existing = self._find_factor_by_name(name)
+        if existing:
+            definition.version = existing.get("version", 1) + 1
+            definition.parent_factor_id = existing.get("factor_id")
+            definition.status = "evaluating"
         return definition
+
+    def _find_factor_by_name(self, name: str) -> dict | None:
+        """Find factor by name in registry."""
+        try:
+            for fid, info in self.factor_registry._registry.items():
+                if info.get("name") == name:
+                    return info
+        except AttributeError:
+            pass
+        return None
+
+    def revise_factor(self, factor_id: str, new_expression: str) -> dict:
+        """Revise a factor with incremented version."""
+        info = self.factor_registry._registry.get(factor_id, {})
+        old_version = info.get("version", 1)
+        info["version"] = old_version + 1
+        info["expression"] = new_expression
+        info["status"] = "evaluating"
+        return info
+
+    def retire_factor(self, factor_id: str, reason: str = "") -> dict:
+        """Retire a factor."""
+        info = self.factor_registry._registry.get(factor_id, {})
+        info["status"] = "retired"
+        info["retired_reason"] = reason
+        return info
 
     def fetch_expression_frame(
         self,
