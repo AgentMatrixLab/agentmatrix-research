@@ -42,3 +42,7 @@ class FactorMiningCandidate:
     rationale: str = ""
     tags: list[str] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
+    status: str = "draft"
+    version: int = 1
+    parent_factor_id: str | None = None
+    retired_reason: str | None = None
