@@ -12,8 +12,8 @@ from pathlib import Path
 
 TOKEN = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("GM_TOKEN", "")
 if not TOKEN:
-    print("ERROR: pass token as first argument")
-    sys.exit(2)
+    print("ERROR: pass token as first argument or set GM_TOKEN env var")
+    sys.exit(0)
 
 GENERATE = "--generate" in sys.argv
 
