@@ -86,6 +86,9 @@ def parse_expression(expr: str) -> ParsedExpression | None:
     normalized = re.sub(r'Ref\(\$(\w+),\s*-\s*(\d+)\)', r'Ref($\1, \2)', expr.strip())
     if normalized != expr.strip():
         return parse_expression(normalized)
+    # Fallback: recognise Qlib operators (Log, Skew, Kurt, etc.) as UNKNOWN
+    if _has_qlib_operators(expr):
+        return ParsedExpression(raw=expr, expr_type=ExprType.UNKNOWN, params={"note": "qlib-pass-through"})
     return None
 
 
