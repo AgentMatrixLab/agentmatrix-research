@@ -86,11 +86,11 @@ What are you trying to do?
 │
 ├── "Factors passed validation, build a strategy"
 │     └── build_strategy(validated_run_path="runtime/factor_lab/jobs/xxx.json")
-│           → returns strategy_id, signal_path
+│           → returns strategy_id, artifacts (with signals/config)
 │
 ├── "Strategy is ready, package for backtest"
 │     └── package_backtest(engine="gm", signal_path="target_weights.csv", start=..., end=...)
-│           → returns package_path, files
+│           → returns package_dir, artifacts
 │
 ├── "Backtest finished, parse the result"
 │     └── parse_backtest_result(engine="gm", run_id="...", result_path="result.pkl")
@@ -246,7 +246,7 @@ if v["passed"]:
         top_n=50,
         rebalance_frequency="daily",
     )
-    print(f"Strategy signals at: {s['signal_path']}")
+    print(f"Strategy signals at: {s['artifacts']['signals']}")
 ```
 
 ### Pattern 3: Full Pipeline
@@ -272,11 +272,11 @@ if result["gate_verdict"] in ("🟢", "🟡"):
         # 4. Package
         pkg = package_backtest(
             engine="gm",
-            signal_path=strategy["signal_path"],
+            signal_path=strategy["artifacts"]["signals"],
             start="2023-01-01",
             end="2025-12-31",
         )
-        print(f"Ready for GM simulation: {pkg['package_path']}")
+        print(f"Ready for GM simulation: {pkg['package_dir']}")
 ```
 
 ---

@@ -57,6 +57,13 @@ def _safe_call(func, *args, **kwargs) -> dict[str, Any]:
             "suggested_fix": "Check that the file path is correct and the file exists. Use overview() to see workspace paths.",
             "file": str(e),
         }
+    except SystemExit as e:
+        return {
+            "error": "CLI exited unexpectedly (SystemExit).",
+            "error_type": "SystemExit",
+            "exit_code": e.code,
+            "suggested_fix": "Check that all required arguments are provided. Use --help on the CLI subcommand for usage.",
+        }
     except Exception as e:
         return {
             "error": str(e),
@@ -161,7 +168,7 @@ def _check_data_source_impl(env_file: str) -> dict[str, Any]:
         "connected": result.get("ok", False),
         "details": result,
         "next_actions": (
-            ["Data source is ready. Call explore_factors() with data_source='amazingdata'."]
+            ["Data source is ready. Call explore_factors() to begin factor research."]
             if result.get("ok")
             else ["Data source not available. Use demo data for testing: explore_factors()"]
         ),
@@ -231,6 +238,8 @@ def _explore_factors_impl(**kwargs) -> dict[str, Any]:
             "total": result.gate_details.get("total", 0),
         },
         "summary": result.summary,
+        "report_path": result.report_path,
+        "artifacts": result.artifacts,
         "next_actions": result.next_actions,
         "markdown_report": explore_to_markdown(result),
     }
@@ -246,6 +255,7 @@ def validate_factor(
     cost_resilience: Optional[bool] = None,
     sector_neutrality: Optional[float] = None,
     segment_consistency: Optional[int] = None,
+    validated_run_path: str = "",
 ) -> dict[str, Any]:
     """
     Run the 7-gate validation system on a single factor's metrics.
@@ -263,9 +273,12 @@ def validate_factor(
         cost_resilience: Whether factor survives 50bp cost (optional).
         sector_neutrality: IC retention after sector neutralization (optional).
         segment_consistency: Number of profitable regimes out of 3 (optional).
+        validated_run_path: Optional path to the factor_lab job JSON this factor came from.
+            If provided, it is passed through to the result for linking to build_strategy().
 
     Returns:
-        Dict with 'passed' (bool), 'gates' dict, 'fail_reasons', 'pass_reasons'.
+        Dict with 'passed' (bool), 'gates' dict, 'fail_reasons', 'pass_reasons',
+        and 'validated_run_path' (if provided).
     """
     return _safe_call(
         _validate_factor_impl,
@@ -273,15 +286,19 @@ def validate_factor(
         oos_retention=oos_retention, decay_pct=decay_pct, ic_std=ic_std,
         cost_resilience=cost_resilience, sector_neutrality=sector_neutrality,
         segment_consistency=segment_consistency,
+        validated_run_path=validated_run_path,
     )
 
 
 def _validate_factor_impl(**kwargs) -> dict[str, Any]:
     from research_core.factor_lab.validation_gate import ValidationGate
 
+    validated_run_path = kwargs.pop("validated_run_path", "")
     gate = ValidationGate()
     verdict = gate.evaluate(**kwargs)
     result = verdict.to_dict()
+    if validated_run_path:
+        result["validated_run_path"] = validated_run_path
     result["next_actions"] = (
         [f"Factor '{verdict.factor_name}' passed. Call build_strategy() to create target weights."]
         if verdict.passed
@@ -442,6 +459,9 @@ def _build_strategy_impl(**kwargs) -> dict[str, Any]:
 
     payload = build_alpha_strategy_package(**kwargs)
     result = _dataclass_to_dict(payload) if hasattr(payload, "__dict__") else payload
+    # Ensure top-level signal_path for backward compat
+    if "signal_path" not in result and "artifacts" in result:
+        result["signal_path"] = result["artifacts"].get("signals", "")
     result["next_actions"] = [
         f"Strategy signals built at {result.get('signal_path', 'output')}.",
         "Call package_backtest() to package for external simulation.",
@@ -519,6 +539,9 @@ def _package_backtest_impl(**kwargs) -> dict[str, Any]:
     output_dir = kwargs.get("output_dir")
     package = package_external_simulation(request, output_dir=output_dir)
     result = _dataclass_to_dict(package)
+    # Ensure top-level package_path for backward compat
+    if "package_path" not in result:
+        result["package_path"] = result.get("package_dir", "")
     result["next_actions"] = [
         f"Package ready for {engine}. Run the simulation in the engine terminal.",
         "After simulation, call parse_backtest_result() to parse the result.",
@@ -590,8 +613,9 @@ def mine_factor(
 
 
 def _mine_factor_impl(**kwargs) -> dict[str, Any]:
-    from research_core.qlib_lab.cli import main as qlib_main
-    import sys
+    import json as _json
+    import subprocess as _sp
+    import sys as _sys
 
     name = kwargs["name"]
     expression = kwargs["expression"]
@@ -599,30 +623,59 @@ def _mine_factor_impl(**kwargs) -> dict[str, Any]:
     start = kwargs.get("start", "2021-01-01")
     end = kwargs.get("end", "2024-12-31")
 
-    # Build CLI args and call
-    old_argv = sys.argv
-    sys.argv = [
-        "qlib_lab", "mine-factor",
+    cmd = [
+        _sys.executable, "-m", "research_core.qlib_lab.cli",
+        "mine-factor",
         "--name", name,
         "--expression", expression,
         "--description", description or f"Factor: {name}",
         "--start", start,
         "--end", end,
     ]
-    try:
-        qlib_main()
+    proc = _sp.run(cmd, capture_output=True, text=True, timeout=600)
+    output = (proc.stdout or "") + "\n" + (proc.stderr or "")
+
+    if proc.returncode != 0:
         return {
             "factor_name": name,
             "expression": expression,
-            "status": "completed",
-            "next_actions": [
-                "Check the output for IC metrics.",
-                "Call validate_factor() to run validation gates.",
-                "Call qlib_backtest() with this expression for a full backtest.",
-            ],
+            "status": "error",
+            "returncode": proc.returncode,
+            "output": output.strip()[-2000:],
+            "error": f"Qlib CLI exited with code {proc.returncode}",
+            "suggested_fix": "Ensure Qlib is installed and market data is available. Try: pip install pyqlib",
+            "next_actions": ["Check error output above.", "Verify Qlib data is initialized."],
         }
-    finally:
-        sys.argv = old_argv
+
+    # Try to extract IC metrics from output
+    ic_mean = None
+    ic_ir = None
+    for line in output.split("\n"):
+        if "IC mean" in line or "ic_mean" in line.lower():
+            try:
+                ic_mean = float(line.split()[-1])
+            except (ValueError, IndexError):
+                pass
+        if "IC IR" in line or "ic_ir" in line.lower():
+            try:
+                ic_ir = float(line.split()[-1])
+            except (ValueError, IndexError):
+                pass
+
+    return {
+        "factor_name": name,
+        "expression": expression,
+        "ic_mean": ic_mean,
+        "ic_ir": ic_ir,
+        "status": "completed",
+        "returncode": proc.returncode,
+        "output_summary": output.strip()[-1000:],
+        "next_actions": [
+            f"Factor '{name}' IC={ic_mean}, IR={ic_ir}." if ic_mean is not None else "Check output for IC metrics.",
+            "Call validate_factor() to run validation gates.",
+            "Call qlib_backtest() with this expression for a full backtest.",
+        ],
+    }
 
 
 def auto_mine(
@@ -648,33 +701,45 @@ def auto_mine(
 
 
 def _auto_mine_impl(**kwargs) -> dict[str, Any]:
-    from research_core.qlib_lab.cli import main as qlib_main
-    import sys
+    import subprocess as _sp
+    import sys as _sys
 
     theme = kwargs["theme"]
     start = kwargs.get("start", "2021-01-01")
     end = kwargs.get("end", "2024-12-31")
 
-    old_argv = sys.argv
-    sys.argv = [
-        "qlib_lab", "auto-mine",
+    cmd = [
+        _sys.executable, "-m", "research_core.qlib_lab.cli",
+        "auto-mine",
         "--theme", theme,
         "--start", start,
         "--end", end,
     ]
-    try:
-        qlib_main()
+    proc = _sp.run(cmd, capture_output=True, text=True, timeout=600)
+    output = (proc.stdout or "") + "\n" + (proc.stderr or "")
+
+    if proc.returncode != 0:
         return {
             "theme": theme,
-            "status": "completed",
-            "next_actions": [
-                "Check the output for candidate factors.",
-                "Call mine_factor() to test a specific expression.",
-                "Call qlib_backtest() for a full backtest on the best candidate.",
-            ],
+            "status": "error",
+            "returncode": proc.returncode,
+            "output": output.strip()[-2000:],
+            "error": f"Qlib CLI exited with code {proc.returncode}",
+            "suggested_fix": "Ensure Qlib is installed and market data is available.",
+            "next_actions": ["Check error output above."],
         }
-    finally:
-        sys.argv = old_argv
+
+    return {
+        "theme": theme,
+        "status": "completed",
+        "returncode": proc.returncode,
+        "output_summary": output.strip()[-1000:],
+        "next_actions": [
+            "Check the output for candidate factors.",
+            "Call mine_factor() to test a specific expression.",
+            "Call qlib_backtest() for a full backtest on the best candidate.",
+        ],
+    }
 
 
 def qlib_backtest(
@@ -701,32 +766,71 @@ def qlib_backtest(
 
 
 def _qlib_backtest_impl(**kwargs) -> dict[str, Any]:
-    from research_core.qlib_lab.cli import main as qlib_main
-    import sys
+    import subprocess as _sp
+    import sys as _sys
 
     expression = kwargs["factor_expression"]
     start = kwargs.get("start", "2021-01-01")
     end = kwargs.get("end", "2024-12-31")
 
-    old_argv = sys.argv
-    sys.argv = [
-        "qlib_lab", "backtest",
+    cmd = [
+        _sys.executable, "-m", "research_core.qlib_lab.cli",
+        "backtest",
         "--factor-expression", expression,
         "--start", start,
         "--end", end,
     ]
-    try:
-        qlib_main()
+    proc = _sp.run(cmd, capture_output=True, text=True, timeout=600)
+    output = (proc.stdout or "") + "\n" + (proc.stderr or "")
+
+    if proc.returncode != 0:
         return {
             "expression": expression,
-            "status": "completed",
-            "next_actions": [
-                "Check the output for performance metrics.",
-                "If Sharpe > 1, call build_strategy() to create tradeable signals.",
-            ],
+            "status": "error",
+            "returncode": proc.returncode,
+            "output": output.strip()[-2000:],
+            "error": f"Qlib CLI exited with code {proc.returncode}",
+            "suggested_fix": "Ensure Qlib is installed and market data is available.",
+            "next_actions": ["Check error output above."],
         }
-    finally:
-        sys.argv = old_argv
+
+    # Try to extract performance metrics from output
+    sharpe_ratio = None
+    annualized_return = None
+    max_drawdown = None
+    for line in output.split("\n"):
+        low = line.lower()
+        if ("sharpe" in low or "sharpe_ratio" in low) and sharpe_ratio is None:
+            try:
+                sharpe_ratio = float(line.split()[-1])
+            except (ValueError, IndexError):
+                pass
+        if ("annual" in low or "return" in low) and annualized_return is None:
+            try:
+                annualized_return = float(line.split()[-1])
+            except (ValueError, IndexError):
+                pass
+        if ("max_drawdown" in low or "mdd" in low) and max_drawdown is None:
+            try:
+                max_drawdown = float(line.split()[-1])
+            except (ValueError, IndexError):
+                pass
+
+    return {
+        "expression": expression,
+        "annualized_return": annualized_return,
+        "sharpe_ratio": sharpe_ratio,
+        "max_drawdown": max_drawdown,
+        "status": "completed",
+        "returncode": proc.returncode,
+        "output_summary": output.strip()[-1000:],
+        "next_actions": [
+            f"Sharpe={sharpe_ratio}, Return={annualized_return}, MDD={max_drawdown}."
+            if sharpe_ratio is not None
+            else "Check output for performance metrics.",
+            "If Sharpe > 1, call build_strategy() to create tradeable signals.",
+        ],
+    }
 
 
 # ── CLI entry point ────────────────────────────────────────────────────────
@@ -773,6 +877,7 @@ def _build_cli():
     va.add_argument("--oos-retention", type=float, default=0.0)
     va.add_argument("--decay-pct", type=float, default=0.0)
     va.add_argument("--ic-std", type=float, default=0.0)
+    va.add_argument("--validated-run-path", default="")
 
     # evaluate-csv
     ev = sub.add_parser("evaluate-csv", help="Evaluate factor from CSV file")
@@ -843,99 +948,114 @@ def _build_cli():
 
 def main():
     """CLI entry point for python -m research_core.agent_api."""
+    import sys as _sys
     parser = _build_cli()
     args = parser.parse_args()
 
-    if args.command == "discover":
-        print(json.dumps(discover(), ensure_ascii=False, indent=2))
+    result: dict[str, Any] = {}
+    try:
+        if args.command == "discover":
+            result = discover()
+            print(json.dumps(result, ensure_ascii=False, indent=2))
 
-    elif args.command == "overview":
-        print(json.dumps(overview(), ensure_ascii=False, indent=2))
+        elif args.command == "overview":
+            result = overview()
+            print(json.dumps(result, ensure_ascii=False, indent=2))
 
-    elif args.command == "check-data":
-        print(json.dumps(check_data_source(args.env_file), ensure_ascii=False, indent=2))
+        elif args.command == "check-data":
+            result = check_data_source(args.env_file)
+            print(json.dumps(result, ensure_ascii=False, indent=2))
 
-    elif args.command == "explore":
-        factor_list = None
-        if args.factors:
-            factor_list = [f.strip() for f in args.factors.split(",") if f.strip()]
-        result = explore_factors(
-            goal=args.goal, universe=args.universe, factor_set=args.factor_set,
-            factors=factor_list, start=args.start, end=args.end,
-            horizon=args.horizon, top_n=args.top_n, cache_dir=args.cache_dir,
-        )
-        if args.format == "markdown" and "markdown_report" in result:
-            print(result["markdown_report"])
-        else:
+        elif args.command == "explore":
+            factor_list = None
+            if args.factors:
+                factor_list = [f.strip() for f in args.factors.split(",") if f.strip()]
+            result = explore_factors(
+                goal=args.goal, universe=args.universe, factor_set=args.factor_set,
+                factors=factor_list, start=args.start, end=args.end,
+                horizon=args.horizon, top_n=args.top_n, cache_dir=args.cache_dir,
+            )
+            if args.format == "markdown" and "markdown_report" in result:
+                print(result["markdown_report"])
+            else:
+                print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+
+        elif args.command == "validate":
+            result = validate_factor(
+                factor_name=args.factor_name, ic_mean=args.ic_mean,
+                ic_ir=args.ic_ir, oos_retention=args.oos_retention,
+                decay_pct=args.decay_pct, ic_std=args.ic_std,
+                validated_run_path=args.validated_run_path,
+            )
             print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
 
-    elif args.command == "validate":
-        result = validate_factor(
-            factor_name=args.factor_name, ic_mean=args.ic_mean,
-            ic_ir=args.ic_ir, oos_retention=args.oos_retention,
-            decay_pct=args.decay_pct, ic_std=args.ic_std,
-        )
-        print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+        elif args.command == "evaluate-csv":
+            result = evaluate_factor_csv(
+                factor_csv=args.factor_csv, factor_name=args.factor_name,
+                sector_col=args.sector_col, ic_threshold=args.ic_threshold,
+                turnover_warn=args.turnover_warn,
+            )
+            print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
 
-    elif args.command == "evaluate-csv":
-        result = evaluate_factor_csv(
-            factor_csv=args.factor_csv, factor_name=args.factor_name,
-            sector_col=args.sector_col, ic_threshold=args.ic_threshold,
-            turnover_warn=args.turnover_warn,
-        )
-        print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+        elif args.command == "list-factors":
+            result = list_factors(args.factor_set)
+            print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
 
-    elif args.command == "list-factors":
-        result = list_factors(args.factor_set)
-        print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+        elif args.command == "build":
+            factor_names = None
+            if args.factors:
+                factor_names = [f.strip() for f in args.factors.split(",") if f.strip()]
+            result = build_strategy(
+                validated_run_path=args.validated_run,
+                factor_names=factor_names,
+                rebalance_frequency=args.rebalance_frequency,
+                top_n=args.top_n, long_short=args.long_short,
+                as_of=args.as_of, start=args.start, end=args.end,
+                output_dir=args.output_dir,
+            )
+            print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
 
-    elif args.command == "build":
-        factor_names = None
-        if args.factors:
-            factor_names = [f.strip() for f in args.factors.split(",") if f.strip()]
-        result = build_strategy(
-            validated_run_path=args.validated_run,
-            factor_names=factor_names,
-            rebalance_frequency=args.rebalance_frequency,
-            top_n=args.top_n, long_short=args.long_short,
-            as_of=args.as_of, start=args.start, end=args.end,
-            output_dir=args.output_dir,
-        )
-        print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+        elif args.command == "package":
+            result = package_backtest(
+                engine=args.engine, signal_path=args.signal_path,
+                strategy_id=args.strategy, start=args.start, end=args.end,
+                benchmark=args.benchmark, initial_cash=args.initial_cash,
+                slippage_bps=args.slippage_bps, commission_bps=args.commission_bps,
+                run_id=args.run_id, output_dir=args.output_dir,
+            )
+            print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
 
-    elif args.command == "package":
-        result = package_backtest(
-            engine=args.engine, signal_path=args.signal_path,
-            strategy_id=args.strategy, start=args.start, end=args.end,
-            benchmark=args.benchmark, initial_cash=args.initial_cash,
-            slippage_bps=args.slippage_bps, commission_bps=args.commission_bps,
-            run_id=args.run_id, output_dir=args.output_dir,
-        )
-        print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+        elif args.command == "parse-result":
+            result = parse_backtest_result(
+                engine=args.engine, run_id=args.run_id, result_path=args.result_path,
+            )
+            print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
 
-    elif args.command == "parse-result":
-        result = parse_backtest_result(
-            engine=args.engine, run_id=args.run_id, result_path=args.result_path,
-        )
-        print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+        elif args.command == "mine":
+            result = mine_factor(
+                name=args.name, expression=args.expression,
+                description=args.description, start=args.start, end=args.end,
+            )
+            print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
 
-    elif args.command == "mine":
-        result = mine_factor(
-            name=args.name, expression=args.expression,
-            description=args.description, start=args.start, end=args.end,
-        )
-        print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+        elif args.command == "auto-mine":
+            result = auto_mine(theme=args.theme, start=args.start, end=args.end)
+            print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
 
-    elif args.command == "auto-mine":
-        result = auto_mine(theme=args.theme, start=args.start, end=args.end)
-        print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+        elif args.command == "qlib-backtest":
+            result = qlib_backtest(
+                factor_expression=args.factor_expression,
+                start=args.start, end=args.end,
+            )
+            print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
 
-    elif args.command == "qlib-backtest":
-        result = qlib_backtest(
-            factor_expression=args.factor_expression,
-            start=args.start, end=args.end,
-        )
-        print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+    except Exception as exc:
+        print(json.dumps({"error": str(exc), "error_type": type(exc).__name__}, ensure_ascii=False))
+        _sys.exit(1)
+
+    # Non-zero exit on structured errors so CI and agents can detect failures
+    if isinstance(result, dict) and result.get("error") or result.get("status") == "error":
+        _sys.exit(1)
 
 
 if __name__ == "__main__":

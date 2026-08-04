@@ -56,11 +56,11 @@ _CAPABILITIES: list[dict[str, Any]] = [
             "horizon": {"type": "int", "default": 5, "description": "Forward return horizon in days"},
             "top_n": {"type": "int", "default": 10},
         },
-        "returns": "ExploreResult with gate_verdict, top_factors, summary, next_actions",
+        "returns": "ExploreResult with gate_verdict, top_factors, summary, report_path, artifacts, next_actions",
         "example": (
             "from research_core.agent_api import explore_factors\n"
             "result = explore_factors(goal='momentum factors', universe='csi500')\n"
-            "print(result.gate_verdict, result.summary)"
+            "print(result['gate_verdict'], result['summary'])"
         ),
     },
 
@@ -79,8 +79,12 @@ _CAPABILITIES: list[dict[str, Any]] = [
             "oos_retention": {"type": "float", "default": 0.0, "description": "Out-of-sample IC retention ratio"},
             "decay_pct": {"type": "float", "default": 0.0, "description": "IC time decay percentage"},
             "ic_std": {"type": "float", "default": 0.0},
+            "cost_resilience": {"type": "bool or None", "default": "None", "description": "Whether factor survives 50bp cost"},
+            "sector_neutrality": {"type": "float or None", "default": "None"},
+            "segment_consistency": {"type": "int or None", "default": "None"},
+            "validated_run_path": {"type": "str", "default": "", "description": "Optional path to the source job JSON; passed through for linking to build_strategy()"},
         },
-        "returns": "Dict with 'passed', 'gates', 'fail_reasons', 'pass_reasons'",
+        "returns": "Dict with 'passed', 'gates', 'fail_reasons', 'pass_reasons', 'validated_run_path'",
         "example": (
             "from research_core.agent_api import validate_factor\n"
             "v = validate_factor('alpha1', ic_mean=0.035, ic_ir=0.45, oos_retention=0.75)\n"
@@ -123,11 +127,11 @@ _CAPABILITIES: list[dict[str, Any]] = [
         "parameters": {
             "factor_set": {"type": "str", "default": "alpha101", "options": ["alpha101", "wq101", "gtja191", "alpha158", "barra"]},
         },
-        "returns": "List of dicts with factor_name, implemented, proof_status",
+        "returns": "Dict with factor_set, count, items (list of factor dicts)",
         "example": (
             "from research_core.agent_api import list_factors\n"
-            "factors = list_factors('alpha101')\n"
-            "for f in factors: print(f['factor_name'], f['proof_status'])"
+            "result = list_factors('alpha101')\n"
+            "for f in result['items']: print(f['factor_name'], f['proof_status'])"
         ),
     },
 
@@ -150,11 +154,11 @@ _CAPABILITIES: list[dict[str, Any]] = [
             "start": {"type": "str", "default": ""},
             "end": {"type": "str", "default": ""},
         },
-        "returns": "Dict with strategy_id, signal_path, n_dates, n_positions",
+        "returns": "Dict with strategy_id, signal_path, artifacts (with signals/config)",
         "example": (
             "from research_core.agent_api import build_strategy\n"
             "result = build_strategy('runtime/factor_lab/jobs/abc123.json', top_n=50)\n"
-            "print(result['signal_path'])"
+            "print(result['strategy_id'], result['artifacts']['signals'])"
         ),
     },
 
@@ -177,12 +181,12 @@ _CAPABILITIES: list[dict[str, Any]] = [
             "slippage_bps": {"type": "float", "default": 0.0},
             "commission_bps": {"type": "float", "default": 0.0},
         },
-        "returns": "Dict with run_id, engine, package_path, files",
+        "returns": "Dict with run_id, engine, package_dir, package_path, artifacts (signals, config, etc.)",
         "example": (
             "from research_core.agent_api import package_backtest\n"
             "pkg = package_backtest(engine='gm', signal_path='target_weights.csv',\n"
             "                       start='2023-01-01', end='2025-12-31')\n"
-            "print(pkg['package_path'])"
+            "print(pkg['package_dir'])"
         ),
     },
 
@@ -358,7 +362,7 @@ def get_manifest() -> dict[str, Any]:
             "explore": (
                 "from research_core.agent_api import explore_factors\n"
                 "result = explore_factors(goal='momentum factors', universe='csi300')\n"
-                "print(result.gate_verdict, result.summary)"
+                "print(result['gate_verdict'], result['summary'])"
             ),
         },
         "design_principles": [
