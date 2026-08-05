@@ -50,6 +50,24 @@ const SUPABASE_TRUTH_SUMMARY_TABLE =
     ? window.FACTOR_LAB_SUPABASE_TRUTH_SUMMARY_TABLE
     : window.localStorage.getItem("FACTOR_LAB_SUPABASE_TRUTH_SUMMARY_TABLE")) ||
   "factor_truth_values_summary";
+const SUPABASE_ANALYSIS_TABLE =
+  urlParams.get("analysisTable") ||
+  (hasWindowConfig("FACTOR_LAB_SUPABASE_ANALYSIS_TABLE")
+    ? window.FACTOR_LAB_SUPABASE_ANALYSIS_TABLE
+    : window.localStorage.getItem("FACTOR_LAB_SUPABASE_ANALYSIS_TABLE")) ||
+  "factor_analysis_results";
+const SUPABASE_ANALYSIS_IC_TABLE =
+  urlParams.get("analysisIcTable") ||
+  (hasWindowConfig("FACTOR_LAB_SUPABASE_ANALYSIS_IC_TABLE")
+    ? window.FACTOR_LAB_SUPABASE_ANALYSIS_IC_TABLE
+    : window.localStorage.getItem("FACTOR_LAB_SUPABASE_ANALYSIS_IC_TABLE")) ||
+  "factor_analysis_ic_series";
+const SUPABASE_ANALYSIS_GROUP_TABLE =
+  urlParams.get("analysisGroupTable") ||
+  (hasWindowConfig("FACTOR_LAB_SUPABASE_ANALYSIS_GROUP_TABLE")
+    ? window.FACTOR_LAB_SUPABASE_ANALYSIS_GROUP_TABLE
+    : window.localStorage.getItem("FACTOR_LAB_SUPABASE_ANALYSIS_GROUP_TABLE")) ||
+  "factor_analysis_group_series";
 const USE_SUPABASE_DASHBOARD = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY && !configuredApiHost);
 const ACCESS_PASSWORD =
   window.FACTOR_LAB_ACCESS_PASSWORD ||
@@ -57,6 +75,7 @@ const ACCESS_PASSWORD =
   window.localStorage.getItem("FACTOR_LAB_ACCESS_PASSWORD") ||
   "factorlab2026";
 const ACCESS_SESSION_KEY = "FACTOR_LAB_AUTH_OK";
+const THEME_STORAGE_KEY = "FACTOR_LAB_THEME";
 if (urlParams.get("supabaseUrl")) {
   window.localStorage.setItem("FACTOR_LAB_SUPABASE_URL", SUPABASE_URL);
 }
@@ -68,6 +87,15 @@ if (urlParams.get("supabaseTable")) {
 }
 if (urlParams.get("truthSummaryTable")) {
   window.localStorage.setItem("FACTOR_LAB_SUPABASE_TRUTH_SUMMARY_TABLE", SUPABASE_TRUTH_SUMMARY_TABLE);
+}
+if (urlParams.get("analysisTable")) {
+  window.localStorage.setItem("FACTOR_LAB_SUPABASE_ANALYSIS_TABLE", SUPABASE_ANALYSIS_TABLE);
+}
+if (urlParams.get("analysisIcTable")) {
+  window.localStorage.setItem("FACTOR_LAB_SUPABASE_ANALYSIS_IC_TABLE", SUPABASE_ANALYSIS_IC_TABLE);
+}
+if (urlParams.get("analysisGroupTable")) {
+  window.localStorage.setItem("FACTOR_LAB_SUPABASE_ANALYSIS_GROUP_TABLE", SUPABASE_ANALYSIS_GROUP_TABLE);
 }
 if (urlParams.get("accessPassword")) {
   window.localStorage.setItem("FACTOR_LAB_ACCESS_PASSWORD", ACCESS_PASSWORD);
@@ -320,6 +348,7 @@ const els = {
   taskStats: document.querySelector("#taskStats"),
   taskTableBody: document.querySelector("#taskTableBody"),
   taskStagePanel: document.querySelector("#taskStagePanel"),
+  themeToggleButton: document.querySelector("#themeToggleButton"),
   refreshButton: document.querySelector("#refreshButton"),
   logoutButton: document.querySelector("#logoutButton"),
   collapseButton: document.querySelector("#collapseButton"),
@@ -340,6 +369,37 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+function normalizeTheme(value) {
+  return value === "light" ? "light" : "dark";
+}
+
+function currentTheme() {
+  return normalizeTheme(window.localStorage.getItem(THEME_STORAGE_KEY));
+}
+
+function updateThemeButton(theme) {
+  if (!els.themeToggleButton) return;
+  const isDark = theme === "dark";
+  const label = els.themeToggleButton.querySelector(".theme-toggle-label");
+  els.themeToggleButton.setAttribute("aria-pressed", String(isDark));
+  els.themeToggleButton.setAttribute("aria-label", isDark ? "切换到白天模式" : "切换到黑夜模式");
+  if (label) label.textContent = isDark ? "黑夜" : "白天";
+}
+
+function applyTheme(theme) {
+  const normalized = normalizeTheme(theme);
+  document.body.dataset.theme = normalized;
+  window.localStorage.setItem(THEME_STORAGE_KEY, normalized);
+  updateThemeButton(normalized);
+  if (state?.view === "detail" && state.activeFactorId) {
+    window.requestAnimationFrame(() => mountDetailCharts(state.activeFactorId));
+  }
+}
+
+function toggleTheme() {
+  applyTheme(document.body.dataset.theme === "dark" ? "light" : "dark");
 }
 
 function formatNumber(value, digits = 3) {
@@ -892,11 +952,17 @@ function formatInteger(value) {
   return number === null ? "-" : Math.round(number).toLocaleString("zh-CN");
 }
 
-async function fetchSupabaseRows(tableName, { order = "", limit = 1000 } = {}) {
+async function fetchSupabaseRows(tableName, { order = "", limit = 1000, offset = 0, filters = {} } = {}) {
   const endpoint = new URL(`${SUPABASE_URL}/rest/v1/${encodeURIComponent(tableName)}`);
   endpoint.searchParams.set("select", "*");
   if (order) endpoint.searchParams.set("order", order);
   endpoint.searchParams.set("limit", String(limit));
+  if (offset) endpoint.searchParams.set("offset", String(offset));
+  Object.entries(filters).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== "") {
+      endpoint.searchParams.set(key, String(value));
+    }
+  });
   const response = await fetchWithTimeout(endpoint.toString(), {
     headers: {
       apikey: SUPABASE_ANON_KEY,
@@ -915,6 +981,21 @@ async function fetchSupabaseRows(tableName, { order = "", limit = 1000 } = {}) {
   }
   const rows = await response.json();
   return Array.isArray(rows) ? rows : [];
+}
+
+async function fetchSupabaseAllRows(tableName, { order = "", filters = {}, pageSize = 1000, maxRows = 50000 } = {}) {
+  const rows = [];
+  for (let offset = 0; offset < maxRows; offset += pageSize) {
+    const page = await fetchSupabaseRows(tableName, {
+      order,
+      limit: pageSize,
+      offset,
+      filters,
+    });
+    rows.push(...page);
+    if (page.length < pageSize) break;
+  }
+  return rows;
 }
 
 async function fetchSupabaseDashboardPayload() {
@@ -5186,9 +5267,289 @@ function activeFactor() {
   return state.rawFactors.find((factor) => factor.id === state.activeFactorId);
 }
 
+function parseJsonPayload(value) {
+  if (!value) return {};
+  if (typeof value === "object" && !Array.isArray(value)) return value;
+  if (typeof value !== "string") return {};
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch (error) {
+    return {};
+  }
+}
+
+function cumulativeFromReturns(items, valueKey = "return") {
+  let total = 1;
+  return (items || []).map((item) => {
+    const value = Number(item?.[valueKey]);
+    if (Number.isFinite(value)) {
+      total *= 1 + value;
+    }
+    return Number(total.toFixed(8));
+  });
+}
+
+function normalizeSupabaseAnalysisPayload(row) {
+  const raw =
+    [parseJsonPayload(row?.chart_data), parseJsonPayload(row?.analysis_json), parseJsonPayload(row?.payload)]
+      .find((item) => Object.keys(item).length) || {};
+  const chartData = Object.keys(raw).length ? raw : parseJsonPayload(row);
+  const dailySeries = Array.isArray(chartData.daily_series) ? chartData.daily_series : [];
+  const groupNav = chartData.group_nav || {};
+  const dates =
+    (Array.isArray(groupNav.dates) && groupNav.dates.length ? groupNav.dates : null) ||
+    (Array.isArray(chartData.stratification?.dates) ? chartData.stratification.dates : []) ||
+    dailySeries.map((item) => item.date).filter(Boolean);
+  const groupCumulative =
+    groupNav.cumulative ||
+    chartData.stratification?.equity_by_group ||
+    chartData.stratification?.equityByGroup ||
+    {};
+
+  let groupReturns = {};
+  if (chartData.group_returns && typeof chartData.group_returns === "object") {
+    Object.entries(chartData.group_returns).forEach(([key, value]) => {
+      if (Array.isArray(value)) {
+        groupReturns[key] = value;
+      }
+    });
+  }
+  if (!Object.keys(groupReturns).length && dailySeries.length) {
+    dailySeries.forEach((item) => {
+      Object.entries(item.groups || {}).forEach(([group, value]) => {
+        if (!groupReturns[group]) groupReturns[group] = [];
+        groupReturns[group].push({ date: item.date, return: Number(value) });
+      });
+      const longShort = Number(item.long_short);
+      if (Number.isFinite(longShort)) {
+        if (!groupReturns.long_short) groupReturns.long_short = [];
+        groupReturns.long_short.push({ date: item.date, return: longShort });
+      }
+    });
+  }
+
+  const icTimeSeries =
+    Array.isArray(chartData.ic_time_series) && chartData.ic_time_series.length
+      ? chartData.ic_time_series
+      : dailySeries
+          .map((item) => ({
+            date: item.date,
+            ic: Number.isFinite(Number(item.rank_ic)) ? Number(item.rank_ic) : Number(item.ic),
+            rank_ic: Number.isFinite(Number(item.rank_ic)) ? Number(item.rank_ic) : Number(item.ic),
+            pearson_ic: Number.isFinite(Number(item.pearson_ic)) ? Number(item.pearson_ic) : null,
+          }))
+          .filter((item) => item.date && Number.isFinite(item.ic));
+
+  const longShortEquity =
+    Array.isArray(chartData.stratification?.equity) && chartData.stratification.equity.length
+      ? chartData.stratification.equity
+      : cumulativeFromReturns(groupReturns.long_short || []);
+
+  return {
+    ...chartData,
+    source_row_id: row?.id || chartData.id || null,
+    ic_time_series: icTimeSeries,
+    group_returns: groupReturns,
+    stratification: {
+      ...(chartData.stratification || {}),
+      dates,
+      equity: longShortEquity,
+      equity_by_group: groupCumulative,
+    },
+  };
+}
+
+function sanitizeNavSeries(values) {
+  let lastValid = null;
+  return (values || []).map((value) => {
+    const number = Number(value);
+    if (!Number.isFinite(number) || number <= 0.05) {
+      return lastValid;
+    }
+    if (lastValid !== null) {
+      const ratio = number / lastValid;
+      if (ratio < 0.35 || ratio > 3) {
+        return lastValid;
+      }
+    }
+    lastValid = number;
+    return number;
+  });
+}
+
+function normalizeSupabaseSplitAnalysisPayload(summaryRow, icRows, groupRows) {
+  const orderedIcRows = [...(icRows || [])].sort((a, b) =>
+    String(a.trade_date || "").localeCompare(String(b.trade_date || ""))
+  );
+  const icTimeSeries = orderedIcRows
+    .map((row) => {
+      const rankIc = Number(row.rank_ic);
+      const pearsonIc = Number(row.pearson_ic);
+      return {
+        date: row.trade_date,
+        ic: rankIc,
+        rank_ic: rankIc,
+        pearson_ic: Number.isFinite(pearsonIc) ? pearsonIc : null,
+      };
+    })
+    .filter((item) => item.date && Number.isFinite(item.ic));
+
+  const orderedGroupRows = [...(groupRows || [])].sort((a, b) => {
+    const dateCompare = String(a.trade_date || "").localeCompare(String(b.trade_date || ""));
+    if (dateCompare) return dateCompare;
+    return String(a.series_key || "").localeCompare(String(b.series_key || ""), undefined, { numeric: true });
+  });
+  const dates = [];
+  const seenDates = new Set();
+  const groupReturns = {};
+  const equityByGroup = {};
+
+  orderedGroupRows.forEach((row) => {
+    const tradeDate = row.trade_date;
+    if (tradeDate && !seenDates.has(tradeDate)) {
+      dates.push(tradeDate);
+      seenDates.add(tradeDate);
+    }
+    const isLongShort = row.series_type === "long_short" || row.series_key === "LS";
+    const groupKey = isLongShort ? "long_short" : String(row.group_no ?? row.series_key ?? "").replace(/^G/i, "");
+    if (!groupKey) return;
+
+    const groupReturn = Number(row.group_return);
+    if (!groupReturns[groupKey]) groupReturns[groupKey] = [];
+    groupReturns[groupKey].push({
+      date: tradeDate,
+      return: Number.isFinite(groupReturn) ? groupReturn : null,
+    });
+
+    if (!isLongShort) {
+      const groupNav = Number(row.group_nav);
+      if (!equityByGroup[groupKey]) equityByGroup[groupKey] = [];
+      equityByGroup[groupKey].push(Number.isFinite(groupNav) ? groupNav : null);
+    }
+  });
+
+  Object.entries(equityByGroup).forEach(([key, values]) => {
+    equityByGroup[key] = sanitizeNavSeries(values);
+  });
+
+  return {
+    ...summaryRow,
+    source_row_id: summaryRow?.id || null,
+    dataset: parseJsonPayload(summaryRow?.dataset),
+    metrics: parseJsonPayload(summaryRow?.metrics),
+    ic_summary: parseJsonPayload(summaryRow?.ic_summary),
+    group_returns_summary: parseJsonPayload(summaryRow?.group_returns_summary),
+    long_short_summary: parseJsonPayload(summaryRow?.long_short_summary),
+    monotonicity: parseJsonPayload(summaryRow?.monotonicity),
+    ic_time_series: icTimeSeries,
+    group_returns: groupReturns,
+    stratification: {
+      dates,
+      equity: cumulativeFromReturns(groupReturns.long_short || []),
+      equity_by_group: equityByGroup,
+    },
+  };
+}
+
+async function loadSupabaseSplitAnalysisPayload(summaryRow) {
+  if (!SUPABASE_ANALYSIS_IC_TABLE || !SUPABASE_ANALYSIS_GROUP_TABLE) {
+    return normalizeSupabaseAnalysisPayload(summaryRow);
+  }
+  const factorName = summaryRow?.factor_name;
+  const library = summaryRow?.library;
+  const configHash = summaryRow?.config_hash;
+  if (!factorName || !library || !configHash) {
+    return normalizeSupabaseAnalysisPayload(summaryRow);
+  }
+  const filters = {
+    factor_name: `eq.${factorName}`,
+    library: `eq.${library}`,
+    config_hash: `eq.${configHash}`,
+  };
+  const [icRows, groupRows] = await Promise.all([
+    fetchSupabaseAllRows(SUPABASE_ANALYSIS_IC_TABLE, {
+      order: "trade_date.asc",
+      filters,
+    }),
+    fetchSupabaseAllRows(SUPABASE_ANALYSIS_GROUP_TABLE, {
+      order: "trade_date.asc,series_key.asc",
+      filters,
+    }),
+  ]);
+  return normalizeSupabaseSplitAnalysisPayload(summaryRow, icRows, groupRows);
+}
+
+function sortAnalysisRows(rows) {
+  return [...rows].sort((a, b) => {
+    const left = new Date(a.generated_at || a.created_at || a.imported_at || 0).getTime();
+    const right = new Date(b.generated_at || b.created_at || b.imported_at || 0).getTime();
+    return right - left;
+  });
+}
+
+function factorAnalysisNameAliases(factor) {
+  const names = new Set();
+  [factor?.factor_name, factor?.raw_factor_name, factor?.display_name, factor?.source_id]
+    .filter(Boolean)
+    .forEach((name) => names.add(String(name).trim()));
+  Array.from(names).forEach((name) => {
+    const match = name.match(/(?:worldquant[_-]?)?alpha0*(\d+)/i);
+    if (!match) return;
+    const number = Number(match[1]);
+    if (!Number.isFinite(number)) return;
+    names.add(`alpha${number}`);
+    names.add(`alpha${String(number).padStart(3, "0")}`);
+    names.add(`WorldQuant_alpha${String(number).padStart(3, "0")}`);
+  });
+  return Array.from(names).filter(Boolean);
+}
+
+async function loadSupabaseFactorAnalysis(factorId) {
+  if (!SUPABASE_ANALYSIS_TABLE) return;
+  const factor = state.rawFactors.find((item) => item.id === factorId);
+  const attempts = [
+    { factor_id: `eq.${factorId}` },
+    ...factorAnalysisNameAliases(factor).map((name) => ({ factor_name: `eq.${name}` })),
+  ].filter(Boolean);
+
+  for (const filters of attempts) {
+    try {
+      const rows = await fetchSupabaseRows(SUPABASE_ANALYSIS_TABLE, {
+        limit: 10,
+        filters,
+      });
+      if (rows.length) {
+        const [latest] = sortAnalysisRows(rows);
+        try {
+          state.factorDetailData[factorId] = await loadSupabaseSplitAnalysisPayload(latest);
+        } catch (seriesError) {
+          console.warn("Supabase split factor analysis lookup skipped:", latest, seriesError);
+          state.factorDetailData[factorId] = normalizeSupabaseAnalysisPayload(latest);
+        }
+        return;
+      }
+    } catch (error) {
+      console.warn("Supabase factor analysis lookup skipped:", filters, error);
+    }
+  }
+}
+
 async function loadFactorDetailData(factorId) {
   if (!factorId || state.factorDetailLoading[factorId]) return;
-  if (USE_SUPABASE_DASHBOARD || CLOUD_DEMO_MODE) {
+  if (USE_SUPABASE_DASHBOARD) {
+    state.factorDetailLoading[factorId] = true;
+    try {
+      await loadSupabaseFactorAnalysis(factorId);
+    } finally {
+      state.factorDetailLoading[factorId] = false;
+      if (state.view === "detail" && state.activeFactorId === factorId) {
+        renderDetail();
+      }
+    }
+    return;
+  }
+  if (CLOUD_DEMO_MODE) {
     return;
   }
   state.factorDetailLoading[factorId] = true;
@@ -5402,6 +5763,9 @@ function renderDetail() {
       }
     });
   });
+  if (state.detailTab === "analysis") {
+    window.requestAnimationFrame(() => mountDetailCharts(factor.id));
+  }
 }
 
 function factorFormula(factor) {
@@ -5510,31 +5874,23 @@ function renderAnalysisPanel(factor) {
   const hasIcSeries = Array.isArray(detailData.ic_time_series) && detailData.ic_time_series.length > 0;
   const hasGroupReturns = detailData.group_returns && Object.values(detailData.group_returns).some((items) => Array.isArray(items) && items.length > 0);
   const stratification = detailData.stratification || {};
-  const hasStratification = Array.isArray(stratification.equity) && stratification.equity.length > 0;
+  const equityByGroup = stratification.equity_by_group || stratification.equityByGroup || {};
+  const hasStratification =
+    (Array.isArray(stratification.equity) && stratification.equity.length > 0) ||
+    Object.values(equityByGroup).some((items) => Array.isArray(items) && items.length > 0);
   const hasRealData = hasIcSeries || hasGroupReturns || hasStratification;
-  if (!hasRealData && !state.factorDetailLoading[factor.id]) {
-    loadFactorDetailData(factor.id);
-  }
-  
-  return `
-    <section class="metric-grid">
-      ${metricCard("复现状态", proofBadge(factor.proof_status)[0], proofValue(factor.proof_status), factor.proof_status === "passed" ? "good" : "warn")}
-      ${metricCard("真值校验", truthBadge(factor.truth_status)[0], truthValue(factor.truth_status), truthMetricTone(factor.truth_status))}
-      ${metricCard("覆盖率", formatRatio(factor.coverage_ratio), "有效样本覆盖")}
-      ${metricCard("IC均值", formatNumber(factor.rank_ic_mean, 4), "Rank IC Mean")}
-      ${metricCard("IR均值", formatNumber(factor.rank_ic_ir, 4), "Rank IC IR")}
-      ${metricCard("真值匹配率", formatRatio(factor.truth_exact_match_ratio), "真值匹配")}
-    </section>
-
-    <section class="summary-card">
-      <header>复现与真值对比摘要</header>
-      <div class="summary-body">
-        <p>
-          本因子已完成复现验证。系统读取本地 proof、evaluation、research report 等产物，
-          对复现结果与 Truth 真值进行一致性检查。当前结果显示：
-          <strong class="${factor.proof_status === "passed" ? "text-green" : "text-red"}">复现状态为${proofValue(factor.proof_status)}</strong>，
-          <strong class="${truthTextClass(factor.truth_status)}">真值状态为${truthValue(factor.truth_status)}</strong>。
-        </p>
+  const hasTruthComparisonMetrics =
+    toFiniteNumber(factor.truth_exact_match_ratio) !== null ||
+    toFiniteNumber(factor.truth_max_abs_error) !== null;
+  const latestJobHtml = factor.latest_job_id
+    ? `<code>${escapeHtml(factor.latest_job_id)}</code>`
+    : `<span class="muted-value">未生成</span>`;
+  const checkedAtText = formatDate(factor.latest_checked_at);
+  const checkedAtHtml = checkedAtText === "-" ? `<span class="muted-value">未记录</span>` : checkedAtText;
+  const truthMetricCardHtml = hasTruthComparisonMetrics
+    ? metricCard("真值匹配率", formatRatio(factor.truth_exact_match_ratio), "真值匹配")
+    : "";
+  const truthSummaryTableHtml = hasTruthComparisonMetrics ? `
         <table class="summary-table">
           <thead>
             <tr>
@@ -5552,11 +5908,58 @@ function renderAnalysisPanel(factor) {
               <td>${truthValue(factor.truth_status)}</td>
               <td>${formatNumber(factor.truth_exact_match_ratio, 6)}</td>
               <td>${formatError(factor.truth_max_abs_error)}</td>
-              <td>${escapeHtml(factor.latest_job_id || "-")}</td>
-              <td>${formatDate(factor.latest_checked_at)}</td>
+              <td>${latestJobHtml}</td>
+              <td>${checkedAtHtml}</td>
             </tr>
           </tbody>
         </table>
+  ` : `
+        <div class="summary-note">
+          当前还没有生成逐点真值对照指标，匹配率和最大误差会在真值对照任务完成后展示。
+        </div>
+        <table class="summary-table summary-table-compact">
+          <thead>
+            <tr>
+              <th>复现状态（Proof）</th>
+              <th>真值状态（Truth）</th>
+              <th>最新 Job ID</th>
+              <th>生成时间</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>${proofValue(factor.proof_status)}</td>
+              <td>${truthValue(factor.truth_status)}</td>
+              <td>${latestJobHtml}</td>
+              <td>${checkedAtHtml}</td>
+            </tr>
+          </tbody>
+        </table>
+  `;
+  if (!hasRealData && !state.factorDetailLoading[factor.id]) {
+    loadFactorDetailData(factor.id);
+  }
+  
+  return `
+    <section class="metric-grid">
+      ${metricCard("复现状态", proofBadge(factor.proof_status)[0], proofValue(factor.proof_status), factor.proof_status === "passed" ? "good" : "warn")}
+      ${metricCard("真值校验", truthBadge(factor.truth_status)[0], truthValue(factor.truth_status), truthMetricTone(factor.truth_status))}
+      ${metricCard("覆盖率", formatRatio(factor.coverage_ratio), "有效样本覆盖")}
+      ${metricCard("IC均值", formatNumber(factor.rank_ic_mean, 4), "Rank IC Mean")}
+      ${metricCard("IR均值", formatNumber(factor.rank_ic_ir, 4), "Rank IC IR")}
+      ${truthMetricCardHtml}
+    </section>
+
+    <section class="summary-card">
+      <header>复现与真值对比摘要</header>
+      <div class="summary-body">
+        <p>
+          本因子已完成复现验证。系统读取本地 proof、evaluation、research report 等产物，
+          对复现结果与 Truth 真值进行一致性检查。当前结果显示：
+          <strong class="${factor.proof_status === "passed" ? "text-green" : "text-red"}">复现状态为${proofValue(factor.proof_status)}</strong>，
+          <strong class="${truthTextClass(factor.truth_status)}">真值状态为${truthValue(factor.truth_status)}</strong>。
+        </p>
+        ${truthSummaryTableHtml}
       </div>
     </section>
 
@@ -5566,7 +5969,7 @@ function renderAnalysisPanel(factor) {
           <strong>单因子分层研究 / Factor Stratification Analysis</strong>
           <span>区间：当前复现样本区间 · 频率：日频</span>
         </header>
-        <div class="chart-placeholder chart-large ${hasRealData ? "chart-rendered" : ""}">
+        <div id="stratChart" class="chart-placeholder chart-large ${hasRealData ? "chart-rendered chart-echarts" : ""}">
           ${hasRealData ? renderStratificationChart(detailData) : `
             <div class="placeholder-mark">◇</div>
             <strong>待接入真实数据 API</strong>
@@ -5580,7 +5983,7 @@ function renderAnalysisPanel(factor) {
             <strong>IC 时序 / IC Time Series</strong>
             <span>区间：当前复现样本区间</span>
           </header>
-          <div class="chart-placeholder ${hasRealData ? "chart-rendered" : ""}">
+          <div id="icChart" class="chart-placeholder ${hasRealData ? "chart-rendered chart-echarts" : ""}">
             ${hasRealData ? renderIcTimeSeriesChartV2(detailData) : `<strong>等待时序数据</strong>`}
           </div>
         </article>
@@ -5589,7 +5992,7 @@ function renderAnalysisPanel(factor) {
             <strong>分组表现 / Group Performance</strong>
             <span>区间：当前复现样本区间</span>
           </header>
-          <div class="chart-placeholder ${hasRealData ? "chart-rendered" : ""}">
+          <div id="groupChart" class="chart-placeholder ${hasRealData ? "chart-rendered chart-echarts" : ""}">
             ${hasRealData ? renderGroupPerformanceChartV2(detailData) : `<strong>等待分组收益数据</strong>`}
           </div>
         </article>
@@ -5694,7 +6097,9 @@ function formatCompactAxisTick(value, range) {
 
 function renderStratificationChart(detailData) {
   const stratification = detailData.stratification || {};
-  const equity = stratification.equity || [];
+  const equityByGroup = stratification.equity_by_group || stratification.equityByGroup || {};
+  const firstGroupEquity = Object.values(equityByGroup).find((values) => Array.isArray(values) && values.length);
+  const equity = stratification.equity || firstGroupEquity || [];
   const dates = stratification.dates || [];
   
   if (equity.length === 0) {
@@ -6020,6 +6425,255 @@ function renderGroupPerformanceChartV2(detailData) {
   return html;
 }
 
+function chartThemeTokens() {
+  const isDark = document.body.dataset.theme === "dark";
+  const groupPalette = isDark
+    ? ["#60a5fa", "#22d3ee", "#2dd4bf", "#34d399", "#a3e635", "#facc15", "#fb923c", "#f87171", "#e879f9", "#c084fc"]
+    : ["#2563eb", "#0891b2", "#0f9f8f", "#16a34a", "#65a30d", "#d97706", "#ea580c", "#dc2626", "#c026d3", "#7c3aed"];
+  return {
+    text: isDark ? "#e5edf8" : "#1f3147",
+    muted: isDark ? "#93a4ba" : "#6b7d93",
+    axis: isDark ? "#304258" : "#d6e0ec",
+    grid: isDark ? "rgba(84, 103, 126, 0.24)" : "#edf2f8",
+    tooltipBg: isDark ? "rgba(12, 18, 28, 0.96)" : "rgba(255, 255, 255, 0.96)",
+    tooltipBorder: isDark ? "#2d4058" : "#d7e2ef",
+    positive: isDark ? "#34d399" : "#16a34a",
+    negative: isDark ? "#fb7185" : "#dc2626",
+    longShort: isDark ? "#fbbf24" : "#f97316",
+    line: isDark ? "#60a5fa" : "#2563eb",
+    groupPalette,
+  };
+}
+
+function chartDateLabel(value) {
+  return String(value || "").slice(0, 10);
+}
+
+function chartMonthLabel(value) {
+  return String(value || "").slice(0, 7);
+}
+
+function setEchart(container, option) {
+  if (!container || !window.echarts) return null;
+  container.innerHTML = "";
+  container.classList.add("echart-active");
+  const chart = window.echarts.getInstanceByDom(container) || window.echarts.init(container, null, {
+    renderer: "canvas",
+    useDirtyRect: true,
+  });
+  chart.setOption(option, true);
+  window.setTimeout(() => chart.resize(), 0);
+  return chart;
+}
+
+function renderEchartsStratification(container, detailData) {
+  const tokens = chartThemeTokens();
+  const stratification = detailData.stratification || {};
+  const dates = Array.isArray(stratification.dates) ? stratification.dates.map(chartDateLabel) : [];
+  const equityByGroup = stratification.equity_by_group || stratification.equityByGroup || {};
+  const groupKeys = Object.keys(equityByGroup)
+    .filter((key) => Array.isArray(equityByGroup[key]) && equityByGroup[key].length)
+    .sort((a, b) => Number(a) - Number(b));
+  const series = groupKeys.map((key, index) => ({
+    name: `G${key}`,
+    type: "line",
+    data: equityByGroup[key],
+    showSymbol: false,
+    connectNulls: false,
+    smooth: false,
+    lineStyle: {
+      width: index === 0 || index === groupKeys.length - 1 ? 2.4 : 1.7,
+      color: tokens.groupPalette[index % tokens.groupPalette.length],
+      opacity: index === 0 || index === groupKeys.length - 1 ? 1 : 0.86,
+    },
+    emphasis: { focus: "series" },
+  }));
+  if (Array.isArray(stratification.equity) && stratification.equity.length) {
+    series.push({
+      name: "LS",
+      type: "line",
+      data: stratification.equity,
+      showSymbol: false,
+      connectNulls: false,
+      smooth: false,
+      lineStyle: { width: 3, color: tokens.longShort, type: "dashed" },
+      emphasis: { focus: "series" },
+    });
+  }
+  if (!dates.length || !series.length) return null;
+  return setEchart(container, {
+    animationDuration: 520,
+    color: tokens.groupPalette,
+    tooltip: {
+      trigger: "axis",
+      backgroundColor: tokens.tooltipBg,
+      borderColor: tokens.tooltipBorder,
+      textStyle: { color: tokens.text, fontSize: 12 },
+      valueFormatter: (value) => (Number.isFinite(Number(value)) ? Number(value).toFixed(3) : "-"),
+    },
+    legend: {
+      type: "scroll",
+      bottom: 6,
+      left: "center",
+      itemWidth: 16,
+      itemHeight: 8,
+      textStyle: { color: tokens.muted, fontSize: 11 },
+    },
+    grid: { left: 58, right: 22, top: 24, bottom: 56, containLabel: true },
+    xAxis: {
+      type: "category",
+      boundaryGap: false,
+      data: dates,
+      axisLabel: {
+        color: tokens.muted,
+        formatter: chartMonthLabel,
+        hideOverlap: true,
+        margin: 14,
+      },
+      axisLine: { lineStyle: { color: tokens.axis } },
+      axisTick: { lineStyle: { color: tokens.axis } },
+    },
+    yAxis: {
+      type: "value",
+      name: "累计净值",
+      scale: true,
+      nameTextStyle: { color: tokens.muted, fontWeight: 700, padding: [0, 28, 0, 0] },
+      axisLabel: { color: tokens.muted, formatter: (value) => Number(value).toFixed(2) },
+      splitLine: { lineStyle: { color: tokens.grid } },
+    },
+    series,
+  });
+}
+
+function renderEchartsIc(container, detailData) {
+  const tokens = chartThemeTokens();
+  const icSeries = Array.isArray(detailData.ic_time_series) ? detailData.ic_time_series : [];
+  const dates = icSeries.map((item) => chartDateLabel(item.date));
+  const values = icSeries.map((item) => Number(item.ic));
+  if (!dates.length || !values.some(Number.isFinite)) return null;
+  return setEchart(container, {
+    animationDuration: 420,
+    tooltip: {
+      trigger: "axis",
+      backgroundColor: tokens.tooltipBg,
+      borderColor: tokens.tooltipBorder,
+      textStyle: { color: tokens.text, fontSize: 12 },
+      valueFormatter: (value) => (Number.isFinite(Number(value)) ? Number(value).toFixed(4) : "-"),
+    },
+    grid: { left: 50, right: 14, top: 28, bottom: 42, containLabel: true },
+    xAxis: {
+      type: "category",
+      data: dates,
+      axisLabel: { color: tokens.muted, formatter: chartMonthLabel, hideOverlap: true, margin: 12 },
+      axisLine: { lineStyle: { color: tokens.axis } },
+      axisTick: { lineStyle: { color: tokens.axis } },
+    },
+    yAxis: {
+      type: "value",
+      name: "IC 值",
+      nameTextStyle: { color: tokens.muted, fontWeight: 700 },
+      axisLabel: { color: tokens.muted, formatter: (value) => Number(value).toFixed(2) },
+      splitLine: { lineStyle: { color: tokens.grid } },
+    },
+    series: [
+      {
+        name: "Rank IC",
+        type: "bar",
+        data: values,
+        barMaxWidth: 7,
+        itemStyle: {
+          borderRadius: [2, 2, 0, 0],
+          color: (params) => (Number(params.value) >= 0 ? tokens.positive : tokens.negative),
+          opacity: 0.76,
+        },
+        markLine: {
+          silent: true,
+          symbol: "none",
+          data: [{ yAxis: 0 }],
+          lineStyle: { color: tokens.axis, width: 1 },
+          label: { show: false },
+        },
+      },
+    ],
+  });
+}
+
+function renderEchartsGroupPerformance(container, detailData) {
+  const tokens = chartThemeTokens();
+  const groupReturns = detailData.group_returns || {};
+  const groups = Object.keys(groupReturns)
+    .filter((key) => key !== "long_short")
+    .sort((a, b) => Number(a) - Number(b));
+  const items = groups
+    .map((group) => {
+      const values = (groupReturns[group] || []).map((item) => Number(item.return)).filter(Number.isFinite);
+      if (!values.length) return null;
+      return {
+        label: `G${group}`,
+        value: values.reduce((sum, value) => sum + value, 0) / values.length,
+      };
+    })
+    .filter(Boolean);
+  const lsValues = (groupReturns.long_short || []).map((item) => Number(item.return)).filter(Number.isFinite);
+  if (lsValues.length) {
+    items.push({
+      label: "LS",
+      value: lsValues.reduce((sum, value) => sum + value, 0) / lsValues.length,
+      longShort: true,
+    });
+  }
+  if (!items.length) return null;
+  return setEchart(container, {
+    animationDuration: 420,
+    tooltip: {
+      trigger: "axis",
+      backgroundColor: tokens.tooltipBg,
+      borderColor: tokens.tooltipBorder,
+      textStyle: { color: tokens.text, fontSize: 12 },
+      valueFormatter: (value) => (Number.isFinite(Number(value)) ? Number(value).toFixed(5) : "-"),
+    },
+    grid: { left: 56, right: 16, top: 28, bottom: 42, containLabel: true },
+    xAxis: {
+      type: "category",
+      data: items.map((item) => item.label),
+      axisLabel: { color: tokens.muted, fontWeight: 700, margin: 14 },
+      axisLine: { lineStyle: { color: tokens.axis } },
+      axisTick: { show: false },
+    },
+    yAxis: {
+      type: "value",
+      name: "日均收益",
+      nameTextStyle: { color: tokens.muted, fontWeight: 700 },
+      axisLabel: { color: tokens.muted, formatter: (value) => Number(value).toFixed(4) },
+      splitLine: { lineStyle: { color: tokens.grid } },
+    },
+    series: [
+      {
+        name: "日均收益",
+        type: "bar",
+        data: items.map((item) => item.value),
+        barMaxWidth: 22,
+        itemStyle: {
+          borderRadius: [4, 4, 0, 0],
+          color: (params) =>
+            items[params.dataIndex]?.longShort
+              ? tokens.longShort
+              : tokens.groupPalette[params.dataIndex % tokens.groupPalette.length],
+        },
+      },
+    ],
+  });
+}
+
+function mountDetailCharts(factorId) {
+  if (!window.echarts || state.view !== "detail" || state.detailTab !== "analysis") return;
+  const detailData = state.factorDetailData?.[factorId];
+  if (!detailData) return;
+  renderEchartsStratification(document.querySelector("#stratChart"), detailData);
+  renderEchartsIc(document.querySelector("#icChart"), detailData);
+  renderEchartsGroupPerformance(document.querySelector("#groupChart"), detailData);
+}
+
 function metricCard(label, value, helper, tone = "") {
   return `
     <article class="metric-card ${tone}">
@@ -6160,6 +6814,7 @@ function bindEvents() {
     renderTabs({ factors: state.rawFactors, categories: countCategories(), libraries: countLibraries() });
     applyFilters();
   });
+  els.themeToggleButton?.addEventListener("click", toggleTheme);
   els.refreshButton.addEventListener("click", loadData);
   els.collapseButton.addEventListener("click", () => {
     window.clearTimeout(collapseTimer);
@@ -6274,6 +6929,7 @@ function initAuth() {
   }
 }
 
+applyTheme(currentTheme());
 initAuth();
 
 function bindResearchEvents() {
