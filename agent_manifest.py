@@ -16,6 +16,7 @@ Usage::
 
 from __future__ import annotations
 
+import copy
 import json
 from typing import Any
 
@@ -55,6 +56,8 @@ _CAPABILITIES: list[dict[str, Any]] = [
             "end": {"type": "str", "default": "2025-12-31"},
             "horizon": {"type": "int", "default": 5, "description": "Forward return horizon in days"},
             "top_n": {"type": "int", "default": 10},
+            "auto": {"type": "bool", "default": True, "description": "If True, auto-fetch data and auto-select factors"},
+            "cache_dir": {"type": "str", "default": "", "description": "Cache directory for market data"},
         },
         "returns": "ExploreResult with gate_verdict, top_factors, summary, report_path, artifacts, next_actions",
         "example": (
@@ -227,7 +230,7 @@ _CAPABILITIES: list[dict[str, Any]] = [
             "start": {"type": "str", "default": "2021-01-01"},
             "end": {"type": "str", "default": "2024-12-31"},
         },
-        "returns": "Dict with factor_name, expression, ic_mean, ic_ir, status",
+        "returns": "Dict with factor_name, expression, ic_mean, ic_ir, rank_ic_mean, long_short_spread, status, definition, evaluation, top_metrics",
         "example": (
             "from research_core.agent_api import mine_factor\n"
             "result = mine_factor('reversal_5d', 'Ref($close, 5) / $close - 1')\n"
@@ -248,7 +251,7 @@ _CAPABILITIES: list[dict[str, Any]] = [
             "start": {"type": "str", "default": "2021-01-01"},
             "end": {"type": "str", "default": "2024-12-31"},
         },
-        "returns": "Dict with theme, candidates list, best_factor, best_ic",
+        "returns": "Dict with theme, generated_count, results (list of candidate dicts with definition/evaluation/top_metrics), candidates (summary list), best_factor, best_ic",
         "example": (
             "from research_core.agent_api import auto_mine\n"
             "result = auto_mine('low volatility quality factors')\n"
@@ -268,7 +271,7 @@ _CAPABILITIES: list[dict[str, Any]] = [
             "start": {"type": "str", "default": "2021-01-01"},
             "end": {"type": "str", "default": "2024-12-31"},
         },
-        "returns": "Dict with expression, annualized_return, sharpe_ratio, max_drawdown",
+        "returns": "Dict with expression, annualized_return, sharpe_ratio, max_drawdown, total_return, volatility, win_rate, metrics, equity_curve",
         "example": (
             "from research_core.agent_api import qlib_backtest\n"
             "result = qlib_backtest('($close / Ref($close, 20) - 1)')\n"
@@ -285,7 +288,7 @@ _CAPABILITIES: list[dict[str, Any]] = [
         "function": "research_core.agent_api.overview",
         "cli": "python -m research_core.agent_api overview",
         "parameters": {},
-        "returns": "Dict with workspace, factor_families, libraries, runtime_status",
+        "returns": "Dict with workspace, factor_families, backtest_engines, external_sim_engines, data_sources, next_actions",
         "example": "from research_core.agent_api import overview\nprint(overview())",
     },
 
@@ -350,8 +353,8 @@ def get_manifest() -> dict[str, Any]:
             "factor exploration, validation gates, strategy building, and backtest packaging."
         ),
         "language": "Python 3.10+",
-        "categories": _CATEGORIES,
-        "capabilities": _CAPABILITIES,
+        "categories": copy.deepcopy(_CATEGORIES),
+        "capabilities": copy.deepcopy(_CAPABILITIES),
         "entry_points": {
             "python_api": "from research_core.agent_api import discover, explore_factors, ...",
             "cli": "python -m research_core.agent_api <command>",

@@ -98,8 +98,13 @@ What are you trying to do?
 │
 ├── "I want to mine new factors with Qlib"
 │     ├── mine_factor(name="reversal", expression="Ref($close, 5) / $close - 1")
+│     │     → returns factor_name, ic_mean, ic_ir, rank_ic_mean, long_short_spread,
+│     │       definition, evaluation, top_metrics, status
 │     ├── auto_mine(theme="mid-cap momentum with turnover confirmation")
+│     │     → returns theme, generated_count, results, candidates, best_factor, best_ic
 │     └── qlib_backtest(factor_expression="($close / Ref($close, 20) - 1)")
+│           → returns expression, annualized_return, sharpe_ratio, max_drawdown,
+│             total_return, volatility, win_rate, metrics, equity_curve
 │
 └── "I need to check if the data source is available"
       └── check_data_source()

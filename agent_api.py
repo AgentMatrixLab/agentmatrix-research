@@ -105,7 +105,8 @@ def overview() -> dict[str, Any]:
     installed libraries, and runtime status.
 
     Returns:
-        Dict with workspace, factor_families, libraries, runtime_status.
+        Dict with workspace, factor_families, backtest_engines,
+        external_sim_engines, data_sources, next_actions.
     """
     return _safe_call(_overview_impl)
 
@@ -299,12 +300,24 @@ def _validate_factor_impl(**kwargs) -> dict[str, Any]:
     result = verdict.to_dict()
     if validated_run_path:
         result["validated_run_path"] = validated_run_path
-    result["next_actions"] = (
-        [f"Factor '{verdict.factor_name}' passed. Call build_strategy() to create target weights."]
-        if verdict.passed
-        else [f"Factor '{verdict.factor_name}' failed gates: {', '.join(verdict.fail_reasons)}",
-              "Try different factor parameters or a different factor family."]
-    )
+        result["next_actions"] = [
+            f"Factor '{verdict.factor_name}' passed with validated_run_path. "
+            f"Call build_strategy(validated_run_path='{validated_run_path}') to create target weights.",
+        ]
+    else:
+        if verdict.passed:
+            result["next_actions"] = [
+                f"Factor '{verdict.factor_name}' passed validation.",
+                "To build a strategy, you need a factor_lab job JSON path.",
+                "Call explore_factors() to run a full exploration — its return includes "
+                "artifacts.job_path which you can pass to build_strategy(validated_run_path=...).",
+                "Or, if you already have a job path, re-call validate_factor() with validated_run_path=<path>.",
+            ]
+        else:
+            result["next_actions"] = [
+                f"Factor '{verdict.factor_name}' failed gates: {', '.join(verdict.fail_reasons)}",
+                "Try different factor parameters or a different factor family.",
+            ]
     return result
 
 
@@ -441,7 +454,7 @@ def build_strategy(
         output_dir: Optional output directory.
 
     Returns:
-        Dict with strategy_id, signal_path, n_dates, n_positions.
+        Dict with strategy_id, signal_path, artifacts (with signals/config).
     """
     return _safe_call(
         _build_strategy_impl,
@@ -501,7 +514,7 @@ def package_backtest(
         output_dir: Optional output directory.
 
     Returns:
-        Dict with run_id, engine, package_path, files.
+        Dict with run_id, engine, package_dir, package_path, artifacts.
     """
     return _safe_call(
         _package_backtest_impl,
@@ -603,7 +616,8 @@ def mine_factor(
         end: End date.
 
     Returns:
-        Dict with factor_name, expression, ic_mean, ic_ir, status.
+        Dict with factor_name, expression, ic_mean, ic_ir, rank_ic_mean,
+        long_short_spread, status, definition, evaluation, top_metrics.
     """
     return _safe_call(
         _mine_factor_impl,
@@ -633,7 +647,8 @@ def _mine_factor_impl(**kwargs) -> dict[str, Any]:
         "--end", end,
     ]
     proc = _sp.run(cmd, capture_output=True, text=True, timeout=600)
-    output = (proc.stdout or "") + "\n" + (proc.stderr or "")
+    stdout = proc.stdout or ""
+    stderr = proc.stderr or ""
 
     if proc.returncode != 0:
         return {
@@ -641,41 +656,78 @@ def _mine_factor_impl(**kwargs) -> dict[str, Any]:
             "expression": expression,
             "status": "error",
             "returncode": proc.returncode,
-            "output": output.strip()[-2000:],
+            "output": (stdout + "\n" + stderr).strip()[-2000:],
             "error": f"Qlib CLI exited with code {proc.returncode}",
             "suggested_fix": "Ensure Qlib is installed and market data is available. Try: pip install pyqlib",
             "next_actions": ["Check error output above.", "Verify Qlib data is initialized."],
         }
 
-    # Try to extract IC metrics from output
-    ic_mean = None
-    ic_ir = None
-    for line in output.split("\n"):
-        if "IC mean" in line or "ic_mean" in line.lower():
-            try:
-                ic_mean = float(line.split()[-1])
-            except (ValueError, IndexError):
-                pass
-        if "IC IR" in line or "ic_ir" in line.lower():
-            try:
-                ic_ir = float(line.split()[-1])
-            except (ValueError, IndexError):
-                pass
+    # CLI outputs pure JSON — parse it
+    cli_result = None
+    try:
+        cli_result = _json.loads(stdout)
+    except _json.JSONDecodeError:
+        # Fallback: try to extract JSON from mixed output
+        for line in stdout.strip().split("\n"):
+            line = line.strip()
+            if line.startswith("{"):
+                try:
+                    cli_result = _json.loads(line)
+                    break
+                except _json.JSONDecodeError:
+                    continue
 
-    return {
-        "factor_name": name,
-        "expression": expression,
+    if cli_result is None:
+        return {
+            "factor_name": name,
+            "expression": expression,
+            "status": "completed",
+            "returncode": proc.returncode,
+            "output_summary": stdout.strip()[-1000:],
+            "error": "Failed to parse CLI JSON output",
+            "next_actions": ["Check raw output for metrics.", "Call validate_factor() manually."],
+        }
+
+    # Extract structured metrics from CLI JSON
+    top_metrics = cli_result.get("top_metrics", {})
+    evaluation = cli_result.get("evaluation", {})
+    definition = cli_result.get("definition", {})
+
+    # Build metrics dict from evaluation.metrics list (more complete)
+    metrics_dict = {}
+    for m in evaluation.get("metrics", []):
+        metrics_dict[m["name"]] = m["value"]
+
+    ic_mean = top_metrics.get("ic_mean", metrics_dict.get("ic_mean"))
+    ic_ir = top_metrics.get("icir", metrics_dict.get("icir"))
+    rank_ic_mean = top_metrics.get("rank_ic_mean", metrics_dict.get("rank_ic_mean"))
+    long_short_spread = top_metrics.get("long_short_spread", metrics_dict.get("long_short_spread"))
+
+    result = {
+        "factor_name": definition.get("name", name),
+        "expression": definition.get("expression", expression),
         "ic_mean": ic_mean,
         "ic_ir": ic_ir,
+        "rank_ic_mean": rank_ic_mean,
+        "long_short_spread": long_short_spread,
         "status": "completed",
         "returncode": proc.returncode,
-        "output_summary": output.strip()[-1000:],
+        "definition": definition,
+        "evaluation": evaluation,
+        "top_metrics": top_metrics,
         "next_actions": [
             f"Factor '{name}' IC={ic_mean}, IR={ic_ir}." if ic_mean is not None else "Check output for IC metrics.",
             "Call validate_factor() to run validation gates.",
             "Call qlib_backtest() with this expression for a full backtest.",
         ],
     }
+
+    # Include artifact paths if available
+    artifacts = evaluation.get("artifacts", {})
+    if artifacts:
+        result["artifacts"] = artifacts
+
+    return result
 
 
 def auto_mine(
@@ -692,7 +744,7 @@ def auto_mine(
         end: End date.
 
     Returns:
-        Dict with theme, candidates, best_factor, best_ic.
+        Dict with theme, generated_count, results, candidates, best_factor, best_ic.
     """
     return _safe_call(
         _auto_mine_impl,
@@ -701,6 +753,7 @@ def auto_mine(
 
 
 def _auto_mine_impl(**kwargs) -> dict[str, Any]:
+    import json as _json
     import subprocess as _sp
     import sys as _sys
 
@@ -716,30 +769,83 @@ def _auto_mine_impl(**kwargs) -> dict[str, Any]:
         "--end", end,
     ]
     proc = _sp.run(cmd, capture_output=True, text=True, timeout=600)
-    output = (proc.stdout or "") + "\n" + (proc.stderr or "")
+    stdout = proc.stdout or ""
+    stderr = proc.stderr or ""
 
     if proc.returncode != 0:
         return {
             "theme": theme,
             "status": "error",
             "returncode": proc.returncode,
-            "output": output.strip()[-2000:],
+            "output": (stdout + "\n" + stderr).strip()[-2000:],
             "error": f"Qlib CLI exited with code {proc.returncode}",
             "suggested_fix": "Ensure Qlib is installed and market data is available.",
             "next_actions": ["Check error output above."],
         }
 
-    return {
+    # CLI outputs pure JSON — parse it
+    cli_result = None
+    try:
+        cli_result = _json.loads(stdout)
+    except _json.JSONDecodeError:
+        for line in stdout.strip().split("\n"):
+            line = line.strip()
+            if line.startswith("{"):
+                try:
+                    cli_result = _json.loads(line)
+                    break
+                except _json.JSONDecodeError:
+                    continue
+
+    if cli_result is None:
+        return {
+            "theme": theme,
+            "status": "completed",
+            "returncode": proc.returncode,
+            "output_summary": stdout.strip()[-1000:],
+            "error": "Failed to parse CLI JSON output",
+            "next_actions": ["Check raw output for candidate factors."],
+        }
+
+    # Extract structured data from CLI JSON
+    generated_count = cli_result.get("generated_count", 0)
+    results = cli_result.get("results", [])
+
+    # Build a summary of best candidates
+    candidates_summary = []
+    for r in results:
+        top_metrics = r.get("top_metrics", {})
+        definition = r.get("definition", {})
+        candidate = r.get("candidate", {})
+        candidates_summary.append({
+            "name": definition.get("name", candidate.get("name", "")),
+            "expression": definition.get("expression", candidate.get("expression", "")),
+            "ic_mean": top_metrics.get("ic_mean"),
+            "icir": top_metrics.get("icir"),
+            "rank_ic_mean": top_metrics.get("rank_ic_mean"),
+            "long_short_spread": top_metrics.get("long_short_spread"),
+        })
+
+    # Best factor = first in results (already sorted by IC)
+    best = candidates_summary[0] if candidates_summary else None
+
+    result = {
         "theme": theme,
+        "generated_count": generated_count,
+        "results": results,
+        "candidates": candidates_summary,
+        "best_factor": best["name"] if best else None,
+        "best_ic": best["ic_mean"] if best else None,
         "status": "completed",
         "returncode": proc.returncode,
-        "output_summary": output.strip()[-1000:],
         "next_actions": [
-            "Check the output for candidate factors.",
+            f"Generated {generated_count} candidate factors." if generated_count else "No candidates generated.",
             "Call mine_factor() to test a specific expression.",
             "Call qlib_backtest() for a full backtest on the best candidate.",
         ],
     }
+
+    return result
 
 
 def qlib_backtest(
@@ -756,7 +862,8 @@ def qlib_backtest(
         end: End date.
 
     Returns:
-        Dict with expression, annualized_return, sharpe_ratio, max_drawdown.
+        Dict with expression, annualized_return, sharpe_ratio, max_drawdown,
+        total_return, volatility, win_rate, metrics, equity_curve.
     """
     return _safe_call(
         _qlib_backtest_impl,
@@ -766,6 +873,7 @@ def qlib_backtest(
 
 
 def _qlib_backtest_impl(**kwargs) -> dict[str, Any]:
+    import json as _json
     import subprocess as _sp
     import sys as _sys
 
@@ -781,49 +889,67 @@ def _qlib_backtest_impl(**kwargs) -> dict[str, Any]:
         "--end", end,
     ]
     proc = _sp.run(cmd, capture_output=True, text=True, timeout=600)
-    output = (proc.stdout or "") + "\n" + (proc.stderr or "")
+    stdout = proc.stdout or ""
+    stderr = proc.stderr or ""
 
     if proc.returncode != 0:
         return {
             "expression": expression,
             "status": "error",
             "returncode": proc.returncode,
-            "output": output.strip()[-2000:],
+            "output": (stdout + "\n" + stderr).strip()[-2000:],
             "error": f"Qlib CLI exited with code {proc.returncode}",
             "suggested_fix": "Ensure Qlib is installed and market data is available.",
             "next_actions": ["Check error output above."],
         }
 
-    # Try to extract performance metrics from output
-    sharpe_ratio = None
-    annualized_return = None
-    max_drawdown = None
-    for line in output.split("\n"):
-        low = line.lower()
-        if ("sharpe" in low or "sharpe_ratio" in low) and sharpe_ratio is None:
-            try:
-                sharpe_ratio = float(line.split()[-1])
-            except (ValueError, IndexError):
-                pass
-        if ("annual" in low or "return" in low) and annualized_return is None:
-            try:
-                annualized_return = float(line.split()[-1])
-            except (ValueError, IndexError):
-                pass
-        if ("max_drawdown" in low or "mdd" in low) and max_drawdown is None:
-            try:
-                max_drawdown = float(line.split()[-1])
-            except (ValueError, IndexError):
-                pass
+    # CLI outputs pure JSON — parse it
+    cli_result = None
+    try:
+        cli_result = _json.loads(stdout)
+    except _json.JSONDecodeError:
+        for line in stdout.strip().split("\n"):
+            line = line.strip()
+            if line.startswith("{"):
+                try:
+                    cli_result = _json.loads(line)
+                    break
+                except _json.JSONDecodeError:
+                    continue
 
-    return {
+    if cli_result is None:
+        return {
+            "expression": expression,
+            "status": "completed",
+            "returncode": proc.returncode,
+            "output_summary": stdout.strip()[-1000:],
+            "error": "Failed to parse CLI JSON output",
+            "next_actions": ["Check raw output for performance metrics."],
+        }
+
+    # Extract metrics from CLI JSON
+    metrics = cli_result.get("metrics", {})
+    annualized_return = metrics.get("annualized_return")
+    sharpe_ratio = metrics.get("sharpe")
+    max_drawdown = metrics.get("max_drawdown")
+    total_return = metrics.get("total_return")
+    volatility = metrics.get("volatility")
+    win_rate = metrics.get("win_rate")
+
+    result = {
         "expression": expression,
         "annualized_return": annualized_return,
         "sharpe_ratio": sharpe_ratio,
         "max_drawdown": max_drawdown,
-        "status": "completed",
+        "total_return": total_return,
+        "volatility": volatility,
+        "win_rate": win_rate,
+        "status": cli_result.get("status", "completed"),
         "returncode": proc.returncode,
-        "output_summary": output.strip()[-1000:],
+        "run_id": cli_result.get("run_id"),
+        "engine": cli_result.get("engine"),
+        "metrics": metrics,
+        "equity_curve": cli_result.get("equity_curve"),
         "next_actions": [
             f"Sharpe={sharpe_ratio}, Return={annualized_return}, MDD={max_drawdown}."
             if sharpe_ratio is not None
@@ -831,6 +957,18 @@ def _qlib_backtest_impl(**kwargs) -> dict[str, Any]:
             "If Sharpe > 1, call build_strategy() to create tradeable signals.",
         ],
     }
+
+    # Include artifacts if available
+    artifacts = cli_result.get("artifacts")
+    if artifacts:
+        result["artifacts"] = artifacts
+
+    # Include diagnostics if available
+    diagnostics = cli_result.get("diagnostics")
+    if diagnostics:
+        result["diagnostics"] = diagnostics
+
+    return result
 
 
 # ── CLI entry point ────────────────────────────────────────────────────────
@@ -877,6 +1015,9 @@ def _build_cli():
     va.add_argument("--oos-retention", type=float, default=0.0)
     va.add_argument("--decay-pct", type=float, default=0.0)
     va.add_argument("--ic-std", type=float, default=0.0)
+    va.add_argument("--cost-resilience", action="store_true", default=None)
+    va.add_argument("--sector-neutrality", type=float, default=None)
+    va.add_argument("--segment-consistency", type=int, default=None)
     va.add_argument("--validated-run-path", default="")
 
     # evaluate-csv
@@ -985,6 +1126,9 @@ def main():
                 factor_name=args.factor_name, ic_mean=args.ic_mean,
                 ic_ir=args.ic_ir, oos_retention=args.oos_retention,
                 decay_pct=args.decay_pct, ic_std=args.ic_std,
+                cost_resilience=args.cost_resilience,
+                sector_neutrality=args.sector_neutrality,
+                segment_consistency=args.segment_consistency,
                 validated_run_path=args.validated_run_path,
             )
             print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
