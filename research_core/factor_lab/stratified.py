@@ -3,7 +3,7 @@
 Provides a factor-set-agnostic analysis pipeline: given any factor value
 frame (date x code x factor_value) and the corresponding market panel,
 it computes quantile-group returns, cumulative NAV, long-short spreads,
-IC statistics, and monotonicity tests.
+IC statistics (with winsorize + cross-sectional z-score preprocessing), and monotonicity tests.
 
 Works identically for Alpha101, GTJA191, WQ101, or any custom factor.
 """
@@ -12,6 +12,18 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+
+
+# ---- Preprocessing helpers ----
+
+def _winsorize(series, limits=(0.01, 0.99)):
+    lo = series.quantile(limits[0])
+    hi = series.quantile(limits[1])
+    return series.clip(lower=lo, upper=hi)
+
+
+def _cs_zscore(df, col, date_col="date"):
+    return df.groupby(date_col)[col].transform(lambda x: (x - x.mean()) / x.std(ddof=0))
 
 
 def _mean_or_nan(values: list[float]) -> float:
@@ -83,8 +95,10 @@ def compute_stratified_analysis(
 
         fv = day[factor_name]
         fr = day["_fwd_ret"]
-        pearson_ic_series.append(float(fv.corr(fr)))
-        rank_ic_series.append(float(fv.rank().corr(fr.rank())))
+        # Preprocess: winsorize then cross-sectional z-score for IC computation
+        fv_clean = _cs_zscore(day.assign(_w=_winsorize(fv)), "_w", date_col) if len(day) > 3 else fv
+        pearson_ic_series.append(float(fv_clean.corr(fr)) if fv_clean.std() > 0 else float("nan"))
+        rank_ic_series.append(float(fv_clean.rank().corr(fr.rank())) if fv_clean.std() > 0 else float("nan"))
 
         daily_records.append({
             "date": str(date_val), "n_stocks": int(len(day)),

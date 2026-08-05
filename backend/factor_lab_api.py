@@ -560,32 +560,6 @@ def factor_lab_research_status(job_id):
         return jsonify({"error": str(exc)}), 500
 
 
-# ----------------------------------------------------------
-# Custom Factor Upload
-# ----------------------------------------------------------
-
-@app.route("/api/agents/factor-lab/factors/upload", methods=["POST"])
-def factor_lab_upload_factor():
-    if "file" not in request.files:
-        return jsonify({"error": "No file uploaded"}), 400
-    file = request.files["file"]
-    if not file.filename.endswith(".py"):
-        return jsonify({"error": "Only .py files accepted"}), 400
-    
-    name = file.filename[:-3]  # strip .py
-    from research_core.factor_lab.libraries.factor_sets import UPLOADS_DIR
-    dest = UPLOADS_DIR / f"{name}.py"
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    file.save(str(dest))
-    
-    # Auto-trigger research
-    from research_core.factor_lab.service import trigger_factor_research
-    job = trigger_factor_research({"factor_name": name, "factor_set": "custom"}, _workspace())
-    
-    return jsonify({"status": "uploaded", "factor_name": name, "job": job}), 202
-
-
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "8012"))
     app.run(host="0.0.0.0", port=port, debug=False)
-    app.run(host=host, port=port, debug=False)

@@ -3527,7 +3527,7 @@ async function loadStratificationData(factor) {
   var ie=document.getElementById("icChart"),me=document.getElementById("stratMetrics"),ca=document.getElementById("stratMetricCards"),re=document.getElementById("stratMetricsRange"),de=document.getElementById("stratDesc"),me2=document.getElementById("stratMethod"),ne=document.getElementById("icNote");
   var fs=_factorSetForLibrary(factor.library);
   try{
-    var fn=factor.factor_name; if(fn.indexOf('_alpha_')>-1||fn.indexOf('_beta_')>-1){var parts=fn.split('_');fn=parts[parts.length-2]+parts[parts.length-1].replace(/^0+/,'');} var r=await fetch(API_BASE+"/stratification",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({factor_name:fn,factor_set:fs,n_groups:10,n_dates:120,n_codes:50,data_source:"real"})});
+    var fn=factor.factor_name; if(fn.indexOf('_alpha_')>-1||fn.indexOf('_beta_')>-1){var parts=fn.split('_');fn=parts[parts.length-2]+parts[parts.length-1].replace(/^0+/,'');} var r=await fetch(API_BASE+"/stratification",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({factor_name:fn,factor_set:fs,n_groups:10,n_dates:120,n_codes:50,data_source:"demo"})});
     if(!r.ok)throw new Error("HTTP "+r.status);
     var d=await r.json(); if(d.error)throw new Error(d.error);
     if(de&&d.description){var dd=d.description;de.textContent=dd.universe+" · "+dd.rebalance_frequency+" · "+dd.holding_period+"持有 · "+dd.grouping_method;}
