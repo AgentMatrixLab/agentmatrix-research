@@ -389,7 +389,7 @@ function proofBadge(status) {
     pending: ["等待", "badge-gray"],
     missing: ["缺失", "badge-gray"],
   };
-  return map[status] || [status || "-", "badge-gray"];
+   return map[status] || [safeStatus(status, "状态未知"), "badge-gray"];
 }
 
 function truthBadge(status) {
@@ -402,7 +402,7 @@ function truthBadge(status) {
     empty_compare: ["对照异常", "badge-orange"],
     missing: ["缺失", "badge-gray"],
   };
-  return map[status] || [status || "-", "badge-gray"];
+   return map[status] || [safeStatus(status, "状态未知"), "badge-gray"];
 }
 
 function proofValue(status) {
@@ -413,7 +413,7 @@ function proofValue(status) {
     pending: "等待验证",
     missing: "缺少产物",
   };
-  return map[status] || String(status || "-");
+    return map[status] || safeStatus(status, "状态未知");
 }
 
 function truthValue(status) {
@@ -426,7 +426,7 @@ function truthValue(status) {
     empty_compare: "对照异常",
     missing: "缺失",
   };
-  return map[status] || String(status || "-");
+   return map[status] || safeStatus(status, "状态未知");
 }
 
 function isTruthIssue(status) {
@@ -450,6 +450,11 @@ function recommendationClass(value) {
   if (value === "建议重跑") return "rerun";
   if (value === "未复现") return "missing";
   return "";
+}
+
+function safeStatus(raw, fallback) {
+  if (raw === null || raw === undefined || raw === "") return fallback;
+  return fallback;
 }
 
 function canOpenFactor(factor) {
