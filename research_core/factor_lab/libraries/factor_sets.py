@@ -7,10 +7,11 @@ from research_core.factor_lab.libraries.gtja191 import IMPLEMENTED_GTJA191_FACTO
 
 
 WQ101_ALPHA_1_101 = tuple(f"alpha{i}" for i in range(1, 102))
+WQ101_DEFAULT_ALPHAS = WQ101_ALPHA_1_101[:10]
 
 
 def compute_wq101_alphas(df: pd.DataFrame, factor_names: list[str] | None = None) -> pd.DataFrame:
-    requested = list(factor_names or WQ101_ALPHA_1_101[:10])
+    requested = list(factor_names or WQ101_DEFAULT_ALPHAS)
     invalid = [name for name in requested if name not in WQ101_ALPHA_1_101]
     if invalid:
         raise ValueError(f"Unsupported WQ101 Alpha101 1-10 factors: {invalid}")
@@ -48,6 +49,7 @@ __all__ = [
     "IMPLEMENTED_ALPHA101_FACTORS",
     "IMPLEMENTED_GTJA191_FACTORS",
     "WQ101_ALPHA_1_101",
+    "WQ101_DEFAULT_ALPHAS",
     "compute_factor_set",
     "compute_gtja191_alphas",
     "compute_wq101_alphas",
