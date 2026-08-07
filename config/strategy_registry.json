@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "strategies": [
+    {
+      "strategy_id": "dividend-v6",
+      "name": "红利策略v6(聚宽对齐)",
+      "version": "v6",
+      "owner": "strategy-team",
+      "status": "review",
+      "engine": "chenxi",
+      "benchmark": "000300.SH",
+      "start_date": "2020-01-01",
+      "initial_cash": 1000000,
+      "commission_bps": 3,
+      "slippage_bps": 10,
+      "parameters": {
+        "rebalance_freq": 20
+      },
+      "quality_gates": {
+        "require_two_sided_trades": true,
+        "min_trade_count": 1,
+        "require_holdings": true,
+        "require_nav_movement": true,
+        "require_positive_turnover": true,
+        "max_gross_exposure": 1.05
+      }
+    }
+  ]
+}
