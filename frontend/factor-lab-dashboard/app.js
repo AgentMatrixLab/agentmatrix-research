@@ -92,6 +92,7 @@ const JQ_FACTOR_CATEGORIES = [
   "风险类因子",
   "风险因子-风格因子",
   "技术指标因子",
+  "未分类",
 ];
 const MARKET_BUCKETS = [
   {
@@ -1291,7 +1292,7 @@ function jqFactorCategory(factor) {
   if (category.includes("价值") || category.includes("规模")) return "风险因子-风格因子";
   if (library.includes("barra")) return "风险因子-新风格因子";
   if (category.includes("量价")) return "动量类因子";
-  return "技术指标因子";
+  return "未分类";
 }
 
 function compareFactors(left, right) {
