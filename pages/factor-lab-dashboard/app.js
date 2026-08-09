@@ -843,13 +843,50 @@ function canonicalFactorKey(factor) {
 }
 
 function dedupeSupabaseFactors(factors) {
-  const seen = new Set();
-  return factors.filter((factor) => {
-    const key = canonicalFactorKey(factor);
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
+  // Group by canonicalFactorKey, keep the latest record per group.
+  var best = {};
+  factors.forEach(function (factor) {
+    var key = canonicalFactorKey(factor);
+    var existing = best[key];
+    if (!existing) {
+      best[key] = factor;
+      return;
+    }
+    // Primary: keep the record with the most recent latest_checked_at.
+    var thisTime = factor.latest_checked_at || "";
+    var existingTime = existing.latest_checked_at || "";
+    if (thisTime > existingTime) {
+      best[key] = factor;
+      return;
+    }
+    if (thisTime < existingTime) {
+      return; // keep existing (it is newer)
+    }
+    // Times equal (or both null): prefer record with real metrics.
+    var thisHasMetrics = factor.coverage_ratio != null || factor.rank_ic_mean != null || factor.rank_ic_ir != null;
+    var existingHasMetrics = existing.coverage_ratio != null || existing.rank_ic_mean != null || existing.rank_ic_ir != null;
+    if (thisHasMetrics && !existingHasMetrics) {
+      best[key] = factor;
+      return;
+    }
+    if (existingHasMetrics && !thisHasMetrics) {
+      return; // keep existing (it has metrics)
+    }
+    // Tiebreaker: use supabase_row_id for stable, deterministic selection.
+    var thisId = (factor.metadata && factor.metadata.supabase_row_id) || "";
+    var existingId = (existing.metadata && existing.metadata.supabase_row_id) || "";
+    if (thisId > existingId) {
+      best[key] = factor;
+    }
   });
+  // Return deduplicated result sorted by latest_checked_at descending.
+  var result = Object.values(best);
+  result.sort(function (a, b) {
+    var aTime = a.latest_checked_at || "";
+    var bTime = b.latest_checked_at || "";
+    return bTime.localeCompare(aTime);
+  });
+  return result;
 }
 
 function formatInteger(value) {
