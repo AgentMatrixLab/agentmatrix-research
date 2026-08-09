@@ -828,18 +828,76 @@ function normalizeSupabaseTruthSummaryRow(row) {
 }
 
 function canonicalFactorKey(factor) {
-  const rawLibrary = String(factor.library || factor.raw_library || factor.factor_family || "")
-    .trim()
-    .toLowerCase();
-  const family = rawLibrary.includes("alpha101") || rawLibrary.includes("wq101") || rawLibrary.includes("worldquant")
-    ? "wq101"
-    : rawLibrary || "unknown";
-  const rawName = String(factor.raw_factor_name || factor.factor_name || factor.id || "")
-    .trim()
-    .toLowerCase();
-  const alphaMatch = rawName.match(/(?:worldquant[_-]?)?alpha0*(\d+)/);
-  const name = alphaMatch ? `alpha${Number(alphaMatch[1])}` : rawName;
+  const rawLibrary = String(
+    factor.library || factor.raw_library || factor.factor_family || ""
+  ).trim();
+  const family = _normalizeLibrary(rawLibrary);
+
+  const rawName = String(
+    factor.raw_factor_name || factor.factor_name || factor.id || ""
+  ).trim();
+  const name = _normalizeFactorName(rawName, family);
+
   return `${family}:${name}`;
+}
+
+function _normalizeLibrary(raw) {
+  var lower = raw.toLowerCase().replace(/[\s_-]+/g, "");
+  if (!lower) return "unknown";
+  if (lower.includes("alpha101") || lower.includes("wq101") || lower.includes("worldquant")) {
+    return "wq101";
+  }
+  if (lower.includes("gtja191") || lower.includes("alpha191")) {
+    return "gtja191";
+  }
+  if (lower.includes("quantapi")) {
+    return "quantapi";
+  }
+  if (lower.includes("alpha158")) {
+    return "alpha158";
+  }
+  return lower;
+}
+
+function _normalizeFactorName(raw, family) {
+  // Collapse separators and spaces to underscores for consistent matching.
+  var cleaned = raw.toLowerCase()
+    .replace(/[\s#:]+/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_|_$/g, "");
+
+  if (!cleaned) return "unknown";
+
+  // Pattern A: "worldquant_alpha013" or "WorldQuant Alpha013"
+  var wqMatch = cleaned.match(/(?:^|_)worldquant[_-]?alpha0*(\d+)/);
+  if (wqMatch) {
+    return "alpha" + Number(wqMatch[1]);
+  }
+
+  // Pattern B: "alpha013" or "alpha13"
+  var alphaMatch = cleaned.match(/(?:^|_)alpha0*(\d+)$/);
+  if (alphaMatch) {
+    return "alpha" + Number(alphaMatch[1]);
+  }
+
+  // Pattern C: "gtja191_alpha_001"
+  var libAlphaMatch = cleaned.match(/^[a-z0-9]+_alpha_?0*(\d+)$/);
+  if (libAlphaMatch) {
+    return "alpha" + Number(libAlphaMatch[1]);
+  }
+
+  // Pattern D: strip known library prefix
+  var knownPrefixes = /^(?:wq101|alpha101|gtja191|alpha191|quantapi|alpha158)[:_-]/;
+  if (knownPrefixes.test(cleaned)) {
+    var remainder = cleaned.replace(knownPrefixes, "");
+    var remainderMatch = remainder.match(/(?:worldquant[_-]?)?alpha0*(\d+)/);
+    if (remainderMatch) {
+      return "alpha" + Number(remainderMatch[1]);
+    }
+    return remainder.replace(/[^a-z0-9_]/g, "_").replace(/_+/g, "_").replace(/^_|_$/g, "") || "unknown";
+  }
+
+  return cleaned.replace(/[^a-z0-9_]/g, "_").replace(/_+/g, "_").replace(/^_|_$/g, "") || "unknown";
 }
 
 function dedupeSupabaseFactors(factors) {
