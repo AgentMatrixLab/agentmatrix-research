@@ -56,10 +56,11 @@ _CAPABILITIES: list[dict[str, Any]] = [
             "end": {"type": "str", "default": "2025-12-31"},
             "horizon": {"type": "int", "default": 5, "description": "Forward return horizon in days"},
             "top_n": {"type": "int", "default": 10},
-            "auto": {"type": "bool", "default": True, "description": "If True, auto-fetch data and auto-select factors"},
+            "auto": {"type": "bool", "default": True, "description": "If True, auto-select factors when `factors` is None. If False, `factors` must be provided explicitly."},
             "cache_dir": {"type": "str", "default": "", "description": "Cache directory for market data"},
+            "output_dir": {"type": "str", "default": "", "description": "Where to write the factor_lab job JSON + factor frame. Defaults to runtime/factor_lab. The returned artifacts.job_path is passed to build_strategy()."},
         },
-        "returns": "ExploreResult with gate_verdict, top_factors, summary, report_path, artifacts, next_actions",
+        "returns": "ExploreResult with gate_verdict, top_factors, summary, report_path, artifacts (with job_path), next_actions",
         "example": (
             "from research_core.agent_api import explore_factors\n"
             "result = explore_factors(goal='momentum factors', universe='csi500')\n"
@@ -156,6 +157,7 @@ _CAPABILITIES: list[dict[str, Any]] = [
             "as_of": {"type": "str", "default": "", "description": "Single snapshot date (forces 'single' frequency)"},
             "start": {"type": "str", "default": ""},
             "end": {"type": "str", "default": ""},
+            "output_dir": {"type": "str", "default": "", "description": "Optional output directory for strategy artifacts"},
         },
         "returns": "Dict with strategy_id, signal_path, artifacts (with signals/config)",
         "example": (
@@ -183,6 +185,8 @@ _CAPABILITIES: list[dict[str, Any]] = [
             "initial_cash": {"type": "float", "default": 1000000.0},
             "slippage_bps": {"type": "float", "default": 0.0},
             "commission_bps": {"type": "float", "default": 0.0},
+            "run_id": {"type": "str", "default": "", "description": "Simulation run ID (auto-generated if empty)"},
+            "output_dir": {"type": "str", "default": "", "description": "Optional output directory for the package"},
         },
         "returns": "Dict with run_id, engine, package_dir, package_path, artifacts (signals, config, etc.)",
         "example": (
