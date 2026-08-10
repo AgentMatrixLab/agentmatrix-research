@@ -1143,5 +1143,199 @@ class TestCLIValidateOptionalGates:
         assert result["validated_run_path"] == "/tmp/test_all.json"
 
 
+# ═══════════════════════════════════════════════════════════════
+# Section 17 — End-to-end explore → build → package (synthetic data)
+# ═══════════════════════════════════════════════════════════════
+
+class TestExploreBuildPackageE2E:
+    """End-to-end test: explore_factors → build_strategy → package_backtest
+    using synthetic demo data (no network required).
+
+    Verifies the documented agent workflow runs end to end:
+        1. explore_factors() produces artifacts.job_path
+        2. build_strategy() consumes the job path and produces a signal CSV
+        3. package_backtest() consumes the signal CSV and produces a package dir
+
+    Also covers:
+        - auto=False without factors must raise (not silently auto-select)
+        - A failed factor carrying validated_run_path must NOT be told "passed"
+    """
+
+    @pytest.fixture(autouse=True)
+    def _patch_market_data(self, monkeypatch):
+        """Replace fetch_real_panel with synthetic demo data so the test
+        never touches the network."""
+        from research_core.factor_lab import agent_pipeline
+        from research_core.factor_lab.demo_data import build_alpha101_demo_panel
+
+        synthetic_panel = build_alpha101_demo_panel(
+            n_dates=120, n_codes=12, seed=7,
+        )
+
+        def _fake_fetch(*args, **kwargs):
+            return synthetic_panel
+
+        monkeypatch.setattr(agent_pipeline, "fetch_real_panel", _fake_fetch)
+
+    # ── 1. explore_factors produces a consumable job_path ──────────────
+
+    def test_explore_produces_consumable_job_path(self, tmp_path):
+        """explore_factors() must return artifacts.job_path pointing to a
+        valid job JSON that build_strategy() can consume."""
+        from research_core.agent_api import explore_factors
+
+        result = explore_factors(
+            goal="e2e test",
+            universe="csi300",
+            factor_set="alpha101",
+            factors=["alpha1", "alpha2", "alpha3"],
+            start="2021-01-01",
+            end="2021-06-30",
+            horizon=5,
+            top_n=3,
+            auto=False,
+            output_dir=str(tmp_path),
+        )
+
+        # No structured error
+        assert "error" not in result, (
+            f"explore_factors returned error: {result.get('error')}"
+        )
+
+        # artifacts.job_path must exist
+        job_path = result["artifacts"]["job_path"]
+        assert job_path, "artifacts.job_path is empty"
+        assert Path(job_path).exists(), f"job_path file does not exist: {job_path}"
+
+        # Job JSON must contain the fields build_strategy() expects
+        payload = json.loads(Path(job_path).read_text(encoding="utf-8"))
+        assert payload["job_id"]
+        assert "alpha1" in payload["requested_factors"]
+        assert payload["artifacts"]["factor_frame"]
+
+        # factor_frame CSV must exist on disk
+        frame_path = Path(payload["artifacts"]["factor_frame"])
+        assert frame_path.exists(), f"factor_frame CSV missing: {frame_path}"
+
+        # next_actions should mention build_strategy
+        actions_text = " ".join(result["next_actions"])
+        assert "build_strategy" in actions_text
+
+        # factors_tested should match what we asked for
+        assert result["factors_tested"] == 3
+
+    # ── 2. Full pipeline: explore → build → package ────────────────────
+
+    def test_full_pipeline_explore_build_package(self, tmp_path):
+        """explore → build_strategy → package_backtest produces a package dir."""
+        import pandas as pd
+        from research_core.agent_api import (
+            explore_factors, build_strategy, package_backtest,
+        )
+
+        # Step 1: explore
+        explore_result = explore_factors(
+            goal="e2e pipeline",
+            factor_set="alpha101",
+            factors=["alpha1", "alpha2", "alpha3"],
+            start="2021-01-01",
+            end="2021-06-30",
+            horizon=5,
+            top_n=3,
+            auto=False,
+            output_dir=str(tmp_path / "explore"),
+        )
+        assert "error" not in explore_result, explore_result.get("error")
+        job_path = explore_result["artifacts"]["job_path"]
+        assert Path(job_path).exists()
+
+        # Step 2: build_strategy from the job path
+        build_result = build_strategy(
+            validated_run_path=job_path,
+            rebalance_frequency="single",
+            top_n=5,
+            output_dir=str(tmp_path / "build"),
+        )
+        assert "error" not in build_result, build_result.get("error")
+        assert build_result["status"] == "created"
+        signal_path = build_result["artifacts"]["signals"]
+        assert Path(signal_path).exists(), f"signal CSV missing: {signal_path}"
+
+        # The signal CSV should have target weights
+        signals = pd.read_csv(signal_path)
+        assert len(signals) > 0, "signal CSV is empty"
+        assert "target_weight" in signals.columns
+        assert "code" in signals.columns
+        assert "side" in signals.columns
+
+        # Step 3: package_backtest
+        package_result = package_backtest(
+            engine="gm",
+            signal_path=signal_path,
+            strategy_id="e2e_test_strategy",
+            output_dir=str(tmp_path / "package"),
+        )
+        assert "error" not in package_result, package_result.get("error")
+        assert Path(package_result["package_dir"]).exists()
+        assert Path(package_result["artifacts"]["signals"]).exists()
+        assert Path(package_result["artifacts"]["config"]).exists()
+        assert Path(package_result["artifacts"]["strategy_script"]).exists()
+
+    # ── 3. auto=False without factors must raise ────────────────────────
+
+    def test_auto_false_without_factors_raises(self, tmp_path):
+        """auto=False with factors=None must return a structured error,
+        not silently auto-select factors."""
+        from research_core.agent_api import explore_factors
+
+        result = explore_factors(
+            factor_set="alpha101",
+            factors=None,
+            auto=False,
+            output_dir=str(tmp_path),
+        )
+        # _safe_call catches the ValueError and returns a structured error dict
+        assert "error" in result, (
+            "auto=False without factors should have raised ValueError"
+        )
+        assert "auto=False" in result["error"] or "factors" in result["error"].lower()
+
+    # ── 4. Failed factor + validated_run_path must not claim "passed" ──
+
+    def test_failed_factor_with_run_path_does_not_claim_passed(self):
+        """A failing factor carrying validated_run_path must NOT be told
+        'passed' or directed to build_strategy()."""
+        from research_core.agent_api import validate_factor
+
+        # ic_mean=0.001, ic_ir=0.01, oos_retention=0.10 → will fail gates
+        result = validate_factor(
+            factor_name="alpha_garbage",
+            ic_mean=0.001,
+            ic_ir=0.01,
+            oos_retention=0.10,
+            validated_run_path="/tmp/some_job.json",
+        )
+
+        assert result["passed"] is False
+        assert result["validated_run_path"] == "/tmp/some_job.json"
+
+        actions_text = " ".join(result["next_actions"]).lower()
+
+        # Must mention FAILED
+        assert "failed" in actions_text, (
+            "Failed factor's next_actions should mention 'FAILED'"
+        )
+
+        # Must NOT direct to build_strategy (should say "do not call")
+        assert "do not call build_strategy" in actions_text, (
+            "Failed factor should be told NOT to call build_strategy()"
+        )
+
+        # Must NOT contain the word "passed" (the old bug said "passed with")
+        assert "passed" not in actions_text, (
+            "Failed factor's next_actions must not contain 'passed'"
+        )
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-v", "--tb=short"]))
