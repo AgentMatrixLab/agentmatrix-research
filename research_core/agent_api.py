@@ -189,6 +189,7 @@ def explore_factors(
     top_n: int = 10,
     auto: bool = True,
     cache_dir: str = "",
+    output_dir: str = "",
 ) -> dict[str, Any]:
     """
     One-click factor exploration: auto-fetch market data, compute factors,
@@ -205,18 +206,24 @@ def explore_factors(
         end: End date (YYYY-MM-DD).
         horizon: Forward return horizon in days.
         top_n: Number of top factors to report.
-        auto: If True, auto-fetch data and auto-select factors.
+        auto: If True, auto-select factors when ``factors`` is None.
+            If False, ``factors`` must be provided explicitly.
         cache_dir: Cache directory for market data.
+        output_dir: Where to write the factor_lab job JSON + factor frame.
+            Defaults to the factor_lab runtime root (``runtime/factor_lab``).
+            The returned ``artifacts.job_path`` is the path to pass to
+            ``build_strategy(validated_run_path=...)``.
 
     Returns:
         Dict with gate_verdict (🟢/🟡/🔴), factors_tested, factors_passed,
-        top_factors, summary, next_actions.
+        top_factors, summary, report_path, artifacts (with job_path),
+        next_actions.
     """
     return _safe_call(
         _explore_factors_impl,
         goal=goal, universe=universe, factor_set=factor_set,
         factors=factors, start=start, end=end, horizon=horizon,
-        top_n=top_n, auto=auto, cache_dir=cache_dir,
+        top_n=top_n, auto=auto, cache_dir=cache_dir, output_dir=output_dir,
     )
 
 
@@ -224,6 +231,14 @@ def _explore_factors_impl(**kwargs) -> dict[str, Any]:
     from research_core.factor_lab.agent_pipeline import explore, explore_to_markdown
 
     result = explore(**kwargs)
+    job_path = result.artifacts.get("job_path", "")
+    next_actions = list(result.next_actions)
+    # Always steer the agent toward the documented explore → build_strategy flow.
+    if job_path and not any("build_strategy" in a for a in next_actions):
+        next_actions.insert(
+            0,
+            f"Call build_strategy(validated_run_path='{job_path}') to build target weights.",
+        )
     return {
         "goal": result.goal,
         "universe": result.universe,
@@ -241,7 +256,7 @@ def _explore_factors_impl(**kwargs) -> dict[str, Any]:
         "summary": result.summary,
         "report_path": result.report_path,
         "artifacts": result.artifacts,
-        "next_actions": result.next_actions,
+        "next_actions": next_actions,
         "markdown_report": explore_to_markdown(result),
     }
 
@@ -300,10 +315,20 @@ def _validate_factor_impl(**kwargs) -> dict[str, Any]:
     result = verdict.to_dict()
     if validated_run_path:
         result["validated_run_path"] = validated_run_path
-        result["next_actions"] = [
-            f"Factor '{verdict.factor_name}' passed with validated_run_path. "
-            f"Call build_strategy(validated_run_path='{validated_run_path}') to create target weights.",
-        ]
+        # The verdict — not the presence of a run path — decides the guidance.
+        # A failed factor must never be told to proceed to build_strategy().
+        if verdict.passed:
+            result["next_actions"] = [
+                f"Factor '{verdict.factor_name}' passed with validated_run_path. "
+                f"Call build_strategy(validated_run_path='{validated_run_path}') to create target weights.",
+            ]
+        else:
+            result["next_actions"] = [
+                f"Factor '{verdict.factor_name}' FAILED gates: "
+                f"{', '.join(verdict.fail_reasons) or 'insufficient evidence'}.",
+                "Do not call build_strategy() until the factor passes validation. "
+                "Adjust the factor parameters or try a different factor family.",
+            ]
     else:
         if verdict.passed:
             result["next_actions"] = [
@@ -1004,7 +1029,12 @@ def _build_cli():
     ex.add_argument("--end", default="2025-12-31")
     ex.add_argument("--horizon", type=int, default=5)
     ex.add_argument("--top-n", type=int, default=10)
+    ex.add_argument("--auto", dest="auto", action="store_true", default=True,
+                    help="Auto-select factors when --factors is empty (default)")
+    ex.add_argument("--no-auto", dest="auto", action="store_false",
+                    help="Require explicit --factors; disable auto-selection")
     ex.add_argument("--cache-dir", default="/tmp/agentmatrix_cache")
+    ex.add_argument("--output-dir", default="")
     ex.add_argument("--format", default="json", choices=["json", "markdown"])
 
     # validate
@@ -1114,7 +1144,8 @@ def main():
             result = explore_factors(
                 goal=args.goal, universe=args.universe, factor_set=args.factor_set,
                 factors=factor_list, start=args.start, end=args.end,
-                horizon=args.horizon, top_n=args.top_n, cache_dir=args.cache_dir,
+                horizon=args.horizon, top_n=args.top_n, auto=args.auto,
+                cache_dir=args.cache_dir, output_dir=args.output_dir,
             )
             if args.format == "markdown" and "markdown_report" in result:
                 print(result["markdown_report"])
