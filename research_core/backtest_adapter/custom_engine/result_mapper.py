@@ -63,6 +63,8 @@ def map_legacy_result(
         )
 
     total_return = _number(raw_metrics, "total_return")
+    accounting = payload.get("accounting") or {}
+    turnover = _number(accounting, "turnover", _number(raw_metrics, "turnover"))
     metrics = PerformanceMetrics(
         total_return=total_return,
         annualized_return=_number(raw_metrics, "annual_return"),
@@ -71,7 +73,7 @@ def map_legacy_result(
         max_drawdown=abs(_number(raw_metrics, "max_drawdown")),
         sharpe=_number(raw_metrics, "sharpe"),
         volatility=_number(raw_metrics, "volatility"),
-        turnover=_number(raw_metrics, "turnover"),
+        turnover=turnover,
         win_rate=_number(raw_metrics, "win_rate"),
     )
 
@@ -113,6 +115,7 @@ def map_legacy_result(
             "holdings": len(raw_holdings),
             "trades": len(payload.get("trades", [])),
         },
+        "accounting": accounting,
     }
     if diagnostics:
         merged_diagnostics.update(diagnostics)

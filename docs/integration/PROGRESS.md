@@ -194,3 +194,27 @@ would invalidate comparison with existing results.
   backend is not part of the deployed minimal dashboard service, and its
   frontend password is only a convenience gate rather than production
   authentication; it must not be described as production-released yet.
+
+## Chenxi accounting and signal readiness (2026-08-11)
+
+- Added a canonical compatibility-accounting summary based on the complete
+  Chenxi transaction ledger and actual portfolio equity series. Turnover now
+  follows the repository-wide two-sided convention: absolute traded notional
+  divided by twice average equity.
+- Kept display pagination separate from accounting: Quant Desk may expose only
+  the latest trades, while turnover and transaction counts use every engine
+  transaction returned by the run.
+- Added deterministic tests for accounting math and contract mapping.
+- Confirmed the zero-signal cause for the example momentum and reversal
+  strategies: they require `ret_60d`, `volatility_20d`, and `ret_5d`, while the
+  legacy engine only derives `ret_1d`.
+- Extended the immutable Chenxi compatibility dataset builder to derive those
+  three rolling features from adjusted close prices. Source datasets remain
+  untouched; features appear only in the next versioned compatibility output.
+- No strategy was rerun and no server dataset or active release was changed in
+  this step.
+- Remaining accounting risk: the legacy execution loop rebuilds target
+  holdings and emits repeated BUY rows instead of recording only position
+  deltas. The compatibility turnover is internally consistent with those rows,
+  but execution realism still requires replacing that loop with the new
+  cash/position/order ledger before results can be performance-certified.
