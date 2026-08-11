@@ -92,6 +92,7 @@ const JQ_FACTOR_CATEGORIES = [
   "风险类因子",
   "风险因子-风格因子",
   "技术指标因子",
+  "未分类",
 ];
 const MARKET_BUCKETS = [
   {
@@ -389,7 +390,7 @@ function proofBadge(status) {
     pending: ["等待", "badge-gray"],
     missing: ["缺失", "badge-gray"],
   };
-  return map[status] || [status || "-", "badge-gray"];
+  return map[status] || ["状态未知", "badge-gray"];
 }
 
 function truthBadge(status) {
@@ -402,7 +403,7 @@ function truthBadge(status) {
     empty_compare: ["对照异常", "badge-orange"],
     missing: ["缺失", "badge-gray"],
   };
-  return map[status] || [status || "-", "badge-gray"];
+  return map[status] || ["状态未知", "badge-gray"];
 }
 
 function proofValue(status) {
@@ -413,7 +414,7 @@ function proofValue(status) {
     pending: "等待验证",
     missing: "缺少产物",
   };
-  return map[status] || String(status || "-");
+  return map[status] || "状态未知";
 }
 
 function truthValue(status) {
@@ -426,7 +427,7 @@ function truthValue(status) {
     empty_compare: "对照异常",
     missing: "缺失",
   };
-  return map[status] || String(status || "-");
+  return map[status] || "状态未知";
 }
 
 function isTruthIssue(status) {
@@ -474,9 +475,12 @@ function factorReplicationStatus(factor) {
 }
 
 function factorAlphaTier(factor) {
-  // 临时映射：后端正式字段 alpha_tier 到位前，用 IR 近似分层。IR>0.3 strong，0.1~0.3 weak，<0.1 dead。
+  // 临时映射：后端正式字段 alpha_tier 到位前，用 IR 近似分层。
+  // IR>0.3 strong，0.1~0.3 weak，<0.1 dead，null/缺失 → missing。
   if (factor?.alpha_tier) return factor.alpha_tier;
-  const ir = Math.abs(toFiniteNumber(factor?.rank_ic_ir) ?? 0);
+  const rawIr = toFiniteNumber(factor?.rank_ic_ir);
+  if (rawIr === null) return "missing";
+  const ir = Math.abs(rawIr);
   if (ir > 0.3) return "strong";
   if (ir >= 0.1) return "weak";
   return "dead";
@@ -486,7 +490,7 @@ function factorAdmission(factor) {
   const replication = factorReplicationStatus(factor);
   const alphaTier = factorAlphaTier(factor);
   const inLibrary = replication === "passed";
-  const agentReadable = inLibrary && alphaTier !== "dead";
+  const agentReadable = inLibrary && alphaTier !== "dead" && alphaTier !== "missing";
   return {
     replication,
     alphaTier,
@@ -836,28 +840,123 @@ function normalizeSupabaseTruthSummaryRow(row) {
 }
 
 function canonicalFactorKey(factor) {
-  const rawLibrary = String(factor.library || factor.raw_library || factor.factor_family || "")
-    .trim()
-    .toLowerCase();
-  const family = rawLibrary.includes("alpha101") || rawLibrary.includes("wq101") || rawLibrary.includes("worldquant")
-    ? "wq101"
-    : rawLibrary || "unknown";
-  const rawName = String(factor.raw_factor_name || factor.factor_name || factor.id || "")
-    .trim()
-    .toLowerCase();
-  const alphaMatch = rawName.match(/(?:worldquant[_-]?)?alpha0*(\d+)/);
-  const name = alphaMatch ? `alpha${Number(alphaMatch[1])}` : rawName;
+  const rawLibrary = String(
+    factor.library || factor.raw_library || factor.factor_family || ""
+  ).trim();
+  const family = _normalizeLibrary(rawLibrary);
+
+  const rawName = String(
+    factor.raw_factor_name || factor.factor_name || factor.id || ""
+  ).trim();
+  const name = _normalizeFactorName(rawName, family);
+
   return `${family}:${name}`;
 }
 
+function _normalizeLibrary(raw) {
+  var lower = raw.toLowerCase().replace(/[\s_-]+/g, "");
+  if (!lower) return "unknown";
+  if (lower.includes("alpha101") || lower.includes("wq101") || lower.includes("worldquant")) {
+    return "wq101";
+  }
+  if (lower.includes("gtja191") || lower.includes("alpha191")) {
+    return "gtja191";
+  }
+  if (lower.includes("quantapi")) {
+    return "quantapi";
+  }
+  if (lower.includes("alpha158")) {
+    return "alpha158";
+  }
+  return lower;
+}
+
+function _normalizeFactorName(raw, family) {
+  // Collapse separators and spaces to underscores for consistent matching.
+  var cleaned = raw.toLowerCase()
+    .replace(/[\s#:]+/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_|_$/g, "");
+
+  if (!cleaned) return "unknown";
+
+  // Pattern A: "worldquant_alpha013" or "WorldQuant Alpha013"
+  var wqMatch = cleaned.match(/(?:^|_)worldquant[_-]?alpha0*(\d+)/);
+  if (wqMatch) {
+    return "alpha" + Number(wqMatch[1]);
+  }
+
+  // Pattern B: "alpha013" or "alpha13"
+  var alphaMatch = cleaned.match(/(?:^|_)alpha0*(\d+)$/);
+  if (alphaMatch) {
+    return "alpha" + Number(alphaMatch[1]);
+  }
+
+  // Pattern C: "gtja191_alpha_001"
+  var libAlphaMatch = cleaned.match(/^[a-z0-9]+_alpha_?0*(\d+)$/);
+  if (libAlphaMatch) {
+    return "alpha" + Number(libAlphaMatch[1]);
+  }
+
+  // Pattern D: strip known library prefix
+  var knownPrefixes = /^(?:wq101|alpha101|gtja191|alpha191|quantapi|alpha158)[:_-]/;
+  if (knownPrefixes.test(cleaned)) {
+    var remainder = cleaned.replace(knownPrefixes, "");
+    var remainderMatch = remainder.match(/(?:worldquant[_-]?)?alpha0*(\d+)/);
+    if (remainderMatch) {
+      return "alpha" + Number(remainderMatch[1]);
+    }
+    return remainder.replace(/[^a-z0-9_]/g, "_").replace(/_+/g, "_").replace(/^_|_$/g, "") || "unknown";
+  }
+
+  return cleaned.replace(/[^a-z0-9_]/g, "_").replace(/_+/g, "_").replace(/^_|_$/g, "") || "unknown";
+}
+
 function dedupeSupabaseFactors(factors) {
-  const seen = new Set();
-  return factors.filter((factor) => {
-    const key = canonicalFactorKey(factor);
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
+  // Group by canonicalFactorKey, keep the latest record per group.
+  var best = {};
+  factors.forEach(function (factor) {
+    var key = canonicalFactorKey(factor);
+    var existing = best[key];
+    if (!existing) {
+      best[key] = factor;
+      return;
+    }
+    // Primary: keep the record with the most recent latest_checked_at.
+    var thisTime = factor.latest_checked_at || "";
+    var existingTime = existing.latest_checked_at || "";
+    if (thisTime > existingTime) {
+      best[key] = factor;
+      return;
+    }
+    if (thisTime < existingTime) {
+      return; // keep existing (it is newer)
+    }
+    // Times equal (or both null): prefer record with real metrics.
+    var thisHasMetrics = factor.coverage_ratio != null || factor.rank_ic_mean != null || factor.rank_ic_ir != null;
+    var existingHasMetrics = existing.coverage_ratio != null || existing.rank_ic_mean != null || existing.rank_ic_ir != null;
+    if (thisHasMetrics && !existingHasMetrics) {
+      best[key] = factor;
+      return;
+    }
+    if (existingHasMetrics && !thisHasMetrics) {
+      return; // keep existing (it has metrics)
+    }
+    // Tiebreaker: use supabase_row_id for stable, deterministic selection.
+    var thisId = (factor.metadata && factor.metadata.supabase_row_id) || "";
+    var existingId = (existing.metadata && existing.metadata.supabase_row_id) || "";
+    if (thisId > existingId) {
+      best[key] = factor;
+    }
   });
+  // Return deduplicated result sorted by latest_checked_at descending.
+  var result = Object.values(best);
+  result.sort(function (a, b) {
+    var aTime = a.latest_checked_at || "";
+    var bTime = b.latest_checked_at || "";
+    return bTime.localeCompare(aTime);
+  });
+  return result;
 }
 
 function formatInteger(value) {
@@ -1300,7 +1399,7 @@ function jqFactorCategory(factor) {
   if (category.includes("价值") || category.includes("规模")) return "风险因子-风格因子";
   if (library.includes("barra")) return "风险因子-新风格因子";
   if (category.includes("量价")) return "动量类因子";
-  return "技术指标因子";
+  return "未分类";
 }
 
 function compareFactors(left, right) {
