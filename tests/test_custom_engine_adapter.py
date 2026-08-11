@@ -25,6 +25,13 @@ class FakeRunner:
                 "win_rate": 0.55,
                 "volatility": 0.12,
             },
+            "accounting": {
+                "turnover": 0.25,
+                "traded_notional": 500000.0,
+                "average_equity": 1000000.0,
+                "transaction_count": 12,
+                "turnover_convention": "two_sided_notional_over_twice_average_equity",
+            },
             "holdings": [
                 {"code": "600519", "weight": 0.6},
                 {"code": "000001", "weight": 0.4},
@@ -70,10 +77,12 @@ class CustomEngineAdapterTest(unittest.TestCase):
         self.assertEqual(result.engine, "chenxi_engine")
         self.assertAlmostEqual(result.metrics.max_drawdown, 0.02)
         self.assertAlmostEqual(result.metrics.benchmark_return, 0.05)
+        self.assertAlmostEqual(result.metrics.turnover, 0.25)
         self.assertEqual(result.equity_curve[-1].drawdown, -0.02)
         self.assertEqual(result.trades[0].symbol, "600519.SH")
         self.assertEqual(result.trades[0].side, "BUY")
         self.assertEqual(result.holdings[0].weights, {"600519.SH": 0.6, "000001.SZ": 0.4})
+        self.assertEqual(result.diagnostics["accounting"]["transaction_count"], 12)
 
         self.assertAlmostEqual(runner.kwargs["fee_rate"], 0.0003)
         self.assertAlmostEqual(runner.kwargs["slippage"], 0.001)

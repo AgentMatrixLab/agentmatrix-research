@@ -15,6 +15,39 @@ if str(PROJECT_ROOT) not in sys.path:
 from research_core.strategy_operations.dataset_builder import finalize_manifest
 
 
+def _add_signal_features(staging: Path, details: dict) -> None:
+    path = staging / "kline_adj.parquet"
+    if not path.exists():
+        return
+    frame = pd.read_parquet(path)
+    price_column = "close_adj" if "close_adj" in frame.columns else "close"
+    required = {"symbol", "trade_date", price_column}
+    missing = required - set(frame.columns)
+    if missing:
+        raise ValueError(f"kline_adj.parquet missing columns: {sorted(missing)}")
+
+    frame["trade_date"] = pd.to_datetime(frame["trade_date"])
+    frame = frame.sort_values(["symbol", "trade_date"])
+    grouped_price = frame.groupby("symbol", sort=False)[price_column]
+    frame["ret_5d"] = grouped_price.pct_change(5, fill_method=None)
+    frame["ret_60d"] = grouped_price.pct_change(60, fill_method=None)
+    frame["ret_1d"] = grouped_price.pct_change(fill_method=None)
+    frame["volatility_20d"] = (
+        frame.groupby("symbol", sort=False)["ret_1d"]
+        .rolling(20, min_periods=20)
+        .std()
+        .reset_index(level=0, drop=True)
+    )
+    frame = frame.sort_values(["trade_date", "symbol"])
+    frame.to_parquet(path, index=False, compression="zstd")
+    details["kline_adj.parquet"] = {
+        **dict(details.get("kline_adj.parquet") or {}),
+        "rows": len(frame),
+        "signal_features": ["ret_5d", "ret_60d", "volatility_20d"],
+        "purpose": "Chenxi Engine price and signal compatibility view",
+    }
+
+
 def build(base: Path, output: Path, data_version: str | None = None) -> dict:
     if output.exists():
         raise FileExistsError(f"output already exists: {output}")
@@ -44,6 +77,7 @@ def build(base: Path, output: Path, data_version: str | None = None) -> dict:
     )
     combined.to_parquet(staging / "dividend_yield.parquet", index=False, compression="zstd")
     details = dict(source_manifest.get("details") or {})
+    _add_signal_features(staging, details)
     details["dividend_yield.parquet"] = {
         "rows": len(combined),
         "date_min": pd.to_datetime(combined["date"]).min().date().isoformat(),

@@ -7,6 +7,14 @@ import sys
 import traceback
 from pathlib import Path
 
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from research_core.backtest_adapter.custom_engine.accounting import (
+    summarize_legacy_accounting,
+)
+
 
 def main() -> int:
     if len(sys.argv) != 3:
@@ -42,6 +50,11 @@ def main() -> int:
         with open(os.devnull, "w", encoding="utf-8") as sink, contextlib.redirect_stdout(sink):
             adapter = DeskAdapter(data_dir=data_dir) if data_dir else DeskAdapter()
             result = adapter.run(payload["strategy_name"], params)
+        engine = adapter._engine
+        transactions = engine.get_transactions() if engine is not None else []
+        nav_frame = getattr(engine, "_last_nav_df", None)
+        nav_values = nav_frame["nav"].tolist() if nav_frame is not None else []
+        result["accounting"] = summarize_legacy_accounting(transactions, nav_values)
         result_path.write_text(json.dumps(result, ensure_ascii=False), encoding="utf-8")
         return 0
     except Exception:
