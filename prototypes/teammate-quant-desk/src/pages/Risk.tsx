@@ -66,9 +66,9 @@ export default function Risk() {
       <StatStrip
         stats={[
           { label: "当前回撤", value: `${(data.currentDrawdown * 100).toFixed(2)}%`, tone: data.currentDrawdown < -0.05 ? "down" : "flat" },
-          { label: "VaR (95%)", value: `${(data.var95 * 100).toFixed(2)}%`, tone: "down" },
+          { label: "VaR (95%)", value: data.var95 == null ? "--" : `${(data.var95 * 100).toFixed(2)}%`, tone: "down" },
           { label: "年化波动率", value: `${(data.volatility * 100).toFixed(1)}%` },
-          { label: "Beta (β)", value: data.beta.toFixed(2) },
+          { label: "Beta (β)", value: data.beta == null ? "--" : data.beta.toFixed(2) },
           { label: "杠杆率", value: `${data.leverage.toFixed(1)}x`, tone: data.leverage > 1.5 ? "accent" : "flat" },
           { label: "触发预警", value: `${triggeredCount} / ${enabledCount}`, tone: triggeredCount > 0 ? "down" : "flat", sub: "已启用规则" },
         ]}

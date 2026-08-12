@@ -43,7 +43,8 @@ def validate_result(
     metric_values = vars(result.metrics) if hasattr(result.metrics, "__dict__") else {
         field: getattr(result.metrics, field) for field in result.metrics.__slots__
     }
-    if not all(math.isfinite(float(value)) for value in metric_values.values()):
+    # Optional analytics are intentionally None when the sample is too short.
+    if not all(math.isfinite(float(value)) for value in metric_values.values() if value is not None):
         errors.append("metrics contain non-finite values")
     max_gross = float(gates.get("max_gross_exposure", 1.05))
     for snapshot in result.holdings:

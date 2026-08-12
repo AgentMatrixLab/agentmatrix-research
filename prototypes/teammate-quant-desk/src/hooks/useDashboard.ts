@@ -15,7 +15,7 @@ export function useDashboard() {
   return useMemo(() => {
     const summary = liveStrategies.find(s => s.id === strategyId);
     if (source === "live" && summary && details[strategyId]) {
-      const full = liveDashboard(details[strategyId]);
+      const full = liveDashboard(details[strategyId], period);
       const def = liveDefinition(summary);
       const bench = {key:"canonical",name:details[strategyId].benchmark || "策略基准"};
       return {def,bench,period,...full};

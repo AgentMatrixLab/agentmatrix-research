@@ -16,6 +16,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from research_core.strategy_dashboard import StrategyDashboardStore, StrategyResultNotFound  # noqa: E402
 from research_core.backtest_jobs import BacktestJobService, BacktestJobStore, JobRequestError  # noqa: E402
+from research_core.strategy_analytics import analyze_window, combine_portfolio, evaluate_risk_rules, attribute_sub_strategies  # noqa: E402
 
 
 def create_app(*, result_dir: str | Path | None = None, publication_status: str | None = None) -> Flask:
@@ -80,6 +81,20 @@ def create_app(*, result_dir: str | Path | None = None, publication_status: str 
     def backtest_capabilities():
         return jsonify(job_service.capabilities())
 
+    @app.get("/api/strategy-dashboard/data-capabilities")
+    def data_capabilities():
+        """Declare real analytical inputs; absent datasets remain unavailable."""
+        dataset_dir = Path(os.getenv("STRATEGY_DATASET_DIR", ""))
+        benchmark_files = {
+            "csi300": "csi300_index.parquet", "csi500": "csi500_index.parquet", "csi1000": "csi1000_index.parquet"
+        }
+        benchmarks = [{"key": key, "available": bool(dataset_dir and (dataset_dir / filename).is_file()), "source": filename}
+                      for key, filename in benchmark_files.items()]
+        stock_info = dataset_dir / "stock_info.parquet" if dataset_dir else None
+        return jsonify({"benchmarks": benchmarks,
+                        "exposures": {"industry": False, "market_cap": False, "security_name": bool(stock_info and stock_info.is_file())},
+                        "notes": ["行业和市值源未接入时接口不构造估算值"]})
+
     @app.get("/api/strategy-dashboard/backtest-jobs")
     def backtest_jobs():
         return jsonify(job_store.list(min(max(int(request.args.get("limit", 25)), 1), 100)))
@@ -108,6 +123,28 @@ def create_app(*, result_dir: str | Path | None = None, publication_status: str 
         except StrategyResultNotFound:
             return jsonify({"error": "Strategy result not found"}), 404
 
+    @app.get("/api/strategy-dashboard/strategies/<strategy_id>/analytics")
+    def strategy_analytics(strategy_id: str):
+        detail, error = detail_or_404(strategy_id)
+        if error:
+            return error
+        metrics = analyze_window(detail["equity_curve"], request.args.get("start"), request.args.get("end"))
+        return jsonify({"strategy_id": strategy_id, "window": {"start": request.args.get("start"), "end": request.args.get("end")}, "metrics": metrics})
+
+    @app.get("/api/strategy-dashboard/strategies/<strategy_id>/risk-alerts")
+    def strategy_risk_alerts(strategy_id: str):
+        detail, error = detail_or_404(strategy_id)
+        if error:
+            return error
+        return jsonify(evaluate_risk_rules(detail["metrics"], detail["positions"], {"gross": detail["gross_exposure"]}))
+
+    @app.get("/api/strategy-dashboard/strategies/<strategy_id>/attribution")
+    def strategy_attribution(strategy_id: str):
+        detail, error = detail_or_404(strategy_id)
+        if error:
+            return error
+        return jsonify(attribute_sub_strategies(detail["trades"]))
+
     # Compatibility endpoints for the teammate React presentation. These are
     # read-only projections of canonical AgentMatrix results, not a second
     # database or engine.
@@ -130,14 +167,26 @@ def create_app(*, result_dir: str | Path | None = None, publication_status: str 
         detail, error = detail_or_404(request.args.get("strategyId", ""))
         if error:
             return error
-        rows = [{"code": p["symbol"], "name": p["symbol"], "industry": "未提供", "qty": 0, "cost": 0,
-                 "price": 0, "value": 0, "pnl": 0, "pnlPct": 0, "weight": p["weight"]} for p in detail["positions"]]
+        rows = [{"code": p["symbol"], "name": p.get("name") or p["symbol"], "industry": p.get("industry") or "未提供",
+                 "qty": p.get("quantity") or 0, "cost": p.get("average_cost") or 0, "price": p.get("last_price") or 0,
+                 "value": p.get("market_value") or 0, "pnl": p.get("unrealized_pnl") or 0,
+                 "pnlPct": p.get("unrealized_pnl_pct") or 0, "weight": p["weight"]} for p in detail["positions"]]
         total = sum(abs(p["weight"]) for p in detail["positions"])
         top5 = sum(abs(p["weight"]) for p in detail["positions"][:5])
         hhi = sum(p["weight"] ** 2 for p in detail["positions"])
+        industries = {}
+        caps = {"大盘": 0.0, "中盘": 0.0, "小盘": 0.0}
+        for p in detail["positions"]:
+            if p.get("industry"):
+                industries[p["industry"]] = industries.get(p["industry"], 0.0) + float(p.get("weight") or 0)
+            cap = p.get("market_cap")
+            if cap is not None:
+                bucket = "大盘" if float(cap) >= 50_000_000_000 else ("中盘" if float(cap) >= 10_000_000_000 else "小盘")
+                caps[bucket] += float(p.get("weight") or 0)
         return jsonify({"count": len(rows), "totalWeight": total, "top5Weight": top5, "hhi": hhi,
-                        "industries": [{"name": "行业数据未提供", "weight": total}] if rows else [],
-                        "marketCap": [], "rows": rows})
+                        "industries": [{"name": k, "weight": v} for k, v in sorted(industries.items(), key=lambda x: -x[1])],
+                        "marketCap": [{"name": k, "weight": v} for k, v in caps.items() if v],
+                        "exposureAvailable": {"industry": bool(industries), "marketCap": any(caps.values())}, "rows": rows})
 
     @app.get("/api/trades")
     def react_trades():
@@ -177,8 +226,8 @@ def create_app(*, result_dir: str | Path | None = None, publication_status: str 
         if active:
             events.append(active)
         return jsonify({"currentDrawdown": curve[-1]["drawdown"] if curve else 0, "var95": metrics.get("var_95", 0),
-                        "volatility": metrics.get("volatility", 0), "beta": metrics.get("beta", 0), "leverage": 1,
-                        "alerts": [], "drawdownEvents": events, "monthlyReturns": monthly_returns})
+                        "volatility": metrics.get("volatility"), "beta": metrics.get("beta"), "leverage": detail.get("gross_exposure"),
+                        "alerts": evaluate_risk_rules(metrics, detail["positions"], {"gross": detail["gross_exposure"]}), "drawdownEvents": events, "monthlyReturns": monthly_returns})
 
     @app.post("/api/portfolio/backtest")
     def react_portfolio_analysis():
@@ -195,25 +244,31 @@ def create_app(*, result_dir: str | Path | None = None, publication_status: str 
             if error:
                 return error
             details.append((float(item["weight"]), detail))
-        maps = [dict((p["date"], p) for p in detail["equity_curve"]) for _, detail in details]
-        dates = sorted(set.intersection(*(set(m) for m in maps))) if maps else []
         start, end = body.get("start"), body.get("end")
+        sliced = [(weight, [p for p in detail["equity_curve"] if (not start or p["date"] >= start) and (not end or p["date"] <= end)])
+                  for weight, detail in details]
+        result = combine_portfolio(
+            sliced,
+            body.get("rebalance", "monthly"),
+            initial_cash=float(body.get("initialCash") or 1_000_000),
+            commission_bps=float(body.get("commissionBps") or 3),
+            slippage_bps=float(body.get("slippageBps") or 5),
+        )
+        maps = [dict((p["date"], p) for p in detail["equity_curve"]) for _, detail in details]
+        dates = [p["date"] for p in result["curve"]]
         dates = [d for d in dates if (not start or d >= start) and (not end or d <= end)]
         if len(dates) < 2:
             return jsonify({"error": "No common NAV window"}), 400
-        bases = [m[dates[0]]["nav"] for m in maps]
-        nav, peak = [], 1.0
-        for day in dates:
-            value = sum(details[i][0] * maps[i][day]["nav"] / bases[i] for i in range(len(details)))
-            benchmark = sum(details[i][0] * maps[i][day]["benchmark"] / maps[i][dates[0]]["benchmark"] for i in range(len(details)))
-            peak = max(peak, value)
-            nav.append({"date": day, "nav": value, "benchmark": benchmark, "drawdown": value / peak - 1})
+        nav = [p for p in result["curve"] if (not start or p["date"] >= start) and (not end or p["date"] <= end)]
         daily = [nav[i]["nav"] / nav[i-1]["nav"] - 1 for i in range(1, len(nav))]
         mean = sum(daily) / len(daily)
         variance = sum((r - mean) ** 2 for r in daily) / len(daily)
         vol = math.sqrt(variance) * math.sqrt(252)
         annual = nav[-1]["nav"] ** (252 / len(daily)) - 1
-        return jsonify({"nav": nav, "weights": items, "kpis": {"totalReturn": nav[-1]["nav"] - 1,
+        return jsonify({"methodology": result["methodology"], "nav": nav, "weights": items,
+                        "ledger": {"initialCash": result["initial_cash"], "endingCash": result["ending_cash"],
+                                   "executionCost": result["execution_cost"], "rebalanceTrades": len(result["trades"])},
+                        "kpis": {"totalReturn": nav[-1]["nav"] - 1,
                         "annualReturn": annual, "sharpe": mean * 252 / vol if vol else 0,
                         "maxDrawdown": min(p["drawdown"] for p in nav), "winRate": sum(r > 0 for r in daily) / len(daily),
                         "volatility": vol}})

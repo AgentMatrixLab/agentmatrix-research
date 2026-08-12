@@ -9,7 +9,10 @@ from contracts.backtest import (
     HoldingSnapshot,
     PerformanceMetrics,
     TradeRecord,
+    PositionRecord,
 )
+from research_core.backtest_adapter.custom_engine.ledger import rebuild_position_ledger
+from research_core.strategy_analytics.performance import analyze_window
 
 
 def _number(payload: dict[str, Any], key: str, default: float = 0.0) -> float:
@@ -103,10 +106,30 @@ def map_legacy_result(
             price=_number(item, "price"),
             commission=_number(item, "fee"),
             slippage=0.0,
-            reason="legacy_custom_engine",
+            reason=str(item.get("reason") or "legacy_custom_engine"),
+            sub_strategy=str(item.get("sub_strategy") or ""),
+            realized_pnl=float(item["realized_pnl"]) if item.get("realized_pnl") is not None else None,
         )
         for item in payload.get("trades", [])
     ]
+    ledger = rebuild_position_ledger(payload.get("trades", []), request.initial_cash, {
+        str(item.get("symbol") or item.get("code") or ""): _number(item, "price", _number(item, "last_price"))
+        for item in raw_holdings
+    })
+    ledger_positions = [PositionRecord(**{**row, "symbol": _canonical_symbol(row["symbol"])}) for row in ledger["positions"]]
+    if not holdings and (ledger_positions or payload.get("trades")):
+        holdings.append(HoldingSnapshot(
+            as_of=str(payload.get("as_of") or (equity_curve[-1].timestamp if equity_curve else "")),
+            weights={row.symbol: row.weight for row in ledger_positions},
+            exposures={"gross": sum(abs(row.weight) for row in ledger_positions)},
+        ))
+    if holdings:
+        holdings[0].cash = ledger["cash"]
+        holdings[0].total_equity = ledger["total_equity"]
+        holdings[0].positions = ledger_positions
+    analytics = analyze_window([{"date":p.timestamp,"nav":p.strategy_nav,"benchmark":p.benchmark_nav,"drawdown":p.drawdown} for p in equity_curve])
+    for key in ("sortino","calmar","downside_volatility","beta","alpha","information_ratio","tracking_error","var_95"):
+        setattr(metrics,key,analytics.get(key))
 
     merged_diagnostics = {
         "bridge": "desktop_custom_engine",
@@ -116,6 +139,7 @@ def map_legacy_result(
             "trades": len(payload.get("trades", [])),
         },
         "accounting": accounting,
+        "ledger": {k:v for k,v in ledger.items() if k != "positions"},
     }
     if diagnostics:
         merged_diagnostics.update(diagnostics)

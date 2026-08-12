@@ -103,6 +103,9 @@ class StrategyDashboardStore:
             {"symbol": symbol, "weight": weight}
             for symbol, weight in sorted((latest.get("weights") or {}).items(), key=lambda item: abs(item[1]), reverse=True)
         ]
+        rich_positions = latest.get("positions") or []
+        if rich_positions:
+            positions = sorted(rich_positions, key=lambda item: abs(float(item.get("weight") or 0)), reverse=True)
         trades = []
         for item in payload.get("trades", []):
             quantity = float(item.get("quantity") or 0.0)
@@ -117,6 +120,9 @@ class StrategyDashboardStore:
                     "amount": quantity * price,
                     "commission": float(item.get("commission") or 0.0),
                     "slippage": float(item.get("slippage") or 0.0),
+                    "reason": item.get("reason") or "",
+                    "sub_strategy": item.get("sub_strategy") or "",
+                    "realized_pnl": item.get("realized_pnl"),
                 }
             )
         return {
@@ -126,6 +132,8 @@ class StrategyDashboardStore:
             "equity_curve": curve,
             "positions_as_of": latest.get("as_of"),
             "gross_exposure": (latest.get("exposures") or {}).get("gross", sum(abs(p["weight"]) for p in positions)),
+            "cash": latest.get("cash"),
+            "total_equity": latest.get("total_equity"),
             "positions": positions,
             "trades": trades,
             "diagnostics": payload.get("diagnostics") or {},
