@@ -54,6 +54,11 @@ class BacktestJobsTest(unittest.TestCase):
                     job_id = accepted.get_json()["job_id"]
                     self.assertEqual(client.get(f"/api/strategy-dashboard/backtest-jobs/{job_id}").get_json()["status"], "queued")
 
+    def test_worker_cli_declares_shared_lock(self):
+        source = (Path(__file__).parents[1] / "scripts" / "run_backtest_worker.py").read_text(encoding="utf-8")
+        self.assertIn("--lock-file", source)
+        self.assertIn("LOCK_NB", source)
+
 
 if __name__ == "__main__":
     unittest.main()

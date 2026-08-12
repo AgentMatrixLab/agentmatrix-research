@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import fcntl
 import sys
 import time
 from pathlib import Path
@@ -20,11 +21,20 @@ def main() -> int:
     parser.add_argument("--data-dir", type=Path, required=True)
     parser.add_argument("--result-dir", type=Path, default=Path("runtime/strategy_runs"))
     parser.add_argument("--poll-seconds", type=float, default=2.0)
+    parser.add_argument("--lock-file", type=Path, default=Path("runtime/strategy_operations/daily.lock"))
     parser.add_argument("--once", action="store_true")
     args = parser.parse_args()
     service = BacktestJobService(BacktestJobStore(args.db), args.registry)
+    args.lock_file.parent.mkdir(parents=True, exist_ok=True)
     while True:
-        job = service.run_next(engine_root=args.engine_root, data_dir=args.data_dir, result_dir=args.result_dir)
+        with args.lock_file.open("a+") as lock:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                job = None
+            else:
+                job = service.run_next(engine_root=args.engine_root, data_dir=args.data_dir, result_dir=args.result_dir)
+                fcntl.flock(lock, fcntl.LOCK_UN)
         if args.once:
             return 0
         if job is None:
