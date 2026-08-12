@@ -252,3 +252,17 @@ would invalidate comparison with existing results.
 - The access token stays in page memory and is neither persisted nor returned
   by the API. Public deployment must remain read-only until authentication and
   role controls are approved.
+
+## Quant Desk functional expansion (2026-08-12)
+
+- Added strategy comparison for two to five persisted results, including NAV
+  overlays, KPI tables, and daily-return correlation matrices.
+- Added a portfolio builder with equal-weight, inverse-volatility, and manual
+  allocation modes. Portfolio drafts can be named and saved in browser-local
+  storage for the current user.
+- Kept synthetic NAV portfolios explicitly separate from executed portfolios.
+  The builder does not claim shared-cash fills, holdings, fees, or turnover;
+  those require the replacement Chenxi execution ledger.
+- Existing strategy library, detail, positions, trades, risk, job workbench,
+  data quality, and publication-state views remain connected to the canonical
+  AgentMatrix API.
