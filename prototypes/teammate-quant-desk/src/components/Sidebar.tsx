@@ -12,6 +12,7 @@ import { NavLink } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { STRATEGIES, strategyDataMap, type StrategyDef } from "@/data/mock";
 import { useDashStore } from "@/store/useDashStore";
+import { liveDefinition } from "@/data/live";
 
 const NAV = [
   { icon: LayoutDashboard, label: "策略总览", to: "/" },
@@ -57,8 +58,11 @@ function StrategyItem({ def }: { def: StrategyDef }) {
   const strategyId = useDashStore((s) => s.strategyId);
   const setStrategy = useDashStore((s) => s.setStrategy);
   const active = def.id === strategyId;
-  const data = strategyDataMap[def.id];
-  const up = data.today >= 0;
+  const detail = useDashStore((s) => s.details[def.id]);
+  const mockData = strategyDataMap[def.id];
+  const sparkData = detail?.equity_curve?.slice(-22).map(p => p.nav) || mockData?.spark || [1, 1];
+  const today = sparkData.length > 1 ? sparkData.at(-1)! / sparkData.at(-2)! - 1 : 0;
+  const up = today >= 0;
 
   return (
     <button
@@ -88,10 +92,10 @@ function StrategyItem({ def }: { def: StrategyDef }) {
         </div>
         <p className="mt-0.5 text-[10px] text-fg-mute">{def.tag}</p>
       </div>
-      <Spark data={data.spark} tone={up ? "up" : "down"} />
+      <Spark data={sparkData} tone={up ? "up" : "down"} />
       <span className={cn("num w-14 text-right text-xs font-semibold", up ? "text-up" : "text-down")}>
         {up ? "+" : ""}
-        {(data.today * 100).toFixed(2)}%
+        {(today * 100).toFixed(2)}%
       </span>
     </button>
   );
@@ -99,6 +103,9 @@ function StrategyItem({ def }: { def: StrategyDef }) {
 
 export default function Sidebar() {
   const notify = useDashStore((s) => s.notify);
+  const live = useDashStore((s) => s.strategies);
+  const source = useDashStore((s) => s.source);
+  const defs = source === "live" ? live.map(liveDefinition) : STRATEGIES;
 
   return (
     <aside className="fixed inset-y-0 left-0 z-30 flex w-60 flex-col border-r border-line bg-ink-900/90 backdrop-blur">
@@ -148,10 +155,10 @@ export default function Sidebar() {
       {/* 策略列表 */}
       <div className="mt-6 flex-1 overflow-y-auto px-3 scroll-slim">
         <p className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-fg-mute">
-          我的策略 · {STRATEGIES.length}
+          我的策略 · {defs.length}
         </p>
         <div className="space-y-1.5">
-          {STRATEGIES.map((def) => (
+          {defs.map((def) => (
             <StrategyItem key={def.id} def={def} />
           ))}
         </div>

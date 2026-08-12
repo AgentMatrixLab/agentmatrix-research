@@ -21,6 +21,39 @@ export interface ApiStrategySummary {
   todayReturn: number;
 }
 
+export interface CanonicalStrategySummary {
+  id: string;
+  name: string;
+  version: string;
+  engine: string;
+  status: string;
+  publication_status: string;
+  quality_status: string;
+  data_version?: string;
+  start_date?: string;
+  end_date?: string;
+  total_return: number;
+  annualized_return: number;
+  sharpe: number;
+  max_drawdown: number;
+  updated_at?: string;
+}
+
+export interface CanonicalStrategyDetail extends CanonicalStrategySummary {
+  benchmark?: string;
+  metrics: Record<string, number>;
+  equity_curve: { date: string; nav: number; benchmark: number; drawdown: number }[];
+  positions: { symbol: string; weight: number }[];
+  trades: { time: string; symbol: string; side: string; quantity: number; price: number; amount: number; commission: number; slippage: number }[];
+  diagnostics: Record<string, unknown>;
+}
+
+export interface BacktestCapabilities {
+  submission_enabled: boolean;
+  strategies: { id: string; name: string; version: string; status: string }[];
+  limits: Record<string, number>;
+}
+
 export interface ApiNavPoint {
   date: string;
   nav: number;

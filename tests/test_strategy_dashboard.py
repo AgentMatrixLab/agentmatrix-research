@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -60,30 +61,16 @@ class StrategyDashboardStoreTest(unittest.TestCase):
             self.assertEqual(page.status_code, 200)
             self.assertIn(b"QUANT", page.data)
             self.assertIn("晨曦引擎".encode(), page.data)
-            self.assertIn("策略组合".encode(), page.data)
-            self.assertIn("风险中心".encode(), page.data)
-            self.assertIn("回测工作台".encode(), page.data)
-            self.assertIn("策略对比".encode(), page.data)
-            self.assertIn("组合构建".encode(), page.data)
-            self.assertIn(b'id="strategySearch"', page.data)
+            self.assertIn(b'id="root"', page.data)
+            asset_match = re.search(rb'src="(/quant-desk/assets/[^"]+\.js)"', page.data)
+            self.assertIsNotNone(asset_match)
             page.close()
 
-            script = client.get("/quant-desk/app.js")
+            script = client.get(asset_match.group(1).decode())
             self.assertEqual(script.status_code, 200)
-            self.assertIn(b"buildPortfolio", script.data)
-            self.assertIn(b"buildRisk", script.data)
+            self.assertIn(b"backtest-jobs", script.data)
+            self.assertIn(b"strategy-dashboard", script.data)
             script.close()
-
-            workbench = client.get("/quant-desk/workbench.js")
-            self.assertEqual(workbench.status_code, 200)
-            self.assertIn(b"backtest-jobs", workbench.data)
-            workbench.close()
-
-            analytics = client.get("/quant-desk/analytics.js")
-            self.assertEqual(analytics.status_code, 200)
-            self.assertIn(b"correlationMatrix", analytics.data)
-            self.assertIn(b"quantDeskPortfolios", analytics.data)
-            analytics.close()
 
             strategies = client.get("/api/strategy-dashboard/strategies")
             self.assertEqual(strategies.status_code, 200)
