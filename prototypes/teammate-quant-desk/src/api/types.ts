@@ -41,7 +41,7 @@ export interface CanonicalStrategySummary {
 
 export interface CanonicalStrategyDetail extends CanonicalStrategySummary {
   benchmark?: string;
-  metrics: Record<string, number>;
+  metrics: Record<string, number | null>;
   equity_curve: { date: string; nav: number; benchmark: number; drawdown: number }[];
   positions: { symbol: string; weight: number }[];
   trades: { time: string; symbol: string; side: string; quantity: number; price: number; amount: number; commission: number; slippage: number }[];
@@ -189,9 +189,9 @@ export interface DrawdownEvent {
 
 export interface RiskOverview {
   currentDrawdown: number;
-  var95: number;
+  var95: number | null;
   volatility: number;
-  beta: number;
+  beta: number | null;
   leverage: number;
   alerts: RiskAlert[];
   drawdownEvents: DrawdownEvent[];

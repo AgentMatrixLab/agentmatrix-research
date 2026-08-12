@@ -83,6 +83,9 @@ class CustomEngineAdapterTest(unittest.TestCase):
         self.assertEqual(result.trades[0].side, "BUY")
         self.assertEqual(result.holdings[0].weights, {"600519.SH": 0.6, "000001.SZ": 0.4})
         self.assertEqual(result.diagnostics["accounting"]["transaction_count"], 12)
+        self.assertTrue(hasattr(result.metrics, "beta"))
+        self.assertIsNotNone(result.holdings[0].cash)
+        self.assertEqual(result.holdings[0].positions[0].quantity, 100)
 
         self.assertAlmostEqual(runner.kwargs["fee_rate"], 0.0003)
         self.assertAlmostEqual(runner.kwargs["slippage"], 0.001)
