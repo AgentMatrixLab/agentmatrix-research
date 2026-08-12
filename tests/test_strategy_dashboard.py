@@ -60,7 +60,22 @@ class StrategyDashboardStoreTest(unittest.TestCase):
             self.assertEqual(page.status_code, 200)
             self.assertIn(b"QUANT", page.data)
             self.assertIn("晨曦引擎".encode(), page.data)
+            self.assertIn("策略组合".encode(), page.data)
+            self.assertIn("风险中心".encode(), page.data)
+            self.assertIn("回测工作台".encode(), page.data)
+            self.assertIn(b'id="strategySearch"', page.data)
             page.close()
+
+            script = client.get("/quant-desk/app.js")
+            self.assertEqual(script.status_code, 200)
+            self.assertIn(b"buildPortfolio", script.data)
+            self.assertIn(b"buildRisk", script.data)
+            script.close()
+
+            workbench = client.get("/quant-desk/workbench.js")
+            self.assertEqual(workbench.status_code, 200)
+            self.assertIn(b"backtest-jobs", workbench.data)
+            workbench.close()
 
             strategies = client.get("/api/strategy-dashboard/strategies")
             self.assertEqual(strategies.status_code, 200)

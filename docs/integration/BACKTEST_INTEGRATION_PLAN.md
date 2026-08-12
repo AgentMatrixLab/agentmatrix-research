@@ -68,6 +68,7 @@ legacy trading algorithm in the first phase.
 | 2026-08-07 | Review the first full-period dividend-v6 candidate | It produced a flat NAV and zero trades because historic `dividend_yield` files are basis points, while the legacy strategy divided them as percentages | Normalize legacy basis points by 10,000 and current TTM decimal values unchanged in a new immutable dataset revision; strengthen empty-strategy quality gates |
 | 2026-08-07 | Assert current decimal dividend normalization by first row | Normalization sorts by symbol, so the first row was not the target symbol | Assert by stable symbol key rather than row position |
 | 2026-08-07 | Run the daily job from the first expedited release package | The focused archive omitted top-level `registry` and the adapter's eager import chain failed before backtesting | Restore `registry` and `data_layer` from the preceding complete release, verify adapter import, and include both in future release manifests |
+| 2026-08-12 | Apply the first dashboard visual patch | The existing stylesheet is minified into long lines, so contextual patch anchors did not match | Replace the small frontend files as complete reviewed units, then run API and browser regressions |
 
 ## Phase 5: production server loop
 
@@ -89,3 +90,13 @@ legacy trading algorithm in the first phase.
   a time rather than forcing a coordinated rewrite.
 - Remove the subprocess bridge only after all production strategies pass the
   agreed parity tolerances on pinned datasets.
+
+## Phase 7: Quant Desk visual convergence (implemented, 2026-08-12)
+
+- Recreate the teammate dashboard's information density and interaction model
+  on top of the existing AgentMatrix read-only APIs.
+- Add a real-data aggregate overview, miniature strategy curves, portfolio
+  view, and risk view without importing its SQLite/static-JSON architecture.
+- Hide unavailable fields instead of filling the UI with mock values.
+- Preserve review/published labels, immutable data versions, and the existing
+  strategy detail routes.

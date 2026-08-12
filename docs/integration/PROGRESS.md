@@ -218,3 +218,37 @@ would invalidate comparison with existing results.
   deltas. The compatibility turnover is internally consistent with those rows,
   but execution realism still requires replacing that loop with the new
   cash/position/order ledger before results can be performance-certified.
+
+## Quant Desk visual convergence (2026-08-12)
+
+- Rebuilt the dashboard presentation around the teammate prototype's strongest
+  product ideas while keeping the AgentMatrix API and result contract intact.
+- Added a compact global strategy strip, search/publication filters, real NAV
+  sparklines, multi-strategy portfolio view, and risk center.
+- Portfolio NAV and inverse-volatility allocations are calculated in the
+  browser from persisted strategy detail results over their common dates.
+- Risk observations use real volatility, drawdown, final-position
+  concentration, and quality status. Missing fields are not filled with demo
+  values.
+- Did not import the prototype's SQLite database, static JSON API, Windows
+  paths, Qlib experiments, or local daily pipeline.
+- Dashboard/API regressions pass. The active local service serves the new
+  assets successfully; screenshot-level QA remains a manual follow-up because
+  no graphical browser was available in this session.
+
+## Controlled backtest job loop, phase 1 (2026-08-12)
+
+- Added a persistent SQLite job queue with atomic single-worker claiming and
+  explicit `queued`, `running`, `validating`, `completed`, and `failed` states.
+- Added a standalone worker that reuses the existing Chenxi adapter, quality
+  gates, immutable dataset manifest, and canonical `BacktestResult` JSON.
+- Added capability, submission, job-list, and job-detail API endpoints.
+- Interactive submission is disabled by default and requires both an explicit
+  server enable flag and a matching request token. Requests can select only
+  non-disabled registry strategies and bounded parameters; source code, module
+  paths, engine paths, and data paths are never accepted from the browser.
+- Added a Quant Desk backtest workbench with strategy/date/capital/fee inputs,
+  queue progress, failure details, polling, and completed-result navigation.
+- The access token stays in page memory and is neither persisted nor returned
+  by the API. Public deployment must remain read-only until authentication and
+  role controls are approved.

@@ -1,60 +1,8 @@
-<!doctype html>
-<html lang="zh-CN">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#0a0e14" />
-    <title>Quant Desk · 晨曦策略面板</title>
-    <link rel="stylesheet" href="./styles.css" />
-  </head>
-  <body>
-    <div class="ambient ambient-a"></div><div class="ambient ambient-b"></div>
-    <div class="shell">
-      <aside>
-        <div class="brand"><span class="brand-mark">⌁</span><div><strong>QUANT<span>·</span>DESK</strong><small>量化策略面板</small></div></div>
-        <nav>
-          <button class="active" data-view="library"><i>⌂</i><span>策略总览</span><b></b></button>
-          <button class="detail-nav" data-view="overview" disabled><i>⌁</i><span>策略详情</span><b></b></button>
-          <button class="detail-nav" data-view="positions" disabled><i>◫</i><span>持仓分析</span><b></b></button>
-          <button class="detail-nav" data-view="trades" disabled><i>⇄</i><span>交易记录</span><b></b></button>
-        </nav>
-        <div class="sidebar-strategies">
-          <p>策略库 <span id="sideStrategyCount">0</span></p>
-          <div id="sideStrategyList"></div>
-        </div>
-        <div class="aside-foot"><div><span class="live-dot"></span><strong>晨曦引擎</strong><em>ONLINE</em></div><small>AgentMatrix · 只读生产视图</small></div>
-      </aside>
-      <div class="workspace">
-        <header>
-          <div class="header-title"><h1 id="title">策略总览</h1><p id="subtitle">统一数据与回测口径下的策略资产</p></div>
-          <div class="header-meta"><span class="engine-pill"><i></i>晨曦引擎运行中</span><div class="actions"><button id="back" class="hidden">← 返回</button><button id="refresh">↻&nbsp; 刷新数据</button></div></div>
-        </header>
-        <main>
-          <div id="systemStatus" class="system-status"><span class="status-dot"></span><div><strong>数据状态读取中</strong><small></small></div><em>DATA PIPELINE</em></div>
-          <div id="error" class="error hidden"></div>
-          <section id="library" class="view">
-            <div class="library-hero">
-              <div><span class="eyebrow">STRATEGY LIBRARY</span><h2>策略资产中心</h2><p>每日数据更新后由晨曦引擎统一计算，保留完整的数据版本与运行记录。</p></div>
-              <div class="library-count"><strong id="strategyCount">0</strong><span>ACTIVE<br>STRATEGIES</span></div>
-            </div>
-            <div class="section-title"><div><i></i><h3>全部策略</h3><span>ALL STRATEGIES</span></div><small>按夏普比率与年化收益排序 · 点击查看完整表现</small></div>
-            <div id="strategyGrid" class="strategy-grid"></div>
-            <div id="emptyLibrary" class="empty hidden"><span>◇</span><strong>尚无策略结果</strong><p>完成一次统一回测后，策略会自动出现在这里。</p></div>
-          </section>
-          <section id="overview" class="view hidden">
-            <div id="kpis" class="kpis"></div>
-            <div class="grid">
-              <article class="card chart-card"><div class="card-head"><div><i></i><h2>净值走势</h2><span>NAV & BENCHMARK</span></div><div class="legend"><i></i>策略<b></b>基准</div></div><svg id="navChart" viewBox="0 0 1000 360" preserveAspectRatio="none"></svg></article>
-              <article class="card summary-card"><div class="card-head"><div><i></i><h2>运行信息</h2><span>RUN PROFILE</span></div></div><dl id="runProfile"></dl></article>
-            </div>
-            <article class="card"><div class="card-head"><div><i></i><h2>回撤曲线</h2><span>DRAWDOWN</span></div></div><svg id="drawdownChart" viewBox="0 0 1000 180" preserveAspectRatio="none"></svg></article>
-          </section>
-          <section id="positions" class="view hidden"><div id="positionStats" class="kpis compact"></div><article class="card"><div class="card-head"><div><i></i><h2>期末持仓</h2><span>POSITIONS</span></div></div><div class="table-wrap"><table><thead><tr><th>#</th><th>证券代码</th><th class="right">目标权重</th><th>组合占比</th></tr></thead><tbody id="positionsBody"></tbody></table></div></article></section>
-          <section id="trades" class="view hidden"><div id="tradeStats" class="kpis compact"></div><article class="card"><div class="card-head"><div><i></i><h2>成交记录</h2><span>TRADES</span></div></div><div class="table-wrap"><table><thead><tr><th>时间</th><th>证券代码</th><th>方向</th><th class="right">价格</th><th class="right">数量</th><th class="right">金额</th><th class="right">费用</th></tr></thead><tbody id="tradesBody"></tbody></table></div></article></section>
-          <footer><span>QUANT<span>·</span>DESK × 晨曦引擎</span><em>AgentMatrix Strategy Infrastructure</em></footer>
-        </main>
-      </div>
-    </div>
-    <script src="./app.js"></script>
-  </body>
-</html>
+<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#080c12"><title>Quant Desk · 晨曦策略面板</title><link rel="stylesheet" href="./styles.css"><link rel="stylesheet" href="./workbench.css"></head><body>
+<div class="ambient a"></div><div class="ambient b"></div><div class="shell"><aside><div class="brand"><span>⌁</span><div><strong>QUANT<em>·</em>DESK</strong><small>策略监控与资产中心</small></div></div><nav><button class="active" data-view="library"><i>⌂</i>策略总览<b></b></button><button data-view="workbench"><i>▷</i>回测工作台<b></b></button><button data-view="portfolio"><i>◈</i>策略组合<b></b></button><button data-view="risk"><i>△</i>风险中心<b></b></button><button class="detail-nav" data-view="overview" disabled><i>⌁</i>策略详情<b></b></button><button class="detail-nav" data-view="positions" disabled><i>◫</i>持仓分析<b></b></button><button class="detail-nav" data-view="trades" disabled><i>⇄</i>交易记录<b></b></button></nav><div class="side-list"><p>策略库 <span id="sideStrategyCount">0</span></p><div id="sideStrategyList"></div></div><div class="aside-foot"><div><span class="live-dot"></span><strong>晨曦引擎</strong><em>ONLINE</em></div><small>AgentMatrix · 真实结果只读视图</small></div></aside>
+<div class="workspace"><header><div><h1 id="title">策略总览</h1><p id="subtitle">统一数据、统一回测、统一发布</p></div><div class="header-meta"><span class="engine-pill"><i></i>晨曦引擎运行中</span><button id="back" class="hidden">← 返回</button><button id="refresh">↻ 刷新数据</button></div></header><main><div id="systemStatus" class="system-status"><span></span><div><strong>数据状态读取中</strong><small></small></div><em>DATA PIPELINE</em></div><div id="error" class="error hidden"></div>
+<section id="library" class="view"><div class="market-strip"><div><span>策略资产</span><strong id="activeAssets">0</strong></div><div><span>平均年化</span><strong id="averageAnnual">--</strong></div><div><span>平均夏普</span><strong id="averageSharpe">--</strong></div><div><span>最佳策略</span><strong id="bestStrategy">--</strong></div><div><span>数据版本</span><strong id="overviewDataVersion">--</strong></div></div><div class="hero"><div><span class="eyebrow">STRATEGY LIBRARY</span><h2>策略资产中心</h2><p>每天数据刷新后由晨曦引擎统一计算，结果经过质量门禁后进入展示层。</p></div><div class="hero-count"><strong id="strategyCount">0</strong><span>ACTIVE<br>STRATEGIES</span></div></div><div class="section-title"><div><i></i><h3>全部策略</h3><span>ALL STRATEGIES</span></div><small>点击策略进入净值、持仓和成交详情</small></div><div class="toolbar"><label>⌕ <input id="strategySearch" placeholder="搜索策略名称或引擎"></label><div id="filters"><button class="active" data-filter="all">全部</button><button data-filter="published">已发布</button><button data-filter="review">研究验证</button></div></div><div id="strategyGrid" class="strategy-grid"></div><div id="emptyLibrary" class="empty hidden"><span>◇</span><strong>没有匹配的策略</strong><p>请调整筛选条件或等待统一回测结果。</p></div></section>
+<section id="workbench" class="view hidden"><div class="page-intro"><div><span class="eyebrow">CONTROLLED BACKTEST JOBS</span><h2>回测工作台</h2><p>提交注册表中的白名单策略，由服务器队列执行并返回统一结果。</p></div><span id="submissionBadge">读取权限中</span></div><div class="workbench-grid"><article class="card"><div class="card-head"><div><i></i><h2>新建回测</h2><span>NEW JOB</span></div></div><form id="backtestForm" class="job-form"><label>访问令牌<input id="jobToken" type="password" autocomplete="off" placeholder="由管理员提供，仅保存在当前页面"></label><label>策略<select id="jobStrategy"></select></label><div><label>开始日期<input id="jobStart" type="date" value="2024-01-01"></label><label>结束日期<input id="jobEnd" type="date"></label></div><div><label>初始资金<input id="jobCapital" type="number" min="100000" max="100000000" value="1000000"></label><label>调仓频率<input id="jobRebalance" type="number" min="1" max="252" value="20"></label></div><div><label>佣金（bps）<input id="jobCommission" type="number" min="0" max="100" value="3"></label><label>滑点（bps）<input id="jobSlippage" type="number" min="0" max="100" value="10"></label></div><button id="submitJob" type="submit">提交服务器回测</button><p id="jobMessage" class="form-message"></p></form></article><article class="card"><div class="card-head"><div><i></i><h2>任务队列</h2><span>JOB QUEUE</span></div><button id="refreshJobs" class="mini-button">刷新</button></div><div id="jobList" class="job-list"></div></article></div></section><section id="portfolio" class="view hidden"><div class="page-intro"><div><span class="eyebrow">MULTI-STRATEGY PORTFOLIO</span><h2>策略组合</h2><p>使用当前策略共同交易区间，按逆波动率生成只读组合分析。</p></div><span>真实结果派生</span></div><div id="portfolioKpis" class="kpis"></div><div id="portfolioContent" class="grid"><article class="card chart-card"><div class="card-head"><div><i></i><h2>组合净值</h2><span>PORTFOLIO NAV</span></div></div><svg id="portfolioChart" viewBox="0 0 1000 360" preserveAspectRatio="none"></svg></article><article class="card"><div class="card-head"><div><i></i><h2>策略配置</h2><span>ALLOCATIONS</span></div></div><div id="portfolioWeights" class="allocations"></div></article></div><div id="portfolioEmpty" class="empty hidden"><span>◇</span><strong>暂不能构建组合</strong><p>至少需要两条具有共同净值日期的策略。</p></div></section>
+<section id="risk" class="view hidden"><div class="page-intro"><div><span class="eyebrow">RISK MONITOR</span><h2>风险中心</h2><p>回撤、波动、集中度与质量状态全部来自已保存的真实结果。</p></div><span>无模拟指标</span></div><div id="riskKpis" class="kpis"></div><div class="risk-grid"><article class="card"><div class="card-head"><div><i></i><h2>策略风险矩阵</h2><span>RISK MATRIX</span></div></div><div id="riskMatrix" class="risk-matrix"></div></article><article class="card"><div class="card-head"><div><i></i><h2>风险提示</h2><span>OBSERVATIONS</span></div></div><div id="riskNotes" class="risk-notes"></div></article></div></section>
+<section id="overview" class="view hidden"><div id="kpis" class="kpis"></div><div class="grid"><article class="card chart-card"><div class="card-head"><div><i></i><h2>净值走势</h2><span>NAV & BENCHMARK</span></div><div class="legend"><i></i>策略<b></b>基准</div></div><svg id="navChart" viewBox="0 0 1000 360" preserveAspectRatio="none"></svg></article><article class="card"><div class="card-head"><div><i></i><h2>运行信息</h2><span>RUN PROFILE</span></div></div><dl id="runProfile"></dl></article></div><article class="card"><div class="card-head"><div><i></i><h2>回撤曲线</h2><span>DRAWDOWN</span></div></div><svg id="drawdownChart" viewBox="0 0 1000 180" preserveAspectRatio="none"></svg></article></section>
+<section id="positions" class="view hidden"><div id="positionStats" class="kpis compact"></div><article class="card"><div class="card-head"><div><i></i><h2>期末持仓</h2><span>POSITIONS</span></div></div><div class="table-wrap"><table><thead><tr><th>#</th><th>证券代码</th><th class="right">目标权重</th><th>组合占比</th></tr></thead><tbody id="positionsBody"></tbody></table></div></article></section><section id="trades" class="view hidden"><div id="tradeStats" class="kpis compact"></div><article class="card"><div class="card-head"><div><i></i><h2>成交记录</h2><span>TRADES</span></div></div><div class="table-wrap"><table><thead><tr><th>时间</th><th>证券代码</th><th>方向</th><th class="right">价格</th><th class="right">数量</th><th class="right">金额</th><th class="right">费用</th></tr></thead><tbody id="tradesBody"></tbody></table></div></article></section><footer><span>QUANT<span>·</span>DESK × 晨曦引擎</span><em>AgentMatrix Strategy Infrastructure</em></footer></main></div></div><script src="./app.js"></script><script src="./workbench.js"></script></body></html>
