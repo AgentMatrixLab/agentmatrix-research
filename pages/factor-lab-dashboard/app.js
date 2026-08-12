@@ -453,6 +453,15 @@ function recommendationClass(value) {
   return "";
 }
 
+function reuseStatus(factor) {
+  var proof = factor.proof_status;
+  var truth = factor.truth_status;
+  if (proof === "passed" && truth === "exact_match") return "reusable";
+  if (proof === "failed" || proof === "partial" || truth === "mismatch") return "rerun";
+  if (proof === "missing") return "missing";
+  return "unconfirmed";
+}
+
 function canOpenFactor(factor) {
   return Boolean(factor?.latest_job_id) && factor?.proof_status !== "missing";
 }
@@ -1355,7 +1364,7 @@ function applyFilters() {
     .filter((factor) => state.library === "全部" || factor.library === state.library)
     .filter((factor) => state.proof === "all" || factor.proof_status === state.proof)
     .filter((factor) => state.truth === "all" || factor.truth_status === state.truth)
-    .filter((factor) => state.reuse === "all" || factor.reuse_recommendation === state.reuse)
+    .filter((factor) => state.reuse === "all" || reuseStatus(factor) === state.reuse)
     .filter((factor) => {
       if (!query) return true;
       return [factor.factor_name, factor.raw_factor_name, factor.library, marketLabel(factor), marketDetail(factor), factor.subcategory, jqFactorCategory(factor)]
@@ -1696,8 +1705,8 @@ function renderSelectionSummary() {
     return;
   }
   const selected = state.rawFactors.filter((factor) => state.selectedIds.has(factor.id));
-  const reusable = selected.filter((factor) => factor.reuse_recommendation === "可复用").length;
-  const rerun = selected.filter((factor) => factor.reuse_recommendation === "建议重跑").length;
+  const reusable = selected.filter((factor) => reuseStatus(factor) === "reusable").length;
+  const rerun = selected.filter((factor) => reuseStatus(factor) === "rerun").length;
   els.selectedCount.textContent = `已选择 ${selected.length} 个因子`;
   els.selectedReusable.textContent = `可复用 ${reusable} 个`;
   els.selectedRerun.textContent = `建议重跑 ${rerun} 个`;
@@ -1889,7 +1898,7 @@ function renderMonitorStats() {
   const withMetric = currentFactors.filter(
     (factor) => toFiniteNumber(factor.rank_ic_mean) !== null || toFiniteNumber(factor.rank_ic_ir) !== null,
   ).length;
-  const reusable = currentFactors.filter((factor) => factor.reuse_recommendation === "可复用").length;
+  const reusable = currentFactors.filter((factor) => reuseStatus(factor) === "reusable").length;
   const review = currentFactors.filter((factor) => monitorBucket(factor) === "weak").length;
 
   const cards = [
@@ -1947,7 +1956,7 @@ function renderMonitor() {
         return toFiniteNumber(item.factor.rank_ic_mean) !== null || toFiniteNumber(item.factor.rank_ic_ir) !== null;
       }
       if (state.monitorCardFilter === "reusable") {
-        return item.factor.reuse_recommendation === "可复用";
+        return reuseStatus(item.factor) === "reusable";        
       }
       if (state.monitorCardFilter === "review") {
         return item.bucket === "weak";
