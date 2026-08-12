@@ -43,3 +43,12 @@ STRATEGY_RESULT_PUBLICATION_STATUS=review
 The UI then labels every result as research validation and unpublished. Switch
 both values back to the published directory/status for a release-facing
 deployment.
+
+The interactive worker must use the same lock as the daily batch:
+
+```text
+--lock-file /home/data/agentmatrix-strategy/shared/operations/daily.lock
+```
+
+It releases the lock between queue polls, so the weekday batch can take
+priority when idle and interactive jobs cannot overlap a daily calculation.
