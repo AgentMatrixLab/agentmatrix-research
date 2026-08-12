@@ -3,16 +3,26 @@ Buggy reversal因子单元测试 — 会 FAIL。
 
 验证: 公式正确但代码实现方向反了 → 单元测试应捕获
 """
+import importlib.util
 import unittest
-import sys
 from pathlib import Path
 import numpy as np
 import pandas as pd
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from factor import compute
+# 按完整路径加载本地 factor.py，避免 sys.path 污染导致两个 test_factor.py 互相导错
+_spec = importlib.util.spec_from_file_location(
+    "buggy_reversal_factor", Path(__file__).resolve().parent / "factor.py"
+)
+_factor_module = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_factor_module)
+compute = _factor_module.compute
 
+import pytest
 
+@pytest.mark.xfail(
+    reason="Buggy reversal: deliberately reversed direction — expected to FAIL",
+    run=True,
+)
 class TestBuggyReversal(unittest.TestCase):
     def test_reversal_direction(self):
         """反转因子应对上涨股票给负值"""
