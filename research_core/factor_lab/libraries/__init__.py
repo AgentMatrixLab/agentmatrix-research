@@ -1,5 +1,6 @@
 from research_core.factor_lab.libraries.alpha101 import IMPLEMENTED_ALPHA101_FACTORS, alpha101_specs, compute_alpha101_factors
 from research_core.factor_lab.libraries.alpha158 import compute_alpha158, get_factor_names as alpha158_get_factor_names
+from research_core.factor_lab.libraries.barra import BARRA_IMPLEMENTED_FACTORS, IMPLEMENTED_BARRA_FACTORS, barra_specs, compute_barra_factors
 from research_core.factor_lab.libraries.factor_sets import (
     ALPHA158_ALL_FACTORS,
     IMPLEMENTED_ALPHA158_FACTORS,
@@ -15,13 +16,17 @@ __all__ = [
     "ALPHA158_ALL_FACTORS",
     "IMPLEMENTED_ALPHA101_FACTORS",
     "IMPLEMENTED_ALPHA158_FACTORS",
+    "IMPLEMENTED_BARRA_FACTORS",
+    "BARRA_IMPLEMENTED_FACTORS",
     "IMPLEMENTED_GTJA191_FACTORS",
     "WQ101_ALPHA_1_10",
     "alpha101_specs",
     "alpha158_get_factor_names",
+    "barra_specs",
     "compute_alpha101_factors",
     "compute_alpha158",
     "compute_alpha158_alphas",
+    "compute_barra_factors",
     "compute_factor_set",
     "compute_gtja191_alphas",
     "compute_wq101_alphas",

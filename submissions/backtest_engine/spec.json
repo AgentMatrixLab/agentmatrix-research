@@ -1,0 +1,21 @@
+{
+  "factor_name": "backtest_engine_composite",
+  "library": "custom",
+  "version": "1.0.0",
+  "display_name": "A股多因子复合信号",
+  "source_document": "回测引擎内置多因子框架 — 动量 + 反转 + 低波 + 流动性复合",
+  "formula": "zscore(ret_5d) * 0.25 + zscore(-ret_20d) * 0.25 + zscore(-volatility_20d) * 0.25 + zscore(-turnover_5d) * 0.25",
+  "description": "从回测引擎策略框架提取的复合因子：短期动量(5日收益)、中期反转(负20日收益)、低波动偏好(负20日波动率)、低换手偏好(负5日均换手率)，等权Z-score复合。代表回测引擎多因子打分体系的核心逻辑。",
+  "frequency": "day",
+  "sample_scope": "全A股（剔除ST/停牌/涨跌停/北交所）",
+  "required_fields": ["close", "volume", "amount"],
+  "parameters": {
+    "momentum_window": 5,
+    "reversal_window": 20,
+    "volatility_window": 20,
+    "turnover_window": 5
+  },
+  "preprocessing": ["后复权收盘价", "剔除ST/停牌/涨跌停"],
+  "neutralization": [],
+  "tags": ["multi-factor", "momentum", "reversal", "low-volatility", "liquidity", "a-share", "backtest-engine"]
+}

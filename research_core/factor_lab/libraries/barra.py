@@ -226,11 +226,52 @@ def compute_barra_factors(
 
 
 BARRA_IMPLEMENTED_FACTORS = tuple(BARRA_FACTOR_NAMES)
+IMPLEMENTED_BARRA_FACTORS = BARRA_IMPLEMENTED_FACTORS  # backward compat alias
+
+
+def barra_specs():
+    """返回 Barra CNE5 因子规格列表 (FactorResearchSpec)。"""
+    from contracts.factor_research import FactorResearchSpec
+
+    _DESCRIPTIONS: dict[str, str] = {
+        "size": "市值因子: ln(总市值), 捕捉小盘股溢价效应",
+        "beta": "市场 Beta: 60 日滚动回归 CSI300, 系统性风险暴露",
+        "momentum_12m1m": "动量因子: 12-1 月价格动量, 中期趋势效应",
+        "volatility": "波动率因子: 60 日收益率标准差, 低波异象",
+        "btop": "账面市值比 (Book-to-Price): 净资产/市值, 价值因子",
+        "earnings_yield": "盈利收益率: EPS_TTM / 股价, 盈利因子",
+        "growth": "增长因子: 净利润同比增速, 成长性",
+        "leverage": "杠杆因子: 负债权益比, 财务风险",
+        "liquidity": "流动性因子: 20 日均换手率, 低流动性溢价",
+        "nonlinear_size": "非线性市值: 市值^3 对市值回归残差, 极端市值效应",
+        "residual_volatility": "残差波动率: 对 Beta 和 Size 回归后的残差波动, 特质风险",
+        "sector": "行业因子: 申万一级行业哑变量",
+    }
+
+    return [
+        FactorResearchSpec(
+            factor_name=name,
+            library="Barra",
+            version="CNE5",
+            display_name=name.upper(),
+            factor_id=f"barra_{name}",
+            source_document="Barra China Equity Model CNE5",
+            formula=name,
+            description=_DESCRIPTIONS.get(name, f"Barra CNE5 risk factor: {name}"),
+            required_fields=["open", "high", "low", "close", "volume", "amount"],
+            parameters={},
+            metadata={"status": "implemented"},
+            tags=["barra", "risk", "cne5"],
+        )
+        for name in BARRA_IMPLEMENTED_FACTORS
+    ]
 
 
 __all__ = [
     "BARRA_FACTOR_NAMES",
     "BARRA_IMPLEMENTED_FACTORS",
+    "IMPLEMENTED_BARRA_FACTORS",
+    "barra_specs",
     "compute_barra_factors",
     "compute_market_cap",
     "compute_beta",

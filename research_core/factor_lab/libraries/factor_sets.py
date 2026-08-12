@@ -4,7 +4,7 @@ import pandas as pd
 
 from research_core.factor_lab.libraries.alpha101 import IMPLEMENTED_ALPHA101_FACTORS, alpha101_specs, compute_alpha101_factors
 from research_core.factor_lab.libraries.alpha158 import compute_alpha158 as _compute_alpha158, get_factor_names as _alpha158_names
-from research_core.factor_lab.libraries.barra import BARRA_IMPLEMENTED_FACTORS, compute_barra_factors
+from research_core.factor_lab.libraries.barra import BARRA_IMPLEMENTED_FACTORS, IMPLEMENTED_BARRA_FACTORS, barra_specs, compute_barra_factors
 from research_core.factor_lab.libraries.gtja191 import IMPLEMENTED_GTJA191_FACTORS, compute_gtja191_alphas, gtja191_specs
 
 
@@ -26,11 +26,6 @@ def compute_wq101_alphas(df: pd.DataFrame, factor_names: list[str] | None = None
 
 
 def compute_alpha158_alphas(df: pd.DataFrame, factor_names: list[str] | None = None) -> pd.DataFrame:
-    """Compute Alpha158 factors from a panel DataFrame (date, code, open, high, low, close, volume, [vwap|amount]).
-
-    Converts the flat panel to MultiIndex format expected by compute_alpha158().
-    If vwap is missing, approximates it as amount / volume.
-    """
     panel = df.copy()
     if "vwap" not in panel.columns:
         if "amount" in panel.columns and "volume" in panel.columns:
@@ -64,7 +59,7 @@ def compute_factor_set(df: pd.DataFrame, factor_set: str, factor_names: list[str
         return compute_wq101_alphas(df, factor_names=factor_names)
     if normalized in {"gtja191", "alpha191"}:
         return compute_gtja191_alphas(df, factor_names=factor_names)
-    if normalized in {"barra", "cne5"}:
+    if normalized in {"barra", "cne5", "barra_style"}:
         return compute_barra_alphas(df, factor_names=factor_names)
     if normalized in {"alpha158"}:
         return compute_alpha158_alphas(df, factor_names=factor_names)
@@ -77,21 +72,8 @@ def factor_set_specs(factor_set: str):
         return [spec for spec in alpha101_specs() if spec.factor_name in IMPLEMENTED_ALPHA101_FACTORS]
     if normalized in {"gtja191", "alpha191"}:
         return gtja191_specs()
-    if normalized in {"barra", "cne5"}:
-        from contracts.factor_research import FactorResearchSpec
-        return [
-            FactorResearchSpec(
-                factor_name=name, library="Barra", version="CNE5",
-                display_name=f"Barra {name}", factor_id=f"barra_{name}",
-                source_document="Barra China Equity Model CNE5",
-                formula=name, description=f"Barra risk factor: {name}",
-                required_fields=["open", "high", "low", "close", "volume", "amount"],
-                parameters={},
-                metadata={"status": "implemented"},
-                tags=["barra", "risk", "cne5"],
-            )
-            for name in BARRA_IMPLEMENTED_FACTORS
-        ]
+    if normalized in {"barra", "cne5", "barra_style"}:
+        return barra_specs()
     if normalized in {"alpha158"}:
         from research_core.factor_lab.libraries.alpha158.specs import FACTOR_SPECS
         from contracts.factor_research import FactorResearchSpec
@@ -119,7 +101,7 @@ def factor_set_library_name(factor_set: str) -> str:
         return "Alpha101"
     if normalized in {"gtja191", "alpha191"}:
         return "GTJA191"
-    if normalized in {"barra", "cne5"}:
+    if normalized in {"barra", "cne5", "barra_style"}:
         return "Barra"
     if normalized in {"alpha158"}:
         return "Alpha158"
@@ -130,9 +112,14 @@ __all__ = [
     "ALPHA158_ALL_FACTORS",
     "IMPLEMENTED_ALPHA101_FACTORS",
     "IMPLEMENTED_ALPHA158_FACTORS",
+    "IMPLEMENTED_BARRA_FACTORS",
+    "BARRA_IMPLEMENTED_FACTORS",
     "IMPLEMENTED_GTJA191_FACTORS",
     "WQ101_ALPHA_1_10",
+    "barra_specs",
     "compute_alpha158_alphas",
+    "compute_barra_alphas",
+    "compute_barra_factors",
     "compute_factor_set",
     "compute_gtja191_alphas",
     "compute_wq101_alphas",
