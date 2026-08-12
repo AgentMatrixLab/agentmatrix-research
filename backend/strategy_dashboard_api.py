@@ -5,7 +5,7 @@ import json
 import sys
 from pathlib import Path
 
-from flask import Flask, jsonify, send_from_directory
+from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -13,6 +13,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from research_core.strategy_dashboard import StrategyDashboardStore, StrategyResultNotFound  # noqa: E402
+from research_core.backtest_jobs import BacktestJobService, BacktestJobStore, JobRequestError  # noqa: E402
 
 
 def create_app(*, result_dir: str | Path | None = None, publication_status: str | None = None) -> Flask:
@@ -21,6 +22,8 @@ def create_app(*, result_dir: str | Path | None = None, publication_status: str 
     dashboard_root = PROJECT_ROOT / "frontend" / "quant-desk-dashboard"
     configured_result_dir = result_dir or os.getenv("STRATEGY_BACKTEST_RESULT_DIR")
     configured_publication_status = publication_status or os.getenv("STRATEGY_RESULT_PUBLICATION_STATUS", "published")
+    job_store = BacktestJobStore(os.getenv("BACKTEST_JOB_DB", str(PROJECT_ROOT / "runtime" / "backtest_jobs" / "jobs.sqlite3")))
+    job_service = BacktestJobService(job_store, os.getenv("STRATEGY_REGISTRY_FILE", str(PROJECT_ROOT / "config" / "strategy_registry.json")))
 
     def read_status(path_value: str | None) -> dict | None:
         if not path_value:
@@ -69,6 +72,31 @@ def create_app(*, result_dir: str | Path | None = None, publication_status: str 
                 "strategies": batch.get("strategies", []) if batch else [],
             },
         })
+
+    @app.get("/api/strategy-dashboard/backtest-capabilities")
+    def backtest_capabilities():
+        return jsonify(job_service.capabilities())
+
+    @app.get("/api/strategy-dashboard/backtest-jobs")
+    def backtest_jobs():
+        return jsonify(job_store.list(min(max(int(request.args.get("limit", 25)), 1), 100)))
+
+    @app.get("/api/strategy-dashboard/backtest-jobs/<job_id>")
+    def backtest_job(job_id: str):
+        try:
+            return jsonify(job_store.get(job_id))
+        except KeyError:
+            return jsonify({"error": "Backtest job not found"}), 404
+
+    @app.post("/api/strategy-dashboard/backtest-jobs")
+    def submit_backtest_job():
+        try:
+            job_service.authorize(request.headers.get("X-Backtest-Token", ""))
+            return jsonify(job_service.submit(request.get_json(silent=True) or {})), 202
+        except PermissionError as exc:
+            return jsonify({"error": str(exc)}), 403
+        except JobRequestError as exc:
+            return jsonify({"error": str(exc)}), 400
 
     @app.get("/api/strategy-dashboard/strategies/<strategy_id>")
     def strategy(strategy_id: str):
