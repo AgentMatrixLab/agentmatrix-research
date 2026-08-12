@@ -263,6 +263,24 @@ would invalidate comparison with existing results.
 - Kept synthetic NAV portfolios explicitly separate from executed portfolios.
   The builder does not claim shared-cash fills, holdings, fees, or turnover;
   those require the replacement Chenxi execution ledger.
+
+## Interactive backtest production deployment (2026-08-12)
+
+- Promoted release `20260812_1130_interactive`; its 20 focused server tests
+  passed before the atomic `current` switch.
+- Started the two-worker public Gunicorn dashboard and one persistent Chenxi
+  backtest worker. Both have data-account `@reboot` recovery entries.
+- The worker and weekday 19:30 batch share `operations/daily.lock`, preventing
+  concurrent engine runs.
+- Enabled token-protected submission for the ten non-disabled registry
+  strategies. Anonymous submission returns HTTP 403. The random token is kept
+  in the mode-600 server environment and was delivered separately as a
+  mode-600 desktop file.
+- Completed interactive smoke job `bt-20260812T032509-2e165efd` for the
+  momentum strategy over 2026-06-01 through 2026-08-06. It reached 100%, wrote
+  a canonical quarantine result, and failed strategy quality gates as expected
+  for the currently unresolved zero-signal result. This confirms task
+  transport and persistence, not strategy performance.
 - Existing strategy library, detail, positions, trades, risk, job workbench,
   data quality, and publication-state views remain connected to the canonical
   AgentMatrix API.
