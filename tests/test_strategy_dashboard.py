@@ -63,6 +63,8 @@ class StrategyDashboardStoreTest(unittest.TestCase):
             self.assertIn("策略组合".encode(), page.data)
             self.assertIn("风险中心".encode(), page.data)
             self.assertIn("回测工作台".encode(), page.data)
+            self.assertIn("策略对比".encode(), page.data)
+            self.assertIn("组合构建".encode(), page.data)
             self.assertIn(b'id="strategySearch"', page.data)
             page.close()
 
@@ -76,6 +78,12 @@ class StrategyDashboardStoreTest(unittest.TestCase):
             self.assertEqual(workbench.status_code, 200)
             self.assertIn(b"backtest-jobs", workbench.data)
             workbench.close()
+
+            analytics = client.get("/quant-desk/analytics.js")
+            self.assertEqual(analytics.status_code, 200)
+            self.assertIn(b"correlationMatrix", analytics.data)
+            self.assertIn(b"quantDeskPortfolios", analytics.data)
+            analytics.close()
 
             strategies = client.get("/api/strategy-dashboard/strategies")
             self.assertEqual(strategies.status_code, 200)
