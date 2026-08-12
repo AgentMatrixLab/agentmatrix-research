@@ -31,6 +31,9 @@ class StrategyDashboardApiTest(unittest.TestCase):
                 page = client.get("/quant-desk/")
                 self.assertEqual(page.status_code, 200)
                 page.close()
+                self.assertEqual(client.get("/api/positions?strategyId=s1").status_code, 200)
+                self.assertEqual(client.get("/api/trades?strategyId=s1").status_code, 200)
+                self.assertEqual(client.get("/api/risk/overview?strategyId=s1").status_code, 200)
 
     def test_status_endpoint_reports_readiness(self):
         with tempfile.TemporaryDirectory() as directory:

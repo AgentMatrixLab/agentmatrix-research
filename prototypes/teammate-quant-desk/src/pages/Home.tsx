@@ -3,8 +3,12 @@ import NavChart from "@/components/NavChart";
 import MetricsGrid from "@/components/MetricsGrid";
 import DetailTables from "@/components/DetailTables";
 import PortfolioPanel from "@/components/PortfolioPanel";
+import { useDashStore } from "@/store/useDashStore";
 
 export default function Home() {
+  const source = useDashStore(s => s.source);
+  const details = useDashStore(s => s.details);
+  const latest = Object.values(details).map(d=>d.updated_at).filter(Boolean).sort().at(-1);
   return (
     <main className="mx-auto max-w-[1600px] space-y-4 px-6 py-5">
       {/* 第一视觉焦点：核心指标 */}
@@ -26,7 +30,7 @@ export default function Home() {
         <span>
           QUANT<span className="text-accent">·</span>DESK 量化策略面板
         </span>
-        <span className="num">数据更新于 2026-07-28 15:00 CST · 演示数据</span>
+        <span className="num">{source === "live" ? `真实结果更新于 ${latest || "--"}` : "本地演示回退数据"}</span>
       </footer>
     </main>
   );
