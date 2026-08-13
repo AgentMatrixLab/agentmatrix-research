@@ -84,7 +84,7 @@ def explore(
     horizon: int = 5,
     top_n: int = 10,
     auto: bool = True,
-    cache_dir: str = "",
+    cache_dir: Optional[str] = None,
     output_dir: str = "",
     workspace: Optional[FactorLabWorkspaceConfig] = None,
 ) -> ExploreResult:
