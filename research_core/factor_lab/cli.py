@@ -158,8 +158,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="Number of top factors to report",
     )
     explore_parser.add_argument(
-        "--cache-dir", default="/tmp/agentmatrix_cache",
-        help="Cache directory for market data",
+        "--cache-dir", default="",
+        help="Cache directory for market data (default: runtime/factor_lab/cache)",
     )
     explore_parser.add_argument(
         "--output", default="",
@@ -456,3 +456,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
