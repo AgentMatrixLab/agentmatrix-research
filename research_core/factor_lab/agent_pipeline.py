@@ -84,7 +84,7 @@ def explore(
     horizon: int = 5,
     top_n: int = 10,
     auto: bool = True,
-    cache_dir: str = "/tmp/agentmatrix_cache",
+    cache_dir: str = "",
     output_dir: str = "",
     workspace: Optional[FactorLabWorkspaceConfig] = None,
 ) -> ExploreResult:
@@ -104,7 +104,9 @@ def explore(
         auto: If True, auto-select factors when ``factors`` is None.
             If False, ``factors`` must be provided explicitly — otherwise a
             ``ValueError`` is raised (caught by the agent API safe wrapper).
-        cache_dir: Where to cache market data
+        cache_dir: Where to cache market data.  Empty string falls back to the
+            project-runtime default (``runtime/factor_lab/cache``), which is
+            shared between Python API, CLI, and the raw pipeline.
         output_dir: Where to write the job JSON + factor frame artifacts.
             Defaults to the factor_lab runtime root (``runtime/factor_lab``).
         workspace: FactorLabWorkspaceConfig or None for default
@@ -113,9 +115,22 @@ def explore(
     if workspace is None:
         workspace = FactorLabWorkspaceConfig()
 
+    # Resolve cache_dir:
+    #   1. explicit non-empty argument wins;
+    #   2. otherwise workspace.resolved_cache_dir() — which by default
+    #      returns workspace.runtime_root / "cache", so callers wiring
+    #      runtime_root=tmp_path stay contained (no bleed into the real
+    #      project tree);
+    #   3. resolved_cache_dir() itself has a last-resort fallback so an
+    #      empty ``cache_dir=""`` can never become Path("") -> CWD/D:\.
+    if cache_dir:
+        effective_cache_dir = Path(cache_dir).expanduser().resolve()
+    else:
+        effective_cache_dir = Path(workspace.resolved_cache_dir())
+
     # ── Step 1: Auto-fetch data ──────────────────────────────
-    Path(cache_dir).mkdir(parents=True, exist_ok=True)
-    cache_path = f"{cache_dir}/{universe}_{start}_{end}.pkl"
+    effective_cache_dir.mkdir(parents=True, exist_ok=True)
+    cache_path = str(effective_cache_dir / f"{universe}_{start}_{end}.pkl")
 
     panel = fetch_real_panel(
         start=start, end=end, universe=universe,
@@ -374,7 +389,7 @@ def explore(
         artifacts={
             "job_path": str(job_json_path.resolve()),
             "factor_frame": str(frame_csv.resolve()),
-            "cache_dir": str(Path(cache_dir).resolve()),
+            "cache_dir": str(effective_cache_dir),
         },
     )
     return result
@@ -416,3 +431,4 @@ def explore_to_markdown(result: ExploreResult) -> str:
         lines.append(f"{i}. {action}")
 
     return "\n".join(lines)
+
