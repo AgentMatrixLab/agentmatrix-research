@@ -6,28 +6,9 @@
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
 ## AI Agent Quick Start
+**If you are an AI agent (Claude, GPT, Trae, Cursor, WorkBuddy, etc.), read [`AGENTS.md`](AGENTS.md) first.** It contains the complete capability index, parameter quick reference, result shape examples, and error → fix mapping.
 
-**If you are an AI agent (Claude, GPT, Trae, Cursor, WorkBuddy, etc.), read [`AGENTS.md`](AGENTS.md) first.**
-
-```python
-from research_core.agent_api import discover, explore_factors
-
-# See all capabilities
-caps = discover()
-
-# One-click factor exploration (the main entry point)
-result = explore_factors(goal="momentum factors", universe="csi300")
-print(result["gate_verdict"], result["summary"])
-```
-
-Or via CLI:
-
-```bash
-python -m research_core.agent_api discover
-python -m research_core.agent_api explore --goal "momentum factors" --universe csi300
-```
-
-The unified agent API (`research_core/agent_api.py`) wraps all framework capabilities behind
+The unified agent API (`research_core/agent_api.py`) wraps all framework capabilities behind self-documenting functions with both Python and CLI interfaces. Call `discover()` to see everything the framework can do.
 13 self-documenting functions. Call `discover()` to see everything the framework can do.
 
 ## Pages Portal
@@ -52,14 +33,14 @@ The unified agent API (`research_core/agent_api.py`) wraps all framework capabil
 
 ```
 agentmatrix-research/
-├── AGENTS.md                # AI Agent universal entry guide (read this first!)
+├── AGENTS.md                # AI Agent entry guide (see "AI Agent Quick Start" above
 ├── common/                  # Shared utilities (paths, configs)
 ├── contracts/               # Data contracts & interfaces
 │   ├── strategy.py          #   StrategyMetadata, StrategyDecision, TargetPosition
 │   ├── backtest.py          #   BacktestRequest, BacktestResult, PerformanceMetrics
 │   └── attribution.py       #   AttributionReport, AttributionSummary
 ├── research_core/           # Core research modules
-│   ├── agent_api.py         #   Unified agent API (13 self-documenting functions)
+│   ├── agent_api.py         #   Unified agent API + CLI (self-documenting)
 │   ├── agent_manifest.py    #   Self-describing capability manifest
 │   ├── backtest_adapter/    #   GM adapter, RQAlpha adapter, result parsers
 │   ├── factor_lab/          #   Unified factor specs, registry, and validation proof templates
