@@ -7,7 +7,7 @@ API reads only atomically published JSON artifacts and binds to loopback port
 Server layout:
 
 ```text
-/home/data/agentmatrix-strategy/
+${STRATEGY_ROOT}/
   current -> releases/<release-id>
   releases/<release-id>/
   shared/
@@ -36,7 +36,7 @@ For an internal engineering demonstration, the API may read the quarantine
 directory only when both variables are set together:
 
 ```text
-STRATEGY_BACKTEST_RESULT_DIR=/home/data/agentmatrix-strategy/shared/quarantine
+STRATEGY_BACKTEST_RESULT_DIR=${STRATEGY_ROOT}/shared/quarantine
 STRATEGY_RESULT_PUBLICATION_STATUS=review
 ```
 
@@ -47,7 +47,7 @@ deployment.
 The interactive worker must use the same lock as the daily batch:
 
 ```text
---lock-file /home/data/agentmatrix-strategy/shared/operations/daily.lock
+--lock-file ${STRATEGY_ROOT}/shared/operations/daily.lock
 ```
 
 It releases the lock between queue polls, so the weekday batch can take

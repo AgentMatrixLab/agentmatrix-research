@@ -16,8 +16,8 @@ RQData ETL -> dataset-level readiness manifest -> compatible dataset version
   changed.
 - Existing schedule: weekday ETL at 18:30 under the `data` account.
 - Source daily market files were current through 2026-08-06 at audit time.
-- Isolated release: `/home/data/agentmatrix-strategy/releases/20260807_1100`.
-- Shared state: `/home/data/agentmatrix-strategy/shared`.
+- Isolated release: `${STRATEGY_ROOT}/releases/20260807_1100`.
+- Shared state: `${STRATEGY_ROOT}/shared`.
 - Smoke API: Gunicorn on server loopback `127.0.0.1:8813`; seven isolated
   tests passed, `/healthz` returned healthy, and `/quant-desk/` returned 200.
 - Public proxy and system service installation have not been performed.
@@ -82,7 +82,7 @@ performance validation and the new accounting core are post-launch work.
 
 ### Installation order
 
-1. Create `/home/data/agentmatrix-backtest-engine` with versioned `releases`,
+1. Create `${BACKTEST_ENGINE_ROOT}` with versioned `releases`,
    `current`, and writable `shared` directories owned by `data:datateam`.
 2. Package the approved desktop-engine baseline without datasets, credentials,
    caches, or prior results; install its pinned environment and switch the
