@@ -1058,7 +1058,7 @@ def _build_cli():
                     help="Auto-select factors when --factors is empty (default)")
     ex.add_argument("--no-auto", dest="auto", action="store_false",
                     help="Require explicit --factors; disable auto-selection")
-    ex.add_argument("--cache-dir", default="/tmp/agentmatrix_cache")
+    ex.add_argument("--cache-dir", default="")
     ex.add_argument("--output-dir", default="")
     ex.add_argument("--format", default="json", choices=["json", "markdown"])
 
