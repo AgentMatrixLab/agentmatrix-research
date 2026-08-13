@@ -13,6 +13,11 @@ REGION_ALIASES = {
     "us": "us",
 }
 
+# Explicit, safe default cache directory under the repo runtime tree.
+# Never use an empty string — on Windows Path("").resolve() points to the
+# current working directory (which could be a drive root like D:\).
+DEFAULT_CACHE_DIR = str(runtime_path("qlib", "cache"))
+
 
 @dataclass(slots=True)
 class QlibWorkspaceConfig:
@@ -21,7 +26,7 @@ class QlibWorkspaceConfig:
     market: str = "csi300"
     benchmark: str = "SH000300"
     freq: str = "day"
-    cache_dir: str = ""
+    cache_dir: str = field(default_factory=lambda: DEFAULT_CACHE_DIR)
     experiment_name: str = "agentmatrix_qlib_lab"
     universe: str = "csi300"
     metadata: dict[str, Any] = field(default_factory=dict)
@@ -35,7 +40,7 @@ class QlibWorkspaceConfig:
             market=os.getenv("QLIB_MARKET", "csi300"),
             benchmark=os.getenv("QLIB_BENCHMARK", "SH000300"),
             freq=os.getenv("QLIB_FREQ", "day"),
-            cache_dir=os.getenv("QLIB_CACHE_DIR", str(runtime_path("qlib", "cache"))),
+            cache_dir=os.getenv("QLIB_CACHE_DIR") or DEFAULT_CACHE_DIR,
             experiment_name=os.getenv("QLIB_EXPERIMENT_NAME", "agentmatrix_qlib_lab"),
             universe=os.getenv("QLIB_UNIVERSE", "csi300"),
         )
@@ -44,7 +49,7 @@ class QlibWorkspaceConfig:
         return str(Path(self.provider_uri).expanduser().resolve())
 
     def resolved_cache_dir(self) -> str:
-        raw = self.cache_dir or str(runtime_path("qlib", "cache"))
+        raw = self.cache_dir or DEFAULT_CACHE_DIR
         return str(Path(raw).expanduser().resolve())
 
     def resolved_region(self) -> str:
