@@ -22,13 +22,8 @@ from typing import Any, Optional
 import numpy as np
 import pandas as pd
 
-from research_core.data_loader.market_data import fetch_real_panel, resolve_universe
-from research_core.factor_lab.evaluation import (
-    build_alpha101_evaluation_report,
-    build_factor_evaluation_report,
-    compute_forward_returns,
-    compute_ic,
-)
+from research_core.data_loader.market_data import fetch_real_panel
+from research_core.factor_lab.evaluation import compute_forward_returns, compute_ic
 from research_core.factor_lab.inference import (
     bootstrap_ic_confidence_multiple,
     ic_decay_analysis,
@@ -42,14 +37,15 @@ from research_core.factor_lab.libraries.factor_sets import (
     factor_set_library_name,
     factor_set_specs,
 )
-from research_core.factor_lab.similarity import find_similar_factors
-from research_core.factor_lab.validation_gate import ValidationGate, GateVerdict
 from research_core.factor_lab.runtime import FactorLabWorkspaceConfig, now_iso
+from research_core.factor_lab.similarity import find_similar_factors
+from research_core.factor_lab.validation_gate import ValidationGate
 
 
 @dataclass
 class ExploreResult:
     """Structured result an agent can parse and act on."""
+
     goal: str
     universe: str
     n_stocks: int
@@ -104,16 +100,18 @@ def explore(
         auto: If True, auto-select factors when ``factors`` is None.
             If False, ``factors`` must be provided explicitly — otherwise a
             ``ValueError`` is raised (caught by the agent API safe wrapper).
-        cache_dir: Where to cache market data.  Empty string falls back to the
-            project-runtime default (``runtime/factor_lab/cache``), which is
-            shared between Python API, CLI, and the raw pipeline.
+        cache_dir: Where to cache market data.  ``None`` (default) resolves
+            via ``workspace.resolved_cache_dir()`` — typically
+            ``runtime/factor_lab/cache``, shared between Python API, CLI,
+            and the raw pipeline.  The ``FACTOR_LAB_CACHE_DIR`` environment
+            variable is honoured when ``workspace`` is not supplied.
         output_dir: Where to write the job JSON + factor frame artifacts.
             Defaults to the factor_lab runtime root (``runtime/factor_lab``).
         workspace: FactorLabWorkspaceConfig or None for default
     """
     t0 = time.time()
     if workspace is None:
-        workspace = FactorLabWorkspaceConfig().from_env()
+        workspace = FactorLabWorkspaceConfig.from_env()
 
     # Resolve cache_dir:
     #   1. explicit non-empty argument wins;
@@ -198,28 +196,35 @@ def explore(
         ic_results[fn] = {"ic_mean": ic_mean, "ic_ir": ic_ir, "ic_std": ic_std}
 
     # ── Step 5: Statistical inference ────────────────────────
+    # Bootstrap CI + decay analysis require scipy. When scipy is unavailable
+    # (e.g. 32-bit Python), skip these enrichments gracefully — the core
+    # IC/OOS/gate pipeline still runs and returns a usable verdict.
     for fn, ic_series in ic_series_by_factor.items():
         if len(ic_series) > 20:
-            # bootstrap_ic_confidence_multiple expects {factor_name: IC_series},
-            # NOT a list — passing [ic_series] crashed with AttributeError.
-            ci = bootstrap_ic_confidence_multiple({fn: ic_series}, n_bootstrap=2000)
-            ci_result = ci.get(fn, {})
-            decay = ic_decay_analysis(ic_series)
-            # ic_decay_analysis returns trend_slope / trend_pvalue /
-            # split_difference / first_half_mean — NOT decay_pct / p_value.
-            # Derive decay_pct as the fractional IC change from first to second
-            # half so it is comparable to the gate's DECAY_MAX_PCT threshold.
-            first_half = float(decay.get("first_half_mean", 0)) or 0
-            split_diff = float(decay.get("split_difference", 0)) or 0
-            decay_pct = (
-                split_diff / abs(first_half) if abs(first_half) > 1e-10 else 0.0
-            )
-            ic_results[fn].update({
-                "ic_ci_lower": float(ci_result.get("ci_lower", 0)),
-                "ic_ci_upper": float(ci_result.get("ci_upper", 0)),
-                "decay_pct": decay_pct,
-                "decay_pvalue": float(decay.get("trend_pvalue", 1.0)),
-            })
+            try:
+                # bootstrap_ic_confidence_multiple expects {factor_name: IC_series},
+                # NOT a list — passing [ic_series] crashed with AttributeError.
+                ci = bootstrap_ic_confidence_multiple({fn: ic_series}, n_bootstrap=2000)
+                ci_result = ci.get(fn, {})
+                decay = ic_decay_analysis(ic_series)
+                # ic_decay_analysis returns trend_slope / trend_pvalue /
+                # split_difference / first_half_mean — NOT decay_pct / p_value.
+                # Derive decay_pct as the fractional IC change from first to second
+                # half so it is comparable to the gate's DECAY_MAX_PCT threshold.
+                first_half = float(decay.get("first_half_mean", 0)) or 0
+                split_diff = float(decay.get("split_difference", 0)) or 0
+                decay_pct = (
+                    split_diff / abs(first_half) if abs(first_half) > 1e-10 else 0.0
+                )
+                ic_results[fn].update({
+                    "ic_ci_lower": float(ci_result.get("ci_lower", 0)),
+                    "ic_ci_upper": float(ci_result.get("ci_upper", 0)),
+                    "decay_pct": decay_pct,
+                    "decay_pvalue": float(decay.get("trend_pvalue", 1.0)),
+                })
+            except ImportError:
+                # scipy missing — leave basic IC metrics in place
+                pass
 
     # ── Step 6: OOS validation ───────────────────────────────
     # The previous code called out_of_sample_split(ic_series) which expects a
@@ -378,10 +383,7 @@ def explore(
         gate_details={
             "passed": passed_count,
             "total": len(factors),
-            "checks_per_factor": {
-                v.factor_name: v.to_dict()
-                for v in all_verdicts
-            },
+            "checks_per_factor": {v.factor_name: v.to_dict() for v in all_verdicts},
         },
         summary=summary,
         next_actions=next_actions,
@@ -399,33 +401,33 @@ def explore_to_markdown(result: ExploreResult) -> str:
     """Render an ExploreResult as agent-readable markdown."""
     lines = [
         f"## 🔍 Factor Exploration: {result.goal}",
-        f"",
-        f"| Metric | Value |",
-        f"|--------|-------|",
+        "",
+        "| Metric | Value |",
+        "|--------|-------|",
         f"| Universe | {result.universe} ({result.n_stocks} stocks) |",
         f"| Date range | {result.date_range} |",
         f"| Factors tested | {result.factors_tested} |",
         f"| Factors passed | {result.factors_passed} |",
         f"| Time | {result.elapsed_seconds}s |",
         f"| Gate | {result.gate_verdict} |",
-        f"",
-        f"### Top Factors",
-        f"",
-        f"| Factor | IC Mean | IC_IR | OOS | Verdict |",
-        f"|--------|---------|-------|-----|---------|",
+        "",
+        "### Top Factors",
+        "",
+        "| Factor | IC Mean | IC_IR | OOS | Verdict |",
+        "|--------|---------|-------|-----|---------|",
     ]
     for f in result.top_factors[:10]:
         lines.append(
             f"| {f['name']} | {f['ic_mean']:.4f} | {f['ic_ir']:.2f} | {f['oos_retention']} | {f['verdict']} |"
         )
     lines.extend([
-        f"",
-        f"### Summary",
-        f"",
+        "",
+        "### Summary",
+        "",
         result.summary,
-        f"",
-        f"### Next Actions",
-        f"",
+        "",
+        "### Next Actions",
+        "",
     ])
     for i, action in enumerate(result.next_actions, 1):
         lines.append(f"{i}. {action}")
