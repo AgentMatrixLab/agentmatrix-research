@@ -101,6 +101,25 @@ python -m research_core.factor_lab.cli run-factor-research --factor-set wq101 --
 python -m research_core.strategy_engine.cli build-alpha-strategy --validated-run runtime/factor_lab/jobs/<job_id>.json --rebalance-frequency daily --top-n 50
 ```
 
+### Factor Lab Truth Compare (factor values validation)
+
+Upload-style factor values are compared point-by-point against the library truth
+(local CSV or Supabase `factor_truth_values`). Fully testable offline:
+
+```bash
+python -m research_core.factor_lab.cli export-alpha101-truth-template --n-dates 60 --n-codes 5 --seed 29
+python scripts/dev/make_truth_compare_samples.py
+python scripts/run_truth_compare.py --factor-family alpha101 --factor-name alpha1 \
+  --values-csv data/factor_lab/samples/factor_values_alpha1_pass.csv \
+  --truth-csv data/factor_lab/alpha101_truth_template_101f_60d_5c_s29.csv
+# Optional: sync results to Supabase (requires service_role key, see .env.example)
+python scripts/sync_truth_compare_to_supabase.py
+```
+
+See [docs/FACTOR_LAB_TRUTH_COMPARE.md](docs/FACTOR_LAB_TRUTH_COMPARE.md) for the full
+test walkthrough (passed / failed / not_comparable branches), the Supabase migration
+order, and which keys must be provided by the project team.
+
 ### Factor Lab API
 
 ```bash
