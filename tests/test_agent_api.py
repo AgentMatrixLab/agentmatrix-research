@@ -1337,5 +1337,271 @@ class TestExploreBuildPackageE2E:
         )
 
 
+# ═══════════════════════════════════════════════════════════════
+# Section 18 — _parse_cli_json unit tests (log + multi-line JSON)
+# ═══════════════════════════════════════════════════════════════
+
+class TestParseCliJson:
+    """Unit tests for the unified _parse_cli_json helper.
+
+    The helper must handle:
+      1. Pure JSON (entire stdout is a JSON object)
+      2. Log + single-line JSON (log lines then a one-line JSON object)
+      3. Log + multi-line JSON (log lines then a pretty-printed JSON object)
+    And return None when no valid JSON is found.
+    """
+
+    def test_pure_json(self):
+        from research_core.agent_api import _parse_cli_json
+        raw = json.dumps({"status": "ok", "ic_mean": 0.03})
+        result = _parse_cli_json(raw)
+        assert result == {"status": "ok", "ic_mean": 0.03}
+
+    def test_log_plus_single_line_json(self):
+        from research_core.agent_api import _parse_cli_json
+        raw = (
+            "[INFO] Initializing qlib workspace...\n"
+            "[INFO] Loading market data...\n"
+            '{"status": "ok", "ic_mean": 0.035, "icir": 0.52}\n'
+        )
+        result = _parse_cli_json(raw)
+        assert result is not None
+        assert result["status"] == "ok"
+        assert result["ic_mean"] == 0.035
+
+    def test_log_plus_multi_line_json(self):
+        """Pretty-printed (multi-line) JSON after log lines."""
+        from research_core.agent_api import _parse_cli_json
+        pretty = json.dumps(
+            {"status": "ok", "ic_mean": 0.04, "metrics": {"sharpe": 1.2}},
+            indent=2,
+        )
+        raw = (
+            "[INFO] Qlib initialized\n"
+            "[WARN] Using minimal init\n"
+            + pretty
+        )
+        result = _parse_cli_json(raw)
+        assert result is not None
+        assert result["status"] == "ok"
+        assert result["ic_mean"] == 0.04
+        assert result["metrics"]["sharpe"] == 1.2
+
+    def test_empty_string_returns_none(self):
+        from research_core.agent_api import _parse_cli_json
+        assert _parse_cli_json("") is None
+        assert _parse_cli_json("   \n  \n") is None
+
+    def test_no_json_returns_none(self):
+        from research_core.agent_api import _parse_cli_json
+        raw = "[ERROR] Something went wrong\nNo JSON here at all"
+        assert _parse_cli_json(raw) is None
+
+    def test_log_with_braces_but_no_valid_json(self):
+        """Log lines containing stray braces must not cause false positives."""
+        from research_core.agent_api import _parse_cli_json
+        raw = "[INFO] config {region: cn}\n[WARN] cache {dir: /tmp}\n"
+        assert _parse_cli_json(raw) is None
+
+    def test_returns_dict_not_list(self):
+        """When stdout is a JSON array, the helper extracts the last dict
+        object from it (never returns the raw list)."""
+        from research_core.agent_api import _parse_cli_json
+        raw = json.dumps([{"a": 1}, {"b": 2}])
+        result = _parse_cli_json(raw)
+        # Must return a dict, not a list
+        assert isinstance(result, dict)
+        assert result == {"b": 2}
+
+    def test_array_without_dicts_returns_none(self):
+        """A JSON array of primitives (no dict inside) returns None."""
+        from research_core.agent_api import _parse_cli_json
+        raw = json.dumps([1, 2, 3])
+        assert _parse_cli_json(raw) is None
+
+    def test_nested_braces_in_json(self):
+        """JSON with nested objects must parse correctly."""
+        from research_core.agent_api import _parse_cli_json
+        raw = (
+            "log line\n"
+            '{"a": {"b": {"c": 1}}, "d": 2}\n'
+        )
+        result = _parse_cli_json(raw)
+        assert result is not None
+        assert result["a"]["b"]["c"] == 1
+        assert result["d"] == 2
+
+
+# ═══════════════════════════════════════════════════════════════
+# Section 19 — Qlib parsing with log+JSON & failure → error status
+# ═══════════════════════════════════════════════════════════════
+
+class TestQlibParsingLogAndMultiLine:
+    """mine_factor / qlib_backtest must parse log+JSON output and return
+    status='error' (not 'completed') when parsing fails."""
+
+    @staticmethod
+    def _fake_proc(stdout: str, returncode: int = 0):
+        from subprocess import CompletedProcess
+        return CompletedProcess(
+            args=["fake"], returncode=returncode,
+            stdout=stdout, stderr="",
+        )
+
+    # ── mine_factor: log + multi-line JSON ────────────────────────────
+
+    def test_mine_factor_log_plus_multiline_json(self, monkeypatch):
+        """mine_factor() must parse pretty-printed JSON preceded by log lines."""
+        payload = {
+            "definition": {
+                "name": "reversal_5d",
+                "expression": "Ref($close, 5) / $close - 1",
+            },
+            "evaluation": {
+                "metrics": [
+                    {"name": "ic_mean", "value": 0.035},
+                    {"name": "icir", "value": 0.52},
+                ],
+                "artifacts": {},
+            },
+            "top_metrics": {
+                "ic_mean": 0.035,
+                "rank_ic_mean": 0.041,
+                "icir": 0.52,
+                "long_short_spread": 0.012,
+            },
+        }
+        fake_stdout = (
+            "[INFO] Initializing qlib workspace...\n"
+            "[INFO] Loading csi300 instruments...\n"
+            + json.dumps(payload, indent=2)
+        )
+
+        import research_core.agent_api as api
+        monkeypatch.setattr(
+            "subprocess.run",
+            lambda *a, **kw: self._fake_proc(fake_stdout),
+        )
+
+        result = api.mine_factor("reversal_5d", "Ref($close, 5) / $close - 1")
+        assert result["status"] == "completed"
+        assert result["ic_mean"] == 0.035
+        assert result["ic_ir"] == 0.52
+
+    def test_mine_factor_unparseable_returns_error(self, monkeypatch):
+        """When CLI exits 0 but output is not JSON, status must be 'error'."""
+        fake_stdout = (
+            "[INFO] Running...\n"
+            "Some non-JSON output without braces\n"
+        )
+
+        import research_core.agent_api as api
+        monkeypatch.setattr(
+            "subprocess.run",
+            lambda *a, **kw: self._fake_proc(fake_stdout),
+        )
+
+        result = api.mine_factor("test", "$close")
+        assert result["status"] == "error", (
+            f"Expected 'error', got '{result['status']}'"
+        )
+        assert "error" in result
+        assert "Failed to parse" in result["error"]
+
+    # ── qlib_backtest: log + single-line JSON ─────────────────────────
+
+    def test_qlib_backtest_log_plus_single_line_json(self, monkeypatch):
+        """qlib_backtest() must parse single-line JSON preceded by log lines."""
+        payload = {
+            "run_id": "abc123",
+            "status": "completed",
+            "engine": "qlib_daily_robust_v6.1",
+            "metrics": {
+                "total_return": 0.15,
+                "annualized_return": 0.12,
+                "max_drawdown": -0.08,
+                "sharpe": 1.35,
+                "volatility": 0.18,
+                "win_rate": 0.55,
+            },
+            "equity_curve": [],
+        }
+        fake_stdout = (
+            "[INFO] Qlib backtest starting...\n"
+            "[WARN] Using minimal init\n"
+            + json.dumps(payload)
+        )
+
+        import research_core.agent_api as api
+        monkeypatch.setattr(
+            "subprocess.run",
+            lambda *a, **kw: self._fake_proc(fake_stdout),
+        )
+
+        result = api.qlib_backtest("($close / Ref($close, 20) - 1)")
+        assert result["status"] == "completed"
+        assert result["sharpe_ratio"] == 1.35
+        assert result["annualized_return"] == 0.12
+
+    def test_qlib_backtest_unparseable_returns_error(self, monkeypatch):
+        """When CLI exits 0 but output is not JSON, status must be 'error'."""
+        import research_core.agent_api as api
+        monkeypatch.setattr(
+            "subprocess.run",
+            lambda *a, **kw: self._fake_proc("Not JSON at all\n"),
+        )
+
+        result = api.qlib_backtest("bad_expr")
+        assert result["status"] == "error", (
+            f"Expected 'error', got '{result['status']}'"
+        )
+        assert "Failed to parse" in result["error"]
+
+    # ── auto_mine: log + multi-line JSON ──────────────────────────────
+
+    def test_auto_mine_log_plus_multiline_json(self, monkeypatch):
+        """auto_mine() must parse pretty-printed JSON preceded by log lines."""
+        payload = {
+            "theme": "momentum",
+            "generated_count": 1,
+            "results": [
+                {
+                    "definition": {"name": "mom_20d", "expression": "$close"},
+                    "evaluation": {"metrics": []},
+                    "top_metrics": {"ic_mean": 0.04, "icir": 0.55},
+                    "candidate": {"name": "mom_20d"},
+                },
+            ],
+        }
+        fake_stdout = (
+            "[INFO] AI factor mining starting...\n"
+            + json.dumps(payload, indent=2)
+        )
+
+        import research_core.agent_api as api
+        monkeypatch.setattr(
+            "subprocess.run",
+            lambda *a, **kw: self._fake_proc(fake_stdout),
+        )
+
+        result = api.auto_mine("momentum")
+        assert result["status"] == "completed"
+        assert result["generated_count"] == 1
+        assert result["best_factor"] == "mom_20d"
+
+    def test_auto_mine_unparseable_returns_error(self, monkeypatch):
+        """When CLI exits 0 but output is not JSON, status must be 'error'."""
+        import research_core.agent_api as api
+        monkeypatch.setattr(
+            "subprocess.run",
+            lambda *a, **kw: self._fake_proc("No JSON here\n"),
+        )
+
+        result = api.auto_mine("test")
+        assert result["status"] == "error", (
+            f"Expected 'error', got '{result['status']}'"
+        )
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-v", "--tb=short"]))
