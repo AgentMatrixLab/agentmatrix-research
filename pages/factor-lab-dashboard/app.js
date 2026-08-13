@@ -92,6 +92,7 @@ const JQ_FACTOR_CATEGORIES = [
   "风险类因子",
   "风险因子-风格因子",
   "技术指标因子",
+  "未分类",
 ];
 const MARKET_BUCKETS = [
   {
@@ -389,7 +390,7 @@ function proofBadge(status) {
     pending: ["等待", "badge-gray"],
     missing: ["缺失", "badge-gray"],
   };
-  return map[status] || [status || "-", "badge-gray"];
+  return map[status] || ["状态未知", "badge-gray"];
 }
 
 function truthBadge(status) {
@@ -402,7 +403,7 @@ function truthBadge(status) {
     empty_compare: ["对照异常", "badge-orange"],
     missing: ["缺失", "badge-gray"],
   };
-  return map[status] || [status || "-", "badge-gray"];
+  return map[status] || ["状态未知", "badge-gray"];
 }
 
 function proofValue(status) {
@@ -413,7 +414,7 @@ function proofValue(status) {
     pending: "等待验证",
     missing: "缺少产物",
   };
-  return map[status] || String(status || "-");
+  return map[status] || "状态未知";
 }
 
 function truthValue(status) {
@@ -426,7 +427,7 @@ function truthValue(status) {
     empty_compare: "对照异常",
     missing: "缺失",
   };
-  return map[status] || String(status || "-");
+  return map[status] || "状态未知";
 }
 
 function isTruthIssue(status) {
@@ -452,6 +453,15 @@ function recommendationClass(value) {
   return "";
 }
 
+function reuseStatus(factor) {
+  var proof = factor.proof_status;
+  var truth = factor.truth_status;
+  if (proof === "passed" && truth === "exact_match") return "reusable";
+  if (proof === "failed" || proof === "partial" || truth === "mismatch") return "rerun";
+  if (proof === "missing") return "missing";
+  return "unconfirmed";
+}
+
 function canOpenFactor(factor) {
   return Boolean(factor?.latest_job_id) && factor?.proof_status !== "missing";
 }
@@ -465,9 +475,12 @@ function factorReplicationStatus(factor) {
 }
 
 function factorAlphaTier(factor) {
-  // 临时映射：后端正式字段 alpha_tier 到位前，用 IR 近似分层。IR>0.3 strong，0.1~0.3 weak，<0.1 dead。
+  // 临时映射：后端正式字段 alpha_tier 到位前，用 IR 近似分层。
+  // IR>0.3 strong，0.1~0.3 weak，<0.1 dead，null/缺失 → missing。
   if (factor?.alpha_tier) return factor.alpha_tier;
-  const ir = Math.abs(toFiniteNumber(factor?.rank_ic_ir) ?? 0);
+  const rawIr = toFiniteNumber(factor?.rank_ic_ir);
+  if (rawIr === null) return "missing";
+  const ir = Math.abs(rawIr);
   if (ir > 0.3) return "strong";
   if (ir >= 0.1) return "weak";
   return "dead";
@@ -477,7 +490,7 @@ function factorAdmission(factor) {
   const replication = factorReplicationStatus(factor);
   const alphaTier = factorAlphaTier(factor);
   const inLibrary = replication === "passed";
-  const agentReadable = inLibrary && alphaTier !== "dead";
+  const agentReadable = inLibrary && alphaTier !== "dead" && alphaTier !== "missing";
   return {
     replication,
     alphaTier,
@@ -827,28 +840,123 @@ function normalizeSupabaseTruthSummaryRow(row) {
 }
 
 function canonicalFactorKey(factor) {
-  const rawLibrary = String(factor.library || factor.raw_library || factor.factor_family || "")
-    .trim()
-    .toLowerCase();
-  const family = rawLibrary.includes("alpha101") || rawLibrary.includes("wq101") || rawLibrary.includes("worldquant")
-    ? "wq101"
-    : rawLibrary || "unknown";
-  const rawName = String(factor.raw_factor_name || factor.factor_name || factor.id || "")
-    .trim()
-    .toLowerCase();
-  const alphaMatch = rawName.match(/(?:worldquant[_-]?)?alpha0*(\d+)/);
-  const name = alphaMatch ? `alpha${Number(alphaMatch[1])}` : rawName;
+  const rawLibrary = String(
+    factor.library || factor.raw_library || factor.factor_family || ""
+  ).trim();
+  const family = _normalizeLibrary(rawLibrary);
+
+  const rawName = String(
+    factor.raw_factor_name || factor.factor_name || factor.id || ""
+  ).trim();
+  const name = _normalizeFactorName(rawName, family);
+
   return `${family}:${name}`;
 }
 
+function _normalizeLibrary(raw) {
+  var lower = raw.toLowerCase().replace(/[\s_-]+/g, "");
+  if (!lower) return "unknown";
+  if (lower.includes("alpha101") || lower.includes("wq101") || lower.includes("worldquant")) {
+    return "wq101";
+  }
+  if (lower.includes("gtja191") || lower.includes("alpha191")) {
+    return "gtja191";
+  }
+  if (lower.includes("quantapi")) {
+    return "quantapi";
+  }
+  if (lower.includes("alpha158")) {
+    return "alpha158";
+  }
+  return lower;
+}
+
+function _normalizeFactorName(raw, family) {
+  // Collapse separators and spaces to underscores for consistent matching.
+  var cleaned = raw.toLowerCase()
+    .replace(/[\s#:]+/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_|_$/g, "");
+
+  if (!cleaned) return "unknown";
+
+  // Pattern A: "worldquant_alpha013" or "WorldQuant Alpha013"
+  var wqMatch = cleaned.match(/(?:^|_)worldquant[_-]?alpha0*(\d+)/);
+  if (wqMatch) {
+    return "alpha" + Number(wqMatch[1]);
+  }
+
+  // Pattern B: "alpha013" or "alpha13"
+  var alphaMatch = cleaned.match(/(?:^|_)alpha0*(\d+)$/);
+  if (alphaMatch) {
+    return "alpha" + Number(alphaMatch[1]);
+  }
+
+  // Pattern C: "gtja191_alpha_001"
+  var libAlphaMatch = cleaned.match(/^[a-z0-9]+_alpha_?0*(\d+)$/);
+  if (libAlphaMatch) {
+    return "alpha" + Number(libAlphaMatch[1]);
+  }
+
+  // Pattern D: strip known library prefix
+  var knownPrefixes = /^(?:wq101|alpha101|gtja191|alpha191|quantapi|alpha158)[:_-]/;
+  if (knownPrefixes.test(cleaned)) {
+    var remainder = cleaned.replace(knownPrefixes, "");
+    var remainderMatch = remainder.match(/(?:worldquant[_-]?)?alpha0*(\d+)/);
+    if (remainderMatch) {
+      return "alpha" + Number(remainderMatch[1]);
+    }
+    return remainder.replace(/[^a-z0-9_]/g, "_").replace(/_+/g, "_").replace(/^_|_$/g, "") || "unknown";
+  }
+
+  return cleaned.replace(/[^a-z0-9_]/g, "_").replace(/_+/g, "_").replace(/^_|_$/g, "") || "unknown";
+}
+
 function dedupeSupabaseFactors(factors) {
-  const seen = new Set();
-  return factors.filter((factor) => {
-    const key = canonicalFactorKey(factor);
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
+  // Group by canonicalFactorKey, keep the latest record per group.
+  var best = {};
+  factors.forEach(function (factor) {
+    var key = canonicalFactorKey(factor);
+    var existing = best[key];
+    if (!existing) {
+      best[key] = factor;
+      return;
+    }
+    // Primary: keep the record with the most recent latest_checked_at.
+    var thisTime = factor.latest_checked_at || "";
+    var existingTime = existing.latest_checked_at || "";
+    if (thisTime > existingTime) {
+      best[key] = factor;
+      return;
+    }
+    if (thisTime < existingTime) {
+      return; // keep existing (it is newer)
+    }
+    // Times equal (or both null): prefer record with real metrics.
+    var thisHasMetrics = factor.coverage_ratio != null || factor.rank_ic_mean != null || factor.rank_ic_ir != null;
+    var existingHasMetrics = existing.coverage_ratio != null || existing.rank_ic_mean != null || existing.rank_ic_ir != null;
+    if (thisHasMetrics && !existingHasMetrics) {
+      best[key] = factor;
+      return;
+    }
+    if (existingHasMetrics && !thisHasMetrics) {
+      return; // keep existing (it has metrics)
+    }
+    // Tiebreaker: use supabase_row_id for stable, deterministic selection.
+    var thisId = (factor.metadata && factor.metadata.supabase_row_id) || "";
+    var existingId = (existing.metadata && existing.metadata.supabase_row_id) || "";
+    if (thisId > existingId) {
+      best[key] = factor;
+    }
   });
+  // Return deduplicated result sorted by latest_checked_at descending.
+  var result = Object.values(best);
+  result.sort(function (a, b) {
+    var aTime = a.latest_checked_at || "";
+    var bTime = b.latest_checked_at || "";
+    return bTime.localeCompare(aTime);
+  });
+  return result;
 }
 
 function formatInteger(value) {
@@ -1256,7 +1364,7 @@ function applyFilters() {
     .filter((factor) => state.library === "全部" || factor.library === state.library)
     .filter((factor) => state.proof === "all" || factor.proof_status === state.proof)
     .filter((factor) => state.truth === "all" || factor.truth_status === state.truth)
-    .filter((factor) => state.reuse === "all" || factor.reuse_recommendation === state.reuse)
+    .filter((factor) => state.reuse === "all" || reuseStatus(factor) === state.reuse)
     .filter((factor) => {
       if (!query) return true;
       return [factor.factor_name, factor.raw_factor_name, factor.library, marketLabel(factor), marketDetail(factor), factor.subcategory, jqFactorCategory(factor)]
@@ -1291,7 +1399,7 @@ function jqFactorCategory(factor) {
   if (category.includes("价值") || category.includes("规模")) return "风险因子-风格因子";
   if (library.includes("barra")) return "风险因子-新风格因子";
   if (category.includes("量价")) return "动量类因子";
-  return "技术指标因子";
+  return "未分类";
 }
 
 function compareFactors(left, right) {
@@ -1597,8 +1705,8 @@ function renderSelectionSummary() {
     return;
   }
   const selected = state.rawFactors.filter((factor) => state.selectedIds.has(factor.id));
-  const reusable = selected.filter((factor) => factor.reuse_recommendation === "可复用").length;
-  const rerun = selected.filter((factor) => factor.reuse_recommendation === "建议重跑").length;
+  const reusable = selected.filter((factor) => reuseStatus(factor) === "reusable").length;
+  const rerun = selected.filter((factor) => reuseStatus(factor) === "rerun").length;
   els.selectedCount.textContent = `已选择 ${selected.length} 个因子`;
   els.selectedReusable.textContent = `可复用 ${reusable} 个`;
   els.selectedRerun.textContent = `建议重跑 ${rerun} 个`;
@@ -1790,7 +1898,7 @@ function renderMonitorStats() {
   const withMetric = currentFactors.filter(
     (factor) => toFiniteNumber(factor.rank_ic_mean) !== null || toFiniteNumber(factor.rank_ic_ir) !== null,
   ).length;
-  const reusable = currentFactors.filter((factor) => factor.reuse_recommendation === "可复用").length;
+  const reusable = currentFactors.filter((factor) => reuseStatus(factor) === "reusable").length;
   const review = currentFactors.filter((factor) => monitorBucket(factor) === "weak").length;
 
   const cards = [
@@ -1848,7 +1956,7 @@ function renderMonitor() {
         return toFiniteNumber(item.factor.rank_ic_mean) !== null || toFiniteNumber(item.factor.rank_ic_ir) !== null;
       }
       if (state.monitorCardFilter === "reusable") {
-        return item.factor.reuse_recommendation === "可复用";
+        return reuseStatus(item.factor) === "reusable";        
       }
       if (state.monitorCardFilter === "review") {
         return item.bucket === "weak";
@@ -3289,6 +3397,7 @@ function agentTaskRows() {
       progress: Number.isFinite(progress) ? Math.max(0, Math.min(100, progress)) : meta.progress,
       status: meta.appStatus,
       sourceStatus: task.status || "submitted",
+      truthExecution: task.truth_execution || null,
       stages,
       artifacts,
     };
@@ -3332,6 +3441,32 @@ function renderTaskStats(rows) {
     .join("");
 }
 
+function renderTruthExecution(truth) {
+  const statusMap = {
+    passed: ["对照通过", "badge-green"],
+    failed: ["对照未通过", "badge-orange"],
+    not_comparable: ["未完成对照（库内无标准真值）", "badge-gray"],
+  };
+  const [label, badge] = statusMap[truth.truth_status] || [truth.truth_status || "未知", "badge-gray"];
+  const fmtPct = (v) => (typeof v === "number" ? `${(v * 100).toFixed(2)}%` : "暂无");
+  const fmtErr = (v) => (typeof v === "number" ? v.toExponential(3) : "暂无");
+  return `
+    <section class="truth-execution-panel">
+      <header>
+        <strong>真值对照结果</strong>
+        <span class="badge ${badge}">${escapeHtml(label)}</span>
+      </header>
+      <div class="truth-metric-grid">
+        <span>裁决 decision：<strong>${escapeHtml(truth.decision || "暂无")}</strong></span>
+        <span>覆盖率 overlap：<strong>${fmtPct(truth.overlap_ratio)}</strong></span>
+        <span>逐点命中率：<strong>${fmtPct(truth.exact_match_ratio)}</strong></span>
+        <span>最大绝对误差：<strong>${fmtErr(truth.max_abs_error)}</strong></span>
+        <span>产物目录：<strong>${escapeHtml(truth.artifacts_dir || "暂无")}</strong></span>
+      </div>
+    </section>
+  `;
+}
+
 function renderTaskStagePanel(row) {
   if (!els.taskStagePanel || !row) return;
   els.taskStagePanel.innerHTML = `
@@ -3354,6 +3489,7 @@ function renderTaskStagePanel(row) {
         )
         .join("")}
     </div>
+    ${row.truthExecution ? renderTruthExecution(row.truthExecution) : ""}
     <footer>
       <strong>关联产物</strong>
       <span>${escapeHtml(row.artifacts)}</span>
@@ -3461,8 +3597,8 @@ async function loadAgentTasks() {
     if (!response.ok) return;
     const payload = await response.json();
     state.agentTasks = Array.isArray(payload.items) ? payload.items : [];
+   state.agentTasksLoaded = true;
   } finally {
-    state.agentTasksLoaded = true;
     renderAgentTask();
     if (state.view === "tasks") renderTasks();
   }
@@ -4654,7 +4790,7 @@ async function submitAgentTask() {
     skill_name: skillName,
     instruction:
       (taskType === "truth_compare"
-        ? "请将外部因子值与当前因子库做对比，中间不要询问用户，最终给出复用和入库建议。"
+        ? "用户上传因子值对照测试"
         : "请按数据入口契约读取 code.py、experiment_data.csv、paper.pdf、research_report.pdf，自动复现研报因子，中间不要询问用户，最终给出入库建议。"),
     package: {
       input_mode: state.intakeInputMode,
@@ -5249,6 +5385,7 @@ function renderView() {
   }
   if (taskMode) {
     renderTasks();
+    loadAgentTasks();
   }
   if (agentTaskMode) {
     renderAgentTask();
