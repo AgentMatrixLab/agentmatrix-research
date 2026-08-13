@@ -158,7 +158,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Number of top factors to report",
     )
     explore_parser.add_argument(
-        "--cache-dir", default="",
+       "--cache-dir", default=None,
         help="Cache directory for market data (default: runtime/factor_lab/cache)",
     )
     explore_parser.add_argument(
