@@ -97,7 +97,7 @@ would invalidate comparison with existing results.
 - Added an atomic dataset-readiness manifest with schema, row-count, maximum
   date, freshness, and mandatory/optional checks. Synthetic readiness tests
   cover aligned, stale, and incomplete-schema cases.
-- Ran the gate against `/home/data/RQdata_files`; its data version is
+- Ran the gate against the configured `${RQDATA_ROOT}`; its data version is
   2026-08-06. Daily K-line, ST, shares, daily factors, ex-factor, income, and
   balance inputs passed their configured checks.
 - Confirmed the shared index file ends at 2026-07-14 and blocks publication.
@@ -163,7 +163,7 @@ would invalidate comparison with existing results.
 
 - Deployed AgentMatrix release `20260807_1530`; server-side focused tests passed
   10/10 and `current` now resolves to that release.
-- Created `/home/data/agentmatrix-backtest-engine` and promoted the verified
+- Created the configured `${BACKTEST_ENGINE_ROOT}` and promoted the verified
   legacy baseline as `releases/20260807_legacy_v1`; its `current` symlink is the
   only engine path used by the daily runner.
 - Switched the internal preview to the quarantine directory with explicit
