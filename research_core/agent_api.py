@@ -85,6 +85,68 @@ def _dataclass_to_dict(obj) -> dict[str, Any]:
     return obj
 
 
+def _parse_cli_json(stdout: str) -> dict[str, Any] | None:
+    """Parse a JSON object from CLI stdout.
+
+    Handles three layouts:
+    1. Pure JSON — the entire stdout is a single JSON object.
+    2. Log + single-line JSON — log lines followed by a one-line JSON object.
+    3. Log + multi-line JSON — log lines followed by a pretty-printed JSON
+       object spanning multiple lines.
+
+    Returns the parsed dict, or ``None`` when no valid JSON object is found.
+    """
+    text = (stdout or "").strip()
+    if not text:
+        return None
+
+    # Try 1: entire output is pure JSON
+    try:
+        result = json.loads(text)
+        if isinstance(result, dict):
+            return result
+    except json.JSONDecodeError:
+        pass
+
+    # Try 2: scan backward for the last line that starts with '{' and attempt
+    # to parse from that line to the end of the output. This covers both
+    # single-line and pretty-printed (multi-line) JSON blocks.
+    lines = text.split("\n")
+    for i in range(len(lines) - 1, -1, -1):
+        if lines[i].lstrip().startswith("{"):
+            candidate = "\n".join(lines[i:]).strip()
+            try:
+                result = json.loads(candidate)
+                if isinstance(result, dict):
+                    return result
+            except json.JSONDecodeError:
+                continue
+
+    # Try 3: brace-matching fallback — find the last '}' and scan backward for
+    # the matching '{', then parse the substring. This catches edge cases where
+    # the JSON does not start at the beginning of a line.
+    last_close = text.rfind("}")
+    if last_close != -1:
+        depth = 0
+        for j in range(last_close, -1, -1):
+            ch = text[j]
+            if ch == "}":
+                depth += 1
+            elif ch == "{":
+                depth -= 1
+                if depth == 0:
+                    candidate = text[j:last_close + 1]
+                    try:
+                        result = json.loads(candidate)
+                        if isinstance(result, dict):
+                            return result
+                    except json.JSONDecodeError:
+                        pass
+                    break
+
+    return None
+
+
 # ── Meta capabilities ──────────────────────────────────────────────────────
 
 def discover() -> dict[str, Any]:
@@ -652,7 +714,6 @@ def mine_factor(
 
 
 def _mine_factor_impl(**kwargs) -> dict[str, Any]:
-    import json as _json
     import subprocess as _sp
     import sys as _sys
 
@@ -687,26 +748,14 @@ def _mine_factor_impl(**kwargs) -> dict[str, Any]:
             "next_actions": ["Check error output above.", "Verify Qlib data is initialized."],
         }
 
-    # CLI outputs pure JSON — parse it
-    cli_result = None
-    try:
-        cli_result = _json.loads(stdout)
-    except _json.JSONDecodeError:
-        # Fallback: try to extract JSON from mixed output
-        for line in stdout.strip().split("\n"):
-            line = line.strip()
-            if line.startswith("{"):
-                try:
-                    cli_result = _json.loads(line)
-                    break
-                except _json.JSONDecodeError:
-                    continue
+    # Parse CLI JSON output (handles pure JSON, log+single-line, log+multi-line)
+    cli_result = _parse_cli_json(stdout)
 
     if cli_result is None:
         return {
             "factor_name": name,
             "expression": expression,
-            "status": "completed",
+            "status": "error",
             "returncode": proc.returncode,
             "output_summary": stdout.strip()[-1000:],
             "error": "Failed to parse CLI JSON output",
@@ -778,7 +827,6 @@ def auto_mine(
 
 
 def _auto_mine_impl(**kwargs) -> dict[str, Any]:
-    import json as _json
     import subprocess as _sp
     import sys as _sys
 
@@ -808,24 +856,13 @@ def _auto_mine_impl(**kwargs) -> dict[str, Any]:
             "next_actions": ["Check error output above."],
         }
 
-    # CLI outputs pure JSON — parse it
-    cli_result = None
-    try:
-        cli_result = _json.loads(stdout)
-    except _json.JSONDecodeError:
-        for line in stdout.strip().split("\n"):
-            line = line.strip()
-            if line.startswith("{"):
-                try:
-                    cli_result = _json.loads(line)
-                    break
-                except _json.JSONDecodeError:
-                    continue
+    # Parse CLI JSON output (handles pure JSON, log+single-line, log+multi-line)
+    cli_result = _parse_cli_json(stdout)
 
     if cli_result is None:
         return {
             "theme": theme,
-            "status": "completed",
+            "status": "error",
             "returncode": proc.returncode,
             "output_summary": stdout.strip()[-1000:],
             "error": "Failed to parse CLI JSON output",
@@ -898,7 +935,6 @@ def qlib_backtest(
 
 
 def _qlib_backtest_impl(**kwargs) -> dict[str, Any]:
-    import json as _json
     import subprocess as _sp
     import sys as _sys
 
@@ -928,24 +964,13 @@ def _qlib_backtest_impl(**kwargs) -> dict[str, Any]:
             "next_actions": ["Check error output above."],
         }
 
-    # CLI outputs pure JSON — parse it
-    cli_result = None
-    try:
-        cli_result = _json.loads(stdout)
-    except _json.JSONDecodeError:
-        for line in stdout.strip().split("\n"):
-            line = line.strip()
-            if line.startswith("{"):
-                try:
-                    cli_result = _json.loads(line)
-                    break
-                except _json.JSONDecodeError:
-                    continue
+    # Parse CLI JSON output (handles pure JSON, log+single-line, log+multi-line)
+    cli_result = _parse_cli_json(stdout)
 
     if cli_result is None:
         return {
             "expression": expression,
-            "status": "completed",
+            "status": "error",
             "returncode": proc.returncode,
             "output_summary": stdout.strip()[-1000:],
             "error": "Failed to parse CLI JSON output",
