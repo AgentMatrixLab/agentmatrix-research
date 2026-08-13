@@ -113,7 +113,7 @@ def explore(
     """
     t0 = time.time()
     if workspace is None:
-        workspace = FactorLabWorkspaceConfig()
+        workspace = FactorLabWorkspaceConfig().from_env()
 
     # Resolve cache_dir:
     #   1. explicit non-empty argument wins;
