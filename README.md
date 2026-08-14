@@ -1,4 +1,3 @@
-
 # AgentMatrix Research
 
 > Quantitative research framework: unified contracts, backtest adapters, strategy engine, and factor library for systematic alpha discovery.
