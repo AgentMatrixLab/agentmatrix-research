@@ -159,7 +159,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     explore_parser.add_argument(
        "--cache-dir", default=None,
-        help="Cache directory for market data (default: runtime/factor_lab/cache)",
+       help="Cache directory for market data (default: runtime/factor_lab/cache)",
     )
     explore_parser.add_argument(
         "--output", default="",
@@ -457,4 +457,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
