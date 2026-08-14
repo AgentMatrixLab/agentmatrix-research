@@ -204,8 +204,9 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
-    config = FactorLabWorkspaceConfig()
-
+    config = FactorLabWorkspaceConfig.from_env()
+    if args.cache_dir is not None:
+        config.cache_dir = args.cache_dir
     if args.command == "init-workspace":
         payload = {key: str(value) for key, value in config.ensure_directories().items()}
         print(json.dumps(payload, ensure_ascii=False, indent=2))
