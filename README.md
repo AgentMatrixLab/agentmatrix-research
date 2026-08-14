@@ -28,7 +28,7 @@ The unified agent API (`research_core/agent_api.py`) wraps all framework capabil
 - **Data Loaders** — AkShare-based A-share market data fetching utilities
 - **Document Normalizer** — Research document processing via MinerU (DeerFlow copilot)
 
-## Project Structure
+## Project Structure 
 
 ```
 agentmatrix-research/
