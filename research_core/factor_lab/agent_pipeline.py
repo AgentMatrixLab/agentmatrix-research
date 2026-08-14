@@ -433,4 +433,3 @@ def explore_to_markdown(result: ExploreResult) -> str:
         lines.append(f"{i}. {action}")
 
     return "\n".join(lines)
-
