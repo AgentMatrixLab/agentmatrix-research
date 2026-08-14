@@ -5,10 +5,12 @@
 // 4. 新增因子库准入视觉状态、研究口径选择器、策略草稿生成，以及监控页分类/方向筛选。
 // 5. 新增独立策略构建页、成品策略模板契约、策略看板删除模式与股票池省略显示。
 const urlParams = new URLSearchParams(window.location.search);
+const hasWindowConfig = (key) => Object.prototype.hasOwnProperty.call(window, key);
 const configuredApiHost = (
-  window.FACTOR_LAB_API_HOST ||
   urlParams.get("api") ||
-  window.localStorage.getItem("FACTOR_LAB_API_HOST") ||
+  (hasWindowConfig("FACTOR_LAB_API_HOST")
+    ? window.FACTOR_LAB_API_HOST
+    : window.localStorage.getItem("FACTOR_LAB_API_HOST")) ||
   ""
 ).replace(/\/+$/, "");
 if (urlParams.get("api")) {
@@ -25,14 +27,59 @@ const API_HOST = configuredApiHost
       ? window.location.origin
       : "http://127.0.0.1:8012";
 const API_BASE = CLOUD_DEMO_MODE ? "" : `${API_HOST}/api/agents/factor-lab`;
-const DEMO_LIBRARY_URL = "./data/demo-factor-library.json";
+const SUPABASE_URL = (
+  window.FACTOR_LAB_SUPABASE_URL ||
+  urlParams.get("supabaseUrl") ||
+  window.localStorage.getItem("FACTOR_LAB_SUPABASE_URL") ||
+  ""
+).replace(/\/+$/, "");
+const SUPABASE_ANON_KEY =
+  window.FACTOR_LAB_SUPABASE_ANON_KEY ||
+  urlParams.get("supabaseAnonKey") ||
+  window.localStorage.getItem("FACTOR_LAB_SUPABASE_ANON_KEY") ||
+  "";
+const SUPABASE_FACTOR_TABLE =
+  urlParams.get("supabaseTable") ||
+  (hasWindowConfig("FACTOR_LAB_SUPABASE_FACTOR_TABLE")
+    ? window.FACTOR_LAB_SUPABASE_FACTOR_TABLE
+    : window.localStorage.getItem("FACTOR_LAB_SUPABASE_FACTOR_TABLE")) ||
+  "";
+const SUPABASE_TRUTH_SUMMARY_TABLE =
+  urlParams.get("truthSummaryTable") ||
+  (hasWindowConfig("FACTOR_LAB_SUPABASE_TRUTH_SUMMARY_TABLE")
+    ? window.FACTOR_LAB_SUPABASE_TRUTH_SUMMARY_TABLE
+    : window.localStorage.getItem("FACTOR_LAB_SUPABASE_TRUTH_SUMMARY_TABLE")) ||
+  "factor_truth_values_summary";
+const USE_SUPABASE_DASHBOARD = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY && !configuredApiHost);
+const ACCESS_PASSWORD =
+  window.FACTOR_LAB_ACCESS_PASSWORD ||
+  urlParams.get("accessPassword") ||
+  window.localStorage.getItem("FACTOR_LAB_ACCESS_PASSWORD") ||
+  "factorlab2026";
+const ACCESS_SESSION_KEY = "FACTOR_LAB_AUTH_OK";
+if (urlParams.get("supabaseUrl")) {
+  window.localStorage.setItem("FACTOR_LAB_SUPABASE_URL", SUPABASE_URL);
+}
+if (urlParams.get("supabaseAnonKey")) {
+  window.localStorage.setItem("FACTOR_LAB_SUPABASE_ANON_KEY", SUPABASE_ANON_KEY);
+}
+if (urlParams.get("supabaseTable")) {
+  window.localStorage.setItem("FACTOR_LAB_SUPABASE_FACTOR_TABLE", SUPABASE_FACTOR_TABLE);
+}
+if (urlParams.get("truthSummaryTable")) {
+  window.localStorage.setItem("FACTOR_LAB_SUPABASE_TRUTH_SUMMARY_TABLE", SUPABASE_TRUTH_SUMMARY_TABLE);
+}
+if (urlParams.get("accessPassword")) {
+  window.localStorage.setItem("FACTOR_LAB_ACCESS_PASSWORD", ACCESS_PASSWORD);
+}
 const PAGE_SIZE = 50;
 const AUTO_REFRESH_INTERVAL_MS = 10000;
-const REQUEST_TIMEOUT_MS = 1800;
+const REQUEST_TIMEOUT_MS = 8000;
 const COVERAGE_WARN_THRESHOLD = 0.6;
 const COVERAGE_DANGER_THRESHOLD = 0.3;
 const LONG_SHORT_MEAN_HELP = "多空分组收益均值（日频，demo 数据）";
-const ENABLE_AGENT_TASK_DEBUG = false;
+const ENABLE_AGENT_TASK_DEBUG = true;
+const FACTOR_INTAKE_CONTRACT_DOC = "docs/FACTOR_LAB_INTAKE_REPRODUCTION_CONTRACT.md";
 // AI 任务调试入口暂时关闭。恢复时打开 ENABLE_AGENT_TASK_DEBUG，并恢复 index.html 中对应入口。
 const JQ_FACTOR_CATEGORIES = [
   "基础科目及衍生类因子",
@@ -45,7 +92,29 @@ const JQ_FACTOR_CATEGORIES = [
   "风险类因子",
   "风险因子-风格因子",
   "技术指标因子",
+  "未分类",
 ];
+const MARKET_BUCKETS = [
+  {
+    key: "ashare",
+    label: "A股",
+    shortLabel: "A股",
+    hint: "A股口径：Quant API / RQData / 聚宽等中国股票池",
+  },
+  {
+    key: "us",
+    label: "美股",
+    shortLabel: "美股",
+    hint: "美股口径：yfinance / Yahoo / US universe",
+  },
+  {
+    key: "other",
+    label: "其他",
+    shortLabel: "其他",
+    hint: "暂未识别或混合口径",
+  },
+];
+const MARKET_LABEL_BY_KEY = Object.fromEntries(MARKET_BUCKETS.map((bucket) => [bucket.key, bucket.shortLabel]));
 const JQ_CATEGORY_BY_FACTOR = {
   roe_ttm: "质量类因子",
   roa_ttm: "质量类因子",
@@ -82,21 +151,19 @@ const JQ_CATEGORY_BY_FACTOR = {
   bb_position: "技术指标因子",
 };
 const AGENT_TASK_TEXT = {
-  title: "AI 任务(调试入口)",
+  title: "数据入口（待接入）",
   subtitle:
-    "输入研究要求后,后台 agent 默认使用 Quant API 真实数据判断并执行复现、挖掘或评估。进度在任务监控中查看。",
-  boundaryTitle: "当前边界",
+    "当前先作为 Supabase 只读接入口和 Agent Skill 契约预留。GitHub Pages 只负责读取云端表和展示结果，不在网页内执行复现或入库。",
+  boundaryTitle: "Supabase 接入预留",
   boundary:
-    "前端只提交自然语言要求,不上传文件、不选择 skill。数据默认从后端 Quant API 读取;agent 执行、流程判断与入库均在后端完成。",
-  instructionLabel: "研究要求",
-  instructionPlaceholder: "例如:使用 Quant API 真实数据复现 GTJA191 的 alpha010 并评估;或:挖掘一个低换手量价因子",
-  quarantineHint: "默认数据源: Quant API。agent 产出将进入 quarantine(隔离区),通过校验后才进入正式因子库。",
-  submit: "提交给 Agent",
+    "后续由云端 Agent / 后端写入 Supabase 与对象存储；前端只读取 public dashboard 表。现有上传和运行控件保留为接入占位，不作为 GitHub Pages 执行入口。",
+  quarantineHint: "待接入：Supabase 表存任务、状态、指标和文件路径；大文件放 Storage。GitHub Pages 默认只读。",
+  submit: "接入后运行",
   submitting: "提交中...",
-  emptyWarning: "请输入研究要求",
-  submittedToast: "任务已提交,已生成 Trae 交接文件",
-  recentTitle: "最近提交",
-  emptyRecent: "暂无提交记录。提交一个任务后会出现在这里。",
+  emptyWarning: "请先拖入或选择文件",
+  submittedToast: "任务已创建，已写入数据入口队列",
+  recentTitle: "数据入口任务",
+  emptyRecent: "暂无任务。拖入文件夹或文件后点击运行。",
 };
 
 const state = {
@@ -107,6 +174,8 @@ const state = {
   category: "全部",
   selectedCategories: new Set(JQ_FACTOR_CATEGORIES),
   library: "全部",
+  market: "ashare",
+  monitorMarket: "ashare",
   proof: "all",
   truth: "all",
   reuse: "all",
@@ -138,13 +207,17 @@ const state = {
   activeTaskId: null,
   detailTab: "analysis",
   pendingFiles: [],
+  intakeTaskType: "research_reproduction",
+  intakeInputMode: "folder",
   agentTasks: [],
   agentTasksLoaded: false,
   agentInstruction: "",
   agentTaskSubmitting: false,
   usableOnly: false,
-  strategyDrafts: [],
+  strategyDrafts: loadSavedStrategies(),
   strategyBuilderFactors: [],
+  factorDetailData: {},
+  factorDetailLoading: {},
   strategyTemplates: [],
   strategyTemplatesLoaded: false,
   strategyTemplatesLoading: false,
@@ -154,6 +227,10 @@ const state = {
   strategyBuilderResult: null,
   strategyDeleteMode: false,
   selectedStrategyDeleteIds: new Set(),
+  strategyDetailLoading: {},
+  strategies: [],
+  strategiesLoaded: false,
+  strategiesLoading: false,
   researchParams: {
     universe: "沪深300",
     period: "近1年",
@@ -162,6 +239,9 @@ const state = {
     limitFilter: "是",
   },
 };
+
+const pendingFileStore = new Map();
+let activePreviewUrl = null;
 
 const els = {
   pageTitle: document.querySelector("#pageTitle"),
@@ -179,6 +259,7 @@ const els = {
   settingsView: document.querySelector("#settingsView"),
   navItems: document.querySelectorAll(".nav-item[data-view]"),
   categoryTabs: document.querySelector("#categoryTabs"),
+  marketTabs: document.querySelector("#marketTabs"),
   libraryTabs: document.querySelector("#libraryTabs"),
   libraryRow: document.querySelector("#libraryTabs")?.closest(".sub-filter-row"),
   proofFilter: document.querySelector("#proofFilter"),
@@ -205,6 +286,7 @@ const els = {
   monitorTableBody: document.querySelector("#monitorTableBody"),
   monitorFilters: document.querySelectorAll("[data-monitor-filter]"),
   monitorCategoryFilters: document.querySelector("#monitorCategoryFilters"),
+  monitorMarketFilters: document.querySelector("#monitorMarketFilters"),
   monitorDirectionFilters: document.querySelector("#monitorDirectionFilters"),
   strategyStats: document.querySelector("#strategyStats"),
   strategyTableBody: document.querySelector("#strategyTableBody"),
@@ -212,7 +294,12 @@ const els = {
   taskTableBody: document.querySelector("#taskTableBody"),
   taskStagePanel: document.querySelector("#taskStagePanel"),
   refreshButton: document.querySelector("#refreshButton"),
+  logoutButton: document.querySelector("#logoutButton"),
   collapseButton: document.querySelector("#collapseButton"),
+  loginView: document.querySelector("#loginView"),
+  loginForm: document.querySelector("#loginForm"),
+  loginPassword: document.querySelector("#loginPassword"),
+  loginError: document.querySelector("#loginError"),
   appShell: document.querySelector(".app-shell"),
 };
 
@@ -299,10 +386,11 @@ function proofBadge(status) {
     passed: ["已通过", "badge-green"],
     failed: ["失败", "badge-red"],
     partial: ["部分", "badge-orange"],
+    truth_ready: ["已接入", "badge-blue"],
     pending: ["等待", "badge-gray"],
     missing: ["缺失", "badge-gray"],
   };
-  return map[status] || [status || "-", "badge-gray"];
+  return map[status] || ["状态未知", "badge-gray"];
 }
 
 function truthBadge(status) {
@@ -315,7 +403,7 @@ function truthBadge(status) {
     empty_compare: ["对照异常", "badge-orange"],
     missing: ["缺失", "badge-gray"],
   };
-  return map[status] || [status || "-", "badge-gray"];
+  return map[status] || ["状态未知", "badge-gray"];
 }
 
 function proofValue(status) {
@@ -326,7 +414,7 @@ function proofValue(status) {
     pending: "等待验证",
     missing: "缺少产物",
   };
-  return map[status] || String(status || "-");
+  return map[status] || "状态未知";
 }
 
 function truthValue(status) {
@@ -339,7 +427,7 @@ function truthValue(status) {
     empty_compare: "对照异常",
     missing: "缺失",
   };
-  return map[status] || String(status || "-");
+  return map[status] || "状态未知";
 }
 
 function isTruthIssue(status) {
@@ -365,8 +453,17 @@ function recommendationClass(value) {
   return "";
 }
 
+function reuseStatus(factor) {
+  var proof = factor.proof_status;
+  var truth = factor.truth_status;
+  if (proof === "passed" && truth === "exact_match") return "reusable";
+  if (proof === "failed" || proof === "partial" || truth === "mismatch") return "rerun";
+  if (proof === "missing") return "missing";
+  return "unconfirmed";
+}
+
 function canOpenFactor(factor) {
-  return factor?.proof_status !== "missing" || Boolean(factor?.latest_job_id);
+  return Boolean(factor?.latest_job_id) && factor?.proof_status !== "missing";
 }
 
 function factorReplicationStatus(factor) {
@@ -378,9 +475,12 @@ function factorReplicationStatus(factor) {
 }
 
 function factorAlphaTier(factor) {
-  // 临时映射：后端正式字段 alpha_tier 到位前，用 IR 近似分层。IR>0.3 strong，0.1~0.3 weak，<0.1 dead。
+  // 临时映射：后端正式字段 alpha_tier 到位前，用 IR 近似分层。
+  // IR>0.3 strong，0.1~0.3 weak，<0.1 dead，null/缺失 → missing。
   if (factor?.alpha_tier) return factor.alpha_tier;
-  const ir = Math.abs(toFiniteNumber(factor?.rank_ic_ir) ?? 0);
+  const rawIr = toFiniteNumber(factor?.rank_ic_ir);
+  if (rawIr === null) return "missing";
+  const ir = Math.abs(rawIr);
   if (ir > 0.3) return "strong";
   if (ir >= 0.1) return "weak";
   return "dead";
@@ -390,7 +490,7 @@ function factorAdmission(factor) {
   const replication = factorReplicationStatus(factor);
   const alphaTier = factorAlphaTier(factor);
   const inLibrary = replication === "passed";
-  const agentReadable = inLibrary && alphaTier !== "dead";
+  const agentReadable = inLibrary && alphaTier !== "dead" && alphaTier !== "missing";
   return {
     replication,
     alphaTier,
@@ -441,6 +541,7 @@ function factorMetricHtml(factor, key, formatter, title = "复现失败时不展
 }
 
 function artifactUrl(factor, kind) {
+  if (CLOUD_DEMO_MODE) return "";
   if (!factor?.latest_job_id) return "";
   const base = `${API_BASE}/artifacts/${encodeURIComponent(factor.latest_job_id)}/${kind}`;
   if (kind === "proof") {
@@ -483,6 +584,8 @@ function categoryCheckbox(label, checked, onChange, disabled = false, count = un
 function renderTabs(payload) {
   const categories = payload.categories || {};
   const libraries = payload.libraries || {};
+  ensureMarketSelections();
+  renderMarketTabs();
   if (state.library !== "全部" && (libraries[state.library] ?? 0) === 0) {
     state.library = "全部";
   }
@@ -564,14 +667,17 @@ function renderMonitorDirectionFilters() {
 function updateConnectionStatus(ok, payload) {
   state.localConnected = ok;
   els.localStatus.className = ok ? "status-pill status-ok" : "status-pill status-bad";
-  if (CLOUD_DEMO_MODE) {
+  if (USE_SUPABASE_DASHBOARD) {
+    els.localStatus.textContent = "GitHub Pages：Supabase 只读";
+    els.localStatus.title = "当前页面由 GitHub Pages 托管，数据来自 Supabase public_dashboard_* 公开只读表";
+  } else if (CLOUD_DEMO_MODE) {
     els.localStatus.textContent = "GitHub Pages：演示模式";
     els.localStatus.title = "当前使用静态演示数据，未连接本地 Flask 服务";
   } else {
     els.localStatus.textContent = ok ? "本地 Flask：已连接" : "本地 Flask：未连接";
     els.localStatus.title = ok ? "已通过 /health 接口确认" : "未能访问 /health 接口，请确认本地 Flask 服务已启动";
   }
-  const cloudLabel = payload?.cloud_registry?.label || "未同步";
+  const cloudLabel = payload?.cloud_registry?.label || (USE_SUPABASE_DASHBOARD ? "Supabase Public Dashboard" : "未同步");
   els.cloudStatus.textContent = `云端信息库：${cloudLabel}`;
 }
 
@@ -598,7 +704,7 @@ function updateQuantApiStatus(payload, failed = false) {
   els.quantStatus.textContent = configured ? "Quant API：已配置 token" : "Quant API：未配置 token";
   els.quantStatus.title = configured
     ? `官方数据代理已配置：${payload?.base_url || "Quant API"}`
-    : "尚未配置 FACTOR_LAB_QUANT_API_TOKEN 或 QUANT_API_TOKEN，前端不会直接持有 token";
+    : "Static preview does not bundle backend credentials.";
 }
 
 function updateRefreshButton(loading) {
@@ -626,6 +732,311 @@ async function fetchWithTimeout(url, options = {}) {
   } finally {
     window.clearTimeout(timeout);
   }
+}
+
+function parseJsonObject(value) {
+  if (!value) return {};
+  if (typeof value === "object" && !Array.isArray(value)) return value;
+  if (typeof value !== "string") return {};
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch (error) {
+    return {};
+  }
+}
+
+function normalizeSupabaseFactorRow(row) {
+  const payload = parseJsonObject(row.payload);
+  return {
+    ...payload,
+    id: payload.id || row.factor_id || row.id,
+    factor_name: payload.factor_name || row.factor_name || row.factor_id || row.id,
+    raw_factor_name: payload.raw_factor_name || row.raw_factor_name || row.factor_name || row.factor_id,
+    library: payload.library || row.library || row.factor_family || "User Custom",
+    raw_library: payload.raw_library || row.raw_library || row.factor_family || row.library,
+    category: payload.category || row.category || "自定义因子",
+    source: payload.source || row.source || "supabase_public_dashboard",
+    source_id: payload.source_id || row.source_id || row.factor_id || row.id,
+    display_name: payload.display_name || row.display_name || row.factor_name || row.factor_id,
+    description: payload.description || row.description || "",
+    formula: payload.formula || row.formula || "",
+    implementation_status: payload.implementation_status || row.implementation_status || "registered",
+    proof_status: payload.proof_status || row.proof_status || null,
+    truth_status: payload.truth_status || row.truth_status || null,
+    overall_status: payload.overall_status || row.overall_status || row.status || "registered",
+    coverage_ratio: payload.coverage_ratio ?? row.coverage_ratio ?? null,
+    rank_ic_mean: payload.rank_ic_mean ?? row.rank_ic_mean ?? row.ic_mean ?? null,
+    rank_ic_ir: payload.rank_ic_ir ?? row.rank_ic_ir ?? row.ic_ir ?? null,
+    long_short_mean: payload.long_short_mean ?? row.long_short_mean ?? null,
+    truth_exact_match_ratio: payload.truth_exact_match_ratio ?? row.truth_exact_match_ratio ?? null,
+    truth_max_abs_error: payload.truth_max_abs_error ?? row.truth_max_abs_error ?? null,
+    latest_job_id: payload.latest_job_id || row.latest_task_id || row.task_id || null,
+    latest_checked_at: payload.latest_checked_at || row.latest_checked_at || row.updated_at || row.created_at || null,
+    data_source: payload.data_source || row.data_source || "Supabase",
+    metadata: {
+      ...(payload.metadata || {}),
+      supabase_row_id: row.id,
+    },
+  };
+}
+
+function normalizeSupabaseTruthSummaryRow(row) {
+  const family = String(row.factor_family || "unknown").trim();
+  const factorName = String(row.factor_name || "unknown_factor").trim();
+  const sourceVersion = String(row.source_version || "v1").trim();
+  const rowCount = toFiniteNumber(row.row_count);
+  const symbolCount = toFiniteNumber(row.symbol_count);
+  const startDate = row.start_date || null;
+  const endDate = row.end_date || null;
+  const latestImportedAt = row.latest_imported_at || null;
+  const familyKey = family.toLowerCase();
+  const library = familyKey === "alpha101" ? "WQ101" : family.toUpperCase();
+  return {
+    id: `truth:${familyKey}:${factorName}:${sourceVersion}`,
+    factor_name: factorName,
+    raw_factor_name: factorName,
+    library,
+    raw_library: `${family} truth`,
+    category: "真值库",
+    subcategory: "",
+    market: "ashare",
+    universe: "A股",
+    source: "supabase_truth_summary",
+    source_id: `${family}:${factorName}:${sourceVersion}`,
+    display_name: factorName,
+    description: `标准真值已接入：${formatInteger(rowCount)} 条，${formatInteger(symbolCount)} 只标的，${startDate || "-"} 至 ${endDate || "-"}`,
+    formula: "",
+    implementation_status: "truth_ready",
+    proof_status: "truth_ready",
+    truth_status: "not_compared",
+    overall_status: "truth_ready",
+    coverage_ratio: null,
+    rank_ic_mean: null,
+    rank_ic_ir: null,
+    long_short_mean: null,
+    truth_exact_match_ratio: null,
+    truth_max_abs_error: null,
+    latest_job_id: null,
+    latest_checked_at: latestImportedAt,
+    data_source: "Supabase",
+    metadata: {
+      truth_summary_source: true,
+      factor_family: family,
+      source_version: sourceVersion,
+      row_count: rowCount,
+      symbol_count: symbolCount,
+      start_date: startDate,
+      end_date: endDate,
+      min_truth_value: row.min_truth_value,
+      max_truth_value: row.max_truth_value,
+      avg_truth_value: row.avg_truth_value,
+      latest_imported_at: latestImportedAt,
+      supabase_table: SUPABASE_TRUTH_SUMMARY_TABLE,
+      market: "ashare",
+      universe: "A股",
+    },
+  };
+}
+
+function canonicalFactorKey(factor) {
+  const rawLibrary = String(
+    factor.library || factor.raw_library || factor.factor_family || ""
+  ).trim();
+  const family = _normalizeLibrary(rawLibrary);
+
+  const rawName = String(
+    factor.raw_factor_name || factor.factor_name || factor.id || ""
+  ).trim();
+  const name = _normalizeFactorName(rawName, family);
+
+  return `${family}:${name}`;
+}
+
+function _normalizeLibrary(raw) {
+  var lower = raw.toLowerCase().replace(/[\s_-]+/g, "");
+  if (!lower) return "unknown";
+  if (lower.includes("alpha101") || lower.includes("wq101") || lower.includes("worldquant")) {
+    return "wq101";
+  }
+  if (lower.includes("gtja191") || lower.includes("alpha191")) {
+    return "gtja191";
+  }
+  if (lower.includes("quantapi")) {
+    return "quantapi";
+  }
+  if (lower.includes("alpha158")) {
+    return "alpha158";
+  }
+  return lower;
+}
+
+function _normalizeFactorName(raw, family) {
+  // Collapse separators and spaces to underscores for consistent matching.
+  var cleaned = raw.toLowerCase()
+    .replace(/[\s#:]+/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_|_$/g, "");
+
+  if (!cleaned) return "unknown";
+
+  // Pattern A: "worldquant_alpha013" or "WorldQuant Alpha013"
+  var wqMatch = cleaned.match(/(?:^|_)worldquant[_-]?alpha0*(\d+)/);
+  if (wqMatch) {
+    return "alpha" + Number(wqMatch[1]);
+  }
+
+  // Pattern B: "alpha013" or "alpha13"
+  var alphaMatch = cleaned.match(/(?:^|_)alpha0*(\d+)$/);
+  if (alphaMatch) {
+    return "alpha" + Number(alphaMatch[1]);
+  }
+
+  // Pattern C: "gtja191_alpha_001"
+  var libAlphaMatch = cleaned.match(/^[a-z0-9]+_alpha_?0*(\d+)$/);
+  if (libAlphaMatch) {
+    return "alpha" + Number(libAlphaMatch[1]);
+  }
+
+  // Pattern D: strip known library prefix
+  var knownPrefixes = /^(?:wq101|alpha101|gtja191|alpha191|quantapi|alpha158)[:_-]/;
+  if (knownPrefixes.test(cleaned)) {
+    var remainder = cleaned.replace(knownPrefixes, "");
+    var remainderMatch = remainder.match(/(?:worldquant[_-]?)?alpha0*(\d+)/);
+    if (remainderMatch) {
+      return "alpha" + Number(remainderMatch[1]);
+    }
+    return remainder.replace(/[^a-z0-9_]/g, "_").replace(/_+/g, "_").replace(/^_|_$/g, "") || "unknown";
+  }
+
+  return cleaned.replace(/[^a-z0-9_]/g, "_").replace(/_+/g, "_").replace(/^_|_$/g, "") || "unknown";
+}
+
+function dedupeSupabaseFactors(factors) {
+  // Group by canonicalFactorKey, keep the latest record per group.
+  var best = {};
+  factors.forEach(function (factor) {
+    var key = canonicalFactorKey(factor);
+    var existing = best[key];
+    if (!existing) {
+      best[key] = factor;
+      return;
+    }
+    // Primary: keep the record with the most recent latest_checked_at.
+    var thisTime = factor.latest_checked_at || "";
+    var existingTime = existing.latest_checked_at || "";
+    if (thisTime > existingTime) {
+      best[key] = factor;
+      return;
+    }
+    if (thisTime < existingTime) {
+      return; // keep existing (it is newer)
+    }
+    // Times equal (or both null): prefer record with real metrics.
+    var thisHasMetrics = factor.coverage_ratio != null || factor.rank_ic_mean != null || factor.rank_ic_ir != null;
+    var existingHasMetrics = existing.coverage_ratio != null || existing.rank_ic_mean != null || existing.rank_ic_ir != null;
+    if (thisHasMetrics && !existingHasMetrics) {
+      best[key] = factor;
+      return;
+    }
+    if (existingHasMetrics && !thisHasMetrics) {
+      return; // keep existing (it has metrics)
+    }
+    // Tiebreaker: use supabase_row_id for stable, deterministic selection.
+    var thisId = (factor.metadata && factor.metadata.supabase_row_id) || "";
+    var existingId = (existing.metadata && existing.metadata.supabase_row_id) || "";
+    if (thisId > existingId) {
+      best[key] = factor;
+    }
+  });
+  // Return deduplicated result sorted by latest_checked_at descending.
+  var result = Object.values(best);
+  result.sort(function (a, b) {
+    var aTime = a.latest_checked_at || "";
+    var bTime = b.latest_checked_at || "";
+    return bTime.localeCompare(aTime);
+  });
+  return result;
+}
+
+function formatInteger(value) {
+  const number = toFiniteNumber(value);
+  return number === null ? "-" : Math.round(number).toLocaleString("zh-CN");
+}
+
+async function fetchSupabaseRows(tableName, { order = "", limit = 1000 } = {}) {
+  const endpoint = new URL(`${SUPABASE_URL}/rest/v1/${encodeURIComponent(tableName)}`);
+  endpoint.searchParams.set("select", "*");
+  if (order) endpoint.searchParams.set("order", order);
+  endpoint.searchParams.set("limit", String(limit));
+  const response = await fetchWithTimeout(endpoint.toString(), {
+    headers: {
+      apikey: SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+      Accept: "application/json",
+    },
+  });
+  if (!response.ok) {
+    let detail = "";
+    try {
+      detail = await response.text();
+    } catch (error) {
+      detail = "";
+    }
+    throw new Error(`Supabase ${tableName} HTTP ${response.status}${detail ? `: ${detail.slice(0, 160)}` : ""}`);
+  }
+  const rows = await response.json();
+  return Array.isArray(rows) ? rows : [];
+}
+
+async function fetchSupabaseDashboardPayload() {
+  const factors = [];
+  const errors = [];
+  const tables = [];
+  if (SUPABASE_FACTOR_TABLE && SUPABASE_FACTOR_TABLE !== SUPABASE_TRUTH_SUMMARY_TABLE) {
+    try {
+      const rows = await fetchSupabaseRows(SUPABASE_FACTOR_TABLE, {
+        order: "latest_checked_at.desc.nullslast",
+        limit: 1000,
+      });
+      factors.push(...rows.map(normalizeSupabaseFactorRow));
+      tables.push(SUPABASE_FACTOR_TABLE);
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  if (SUPABASE_TRUTH_SUMMARY_TABLE) {
+    try {
+      const rows = await fetchSupabaseRows(SUPABASE_TRUTH_SUMMARY_TABLE, {
+        order: "latest_imported_at.desc.nullslast",
+        limit: 1000,
+      });
+      factors.push(...rows.map(normalizeSupabaseTruthSummaryRow));
+      tables.push(SUPABASE_TRUTH_SUMMARY_TABLE);
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  if (!factors.length && errors.length) {
+    throw new Error(errors.map((error) => error.message).join(" | "));
+  }
+  return {
+    schema_version: "factor_lab_view_v1",
+    generated_at: new Date().toISOString(),
+    local_flask: { connected: false },
+    cloud_registry: { status: "supabase", label: "Supabase Public Dashboard" },
+    metadata: {
+      factor_source_types: ["supabase_public_dashboard"],
+      warning_count: 0,
+      factor_source_warning_count: 0,
+      artifact_warning_count: 0,
+      supabase_table: SUPABASE_FACTOR_TABLE,
+      supabase_truth_summary_table: SUPABASE_TRUTH_SUMMARY_TABLE,
+      supabase_loaded_tables: tables,
+    },
+    errors: errors.map((error) => error.message),
+    factors: dedupeSupabaseFactors(factors),
+  };
 }
 
 async function checkLocalHealth() {
@@ -661,7 +1072,7 @@ async function checkQuantApiStatus() {
   if (CLOUD_DEMO_MODE) {
     updateQuantApiStatus({
       token_configured: false,
-      base_url: "Static demo data",
+      base_url: "Supabase required",
     });
     return null;
   }
@@ -684,27 +1095,27 @@ async function loadData() {
   state.isLoading = true;
   updateRefreshButton(true);
   try {
-    if (CLOUD_DEMO_MODE) {
-      const response = await fetchWithTimeout(withCacheBust(DEMO_LIBRARY_URL));
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const payload = await response.json();
+    if (USE_SUPABASE_DASHBOARD) {
+      const payload = await fetchSupabaseDashboardPayload();
       const normalizedPayload = normalizePayload(payload);
       state.rawFactors = normalizedPayload.factors || [];
       updateConnectionStatus(true, payload);
       updateQuantApiStatus({
         token_configured: false,
-        base_url: "Static demo data",
+        base_url: "Supabase public dashboard",
       });
       els.errorPanel.classList.add("hidden");
       renderTabs(normalizedPayload);
       applyFilters();
-      syncDetailFromHash();
-      if (state.view === "detail" && !state._isAutoRefresh) renderDetail();
+      await syncDetailFromHash();
       if (state.view === "monitor") renderMonitor();
       if (state.view === "strategy") renderStrategy();
       if (state.view === "strategy-detail") renderStrategyDetail();
       if (state.view === "tasks") renderTasks();
       return;
+    }
+    if (CLOUD_DEMO_MODE) {
+      throw new Error("Supabase is required. Local fallback files have been removed.");
     }
     const healthy = await checkLocalHealth();
     if (!healthy) throw new Error("Local Flask service is offline");
@@ -718,8 +1129,9 @@ async function loadData() {
     els.errorPanel.classList.add("hidden");
     renderTabs(normalizedPayload);
     applyFilters();
-    syncDetailFromHash();
-    if (state.view === "detail" && !state._isAutoRefresh) renderDetail();
+    await syncDetailFromHash();
+    loadStrategies();
+    loadStrategyTemplates();
     if (state.view === "monitor") renderMonitor();
     if (state.view === "strategy") renderStrategy();
     if (state.view === "strategy-detail") renderStrategyDetail();
@@ -746,10 +1158,7 @@ function startAutoRefresh() {
   if (state.autoRefreshTimer) {
     window.clearInterval(state.autoRefreshTimer);
   }
-  state.autoRefreshTimer = window.setInterval(function() {
-    state._isAutoRefresh = true;
-    loadData().finally(function() { state._isAutoRefresh = false; });
-  }, AUTO_REFRESH_INTERVAL_MS);
+  state.autoRefreshTimer = window.setInterval(loadData, AUTO_REFRESH_INTERVAL_MS);
 }
 
 function normalizePayload(payload) {
@@ -809,6 +1218,131 @@ function countBy(items, key, initial = {}) {
   );
 }
 
+function marketBucket(factor) {
+  const raw = [
+    factor.market,
+    factor.universe,
+    factor.data_source,
+    factor.source,
+    factor.source_id,
+    factor.raw_library,
+    factor.library,
+    factor.metadata?.market,
+    factor.metadata?.universe,
+    factor.metadata?.mining_run,
+    factor.metadata?.official_source,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  if (!raw.trim()) return "other";
+  if (
+    raw.includes("wq101") ||
+    raw.includes("alpha101") ||
+    raw.includes("alpha158") ||
+    raw.includes("worldquant") ||
+    raw.includes("gtja191") ||
+    raw.includes("alpha191") ||
+    raw.includes("ashare") ||
+    raw.includes("a-share") ||
+    raw.includes("quant api") ||
+    raw.includes("quantapi") ||
+    raw.includes("rqdata") ||
+    raw.includes("沪深") ||
+    raw.includes("中证") ||
+    raw.includes("聚宽")
+  ) {
+    return "ashare";
+  }
+  if (
+    raw.includes("yfinance") ||
+    raw.includes("yahoo") ||
+    raw.includes("us_") ||
+    raw.includes(" us ") ||
+    raw.includes("nyse") ||
+    raw.includes("nasdaq")
+  ) {
+    return "us";
+  }
+  if (raw.includes("static_demo") || raw.includes("demo")) return "ashare";
+  return "other";
+}
+
+function marketCounts(factors = state.rawFactors) {
+  const counts = Object.fromEntries(MARKET_BUCKETS.map((bucket) => [bucket.key, 0]));
+  factors.forEach((factor) => {
+    counts[marketBucket(factor)] = (counts[marketBucket(factor)] || 0) + 1;
+  });
+  return counts;
+}
+
+function firstAvailableMarket(counts) {
+  return MARKET_BUCKETS.find((bucket) => (counts[bucket.key] || 0) > 0)?.key || "other";
+}
+
+function ensureMarketSelections(factors = state.rawFactors) {
+  const counts = marketCounts(factors);
+  if (!counts[state.market]) state.market = firstAvailableMarket(counts);
+  if (!counts[state.monitorMarket]) state.monitorMarket = state.market;
+}
+
+function marketLabel(factorOrKey) {
+  const key = typeof factorOrKey === "string" ? factorOrKey : marketBucket(factorOrKey);
+  return MARKET_LABEL_BY_KEY[key] || "其他";
+}
+
+function marketDetail(factor) {
+  if (factor.metadata?.truth_summary_source) return "";
+  return factor.universe || factor.metadata?.universe || factor.data_source || factor.source || "-";
+}
+
+function marketChipHtml(factor) {
+  const key = marketBucket(factor);
+  return `
+    <span class="market-chip market-${key}" title="${escapeHtml(marketDetail(factor))}">
+      ${escapeHtml(marketLabel(key))}
+    </span>
+  `;
+}
+
+function renderMarketTabs() {
+  const counts = marketCounts();
+  const renderButton = (bucket, active, onClick) => {
+    const count = counts[bucket.key] || 0;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = active ? "tab active" : "tab";
+    button.textContent = `${bucket.label} (${count})`;
+    button.title = bucket.hint;
+    button.disabled = count === 0;
+    if (!button.disabled) button.addEventListener("click", onClick);
+    return button;
+  };
+
+  els.marketTabs?.replaceChildren();
+  MARKET_BUCKETS.forEach((bucket) => {
+    els.marketTabs?.appendChild(
+      renderButton(bucket, state.market === bucket.key, () => {
+        state.market = bucket.key;
+        state.page = 1;
+        applyFilters();
+        renderMarketTabs();
+      }),
+    );
+  });
+
+  els.monitorMarketFilters?.replaceChildren();
+  MARKET_BUCKETS.forEach((bucket) => {
+    const button = renderButton(bucket, state.monitorMarket === bucket.key, () => {
+      state.monitorMarket = bucket.key;
+      renderMonitor();
+      renderMarketTabs();
+    });
+    button.classList.add("market-filter");
+    els.monitorMarketFilters?.appendChild(button);
+  });
+}
+
 function countJqCategories(factors) {
   const counts = { 全部: factors.length };
   JQ_FACTOR_CATEGORIES.forEach((label) => {
@@ -824,15 +1358,16 @@ function countJqCategories(factors) {
 function applyFilters() {
   const query = state.query.trim().toLowerCase();
   state.filteredFactors = state.rawFactors
+    .filter((factor) => marketBucket(factor) === state.market)
     .filter((factor) => state.selectedCategories.has(jqFactorCategory(factor)))
     .filter((factor) => !state.usableOnly || factorAdmission(factor).agentReadable)
     .filter((factor) => state.library === "全部" || factor.library === state.library)
     .filter((factor) => state.proof === "all" || factor.proof_status === state.proof)
     .filter((factor) => state.truth === "all" || factor.truth_status === state.truth)
-    .filter((factor) => state.reuse === "all" || factor.reuse_recommendation === state.reuse)
+    .filter((factor) => state.reuse === "all" || reuseStatus(factor) === state.reuse)
     .filter((factor) => {
       if (!query) return true;
-      return [factor.factor_name, factor.raw_factor_name, factor.library, factor.subcategory, jqFactorCategory(factor)]
+      return [factor.factor_name, factor.raw_factor_name, factor.library, marketLabel(factor), marketDetail(factor), factor.subcategory, jqFactorCategory(factor)]
         .join(" ")
         .toLowerCase()
         .includes(query);
@@ -854,6 +1389,7 @@ function jqFactorCategory(factor) {
   const subcategory = String(factor.subcategory || "").toLowerCase();
   const category = String(factor.category || "").toLowerCase();
   const library = String(factor.library || factor.raw_library || "").toLowerCase();
+  if (category.includes("技术")) return "技术指标因子";
   if (subcategory.includes("成长")) return "成长类因子";
   if (subcategory.includes("盈利") || subcategory.includes("营运")) return "质量类因子";
   if (subcategory.includes("偿债") || subcategory.includes("波动") || subcategory.includes("振幅")) return "风险类因子";
@@ -862,13 +1398,8 @@ function jqFactorCategory(factor) {
   if (category.includes("财务")) return "基础科目及衍生类因子";
   if (category.includes("价值") || category.includes("规模")) return "风险因子-风格因子";
   if (library.includes("barra")) return "风险因子-新风格因子";
-  return "技术指标因子";
-}
-
-function jqFactorSet(factor) {
-  var lib = (factor?.library || "").toLowerCase();
-  var m = {"alpha101":"alpha101","wq101":"alpha101","gtja191":"gtja191","alpha191":"gtja191"};
-  return m[lib] || "alpha101";
+  if (category.includes("量价")) return "动量类因子";
+  return "未分类";
 }
 
 function compareFactors(left, right) {
@@ -1050,6 +1581,9 @@ function renderTable() {
     const displayName = compactName(factor.factor_name);
     const coverageTone = coverageClass(factor.coverage_ratio);
     const coverageHelp = coverageTitle(factor.coverage_ratio);
+    const marketDetailText = marketDetail(factor);
+    const categoryText = factor.metadata?.truth_summary_source ? "真值库" : jqFactorCategory(factor);
+    const categoryDetailText = factor.metadata?.truth_summary_source ? "" : factor.subcategory || "";
     const row = document.createElement("tr");
     row.className = [
       state.selectedIds.has(factor.id) ? "selected" : "",
@@ -1065,12 +1599,12 @@ function renderTable() {
       </td>
       <td>
         <button class="factor-link" type="button" data-factor-id="${escapeHtml(factor.id)}" ${openable ? "" : "disabled"} title="${escapeHtml(factor.factor_name)} · ${openable ? "查看单因子详情" : "未复现，暂无详情报告"}">
-                  ${escapeHtml(displayName)}${admission.weak ? '<span class="weak-tag">弱</span>' : ""}
-                </button>
-                ${!openable && factor.proof_status === "missing" ? `<button class="research-trigger compact" type="button" onclick="triggerFactorResearch(function(n){var p=n.split('_');return p.length>=3?p[p.length-2]+p[p.length-1].replace(/^0+/,''):n;}('${escapeHtml(factor.factor_name)}'),'${escapeHtml(jqFactorSet(factor))}',this)" style="margin-left:6px;font-size:11px">研究</button>` : ""}
+          ${escapeHtml(displayName)}${admission.weak ? '<span class="weak-tag">弱</span>' : ""}
+        </button>
       </td>
       <td>${escapeHtml(factor.library)}</td>
-      <td>${escapeHtml(jqFactorCategory(factor))}<span class="factor-subcategory">${escapeHtml(factor.subcategory || "")}</span></td>
+      <td>${marketChipHtml(factor)}${marketDetailText ? `<span class="factor-subcategory">${escapeHtml(marketDetailText)}</span>` : ""}</td>
+      <td>${escapeHtml(categoryText)}${categoryDetailText ? `<span class="factor-subcategory">${escapeHtml(categoryDetailText)}</span>` : ""}</td>
       <td><span class="badge ${proofClass}">${proofText}</span></td>
       <td>${truthBadgeHtml(factor)}</td>
       <td class="number ${coverageTone}" title="${escapeHtml(coverageHelp)}">${formatRatio(factor.coverage_ratio)}</td>
@@ -1102,9 +1636,9 @@ function renderTable() {
       if (openable) openDetail(factor.id);
     });
     row.addEventListener("dblclick", () => {
-          if (openable) openDetail(factor.id);
-        });
-        els.tableBody.appendChild(row);
+      if (openable) openDetail(factor.id);
+    });
+    els.tableBody.appendChild(row);
   });
 
   const end = Math.min(start + pageItems.length, state.filteredFactors.length);
@@ -1171,8 +1705,8 @@ function renderSelectionSummary() {
     return;
   }
   const selected = state.rawFactors.filter((factor) => state.selectedIds.has(factor.id));
-  const reusable = selected.filter((factor) => factor.reuse_recommendation === "可复用").length;
-  const rerun = selected.filter((factor) => factor.reuse_recommendation === "建议重跑").length;
+  const reusable = selected.filter((factor) => reuseStatus(factor) === "reusable").length;
+  const rerun = selected.filter((factor) => reuseStatus(factor) === "rerun").length;
   els.selectedCount.textContent = `已选择 ${selected.length} 个因子`;
   els.selectedReusable.textContent = `可复用 ${reusable} 个`;
   els.selectedRerun.textContent = `建议重跑 ${rerun} 个`;
@@ -1311,6 +1845,9 @@ function monitorValidationHtml(factor) {
   const coverage = toFiniteNumber(factor.coverage_ratio);
   const ir = Math.abs(toFiniteNumber(factor.rank_ic_ir) ?? 0);
   const score = Math.round(Math.min(99, Math.max(30, ir * 100)));
+  if (factor.metadata?.truth_summary_source) {
+    return `<span class="validation-badge review">TRUTH</span>`;
+  }
   if (factor.proof_status === "failed" || isTruthIssue(factor.truth_status)) {
     return `<span class="validation-badge reject">REJECT ${score}</span>`;
   }
@@ -1322,13 +1859,26 @@ function monitorValidationHtml(factor) {
 
 function monitorMarketHtml(factor) {
   const hints = monitorHints(factor);
-  if (hints.includes("覆盖率过低")) {
-    return `<span class="hint-chip">覆盖率过低</span>`;
-  }
-  return mutedDash();
+  const hint = hints.includes("覆盖率过低") ? `<span class="hint-chip">覆盖率过低</span>` : "";
+  const detail = marketDetail(factor);
+  return `
+    <span class="market-cell">
+      ${marketChipHtml(factor)}
+      ${hint}
+      <span class="monitor-source-sub">${escapeHtml(detail)}</span>
+    </span>
+  `;
 }
 
 function factorSourceDisplay(factor) {
+  if (factor.metadata?.truth_summary_source) {
+    const rowCount = formatInteger(factor.metadata.row_count);
+    const symbolCount = formatInteger(factor.metadata.symbol_count);
+    return {
+      primary: `${factor.library || "Truth"} 真值库`,
+      secondary: `${rowCount} 行 / ${symbolCount} 标的`,
+    };
+  }
   const officialSource = factor.metadata?.official_source || factor.source_document || factor.data_source || factor.library || "-";
   if (String(officialSource).includes("Quant API factor_monthly")) {
     return {
@@ -1343,18 +1893,19 @@ function factorSourceDisplay(factor) {
 }
 
 function renderMonitorStats() {
-  const total = state.rawFactors.length;
-  const withMetric = state.rawFactors.filter(
+  const currentFactors = state.rawFactors.filter((factor) => marketBucket(factor) === state.monitorMarket);
+  const total = currentFactors.length;
+  const withMetric = currentFactors.filter(
     (factor) => toFiniteNumber(factor.rank_ic_mean) !== null || toFiniteNumber(factor.rank_ic_ir) !== null,
   ).length;
-  const reusable = state.rawFactors.filter((factor) => factor.reuse_recommendation === "可复用").length;
-  const review = state.rawFactors.filter((factor) => monitorBucket(factor) === "weak").length;
+  const reusable = currentFactors.filter((factor) => reuseStatus(factor) === "reusable").length;
+  const review = currentFactors.filter((factor) => monitorBucket(factor) === "weak").length;
 
   const cards = [
-    ["all", "总因子数", total, "来自当前 specs 与 runtime 产物"],
-    ["metric", "有 IC/IR", withMetric, "已有可读研究指标"],
-    ["reusable", "可复用", reusable, "按当前适配层建议"],
-    ["review", "需关注", review, "复现失败、真值异常或弱指标"],
+    ["all", "总因子数", total, `${marketLabel(state.monitorMarket)} 当前分区`],
+    ["metric", "有 IC/IR", withMetric, "同市场内可读研究指标"],
+    ["reusable", "可复用", reusable, "同市场口径下的建议"],
+    ["review", "需关注", review, "同市场内复现或指标风险"],
   ]
     .map(
       ([key, label, value, note]) => `
@@ -1383,12 +1934,15 @@ function renderMonitorFilters() {
 }
 
 function renderMonitor() {
+  ensureMarketSelections();
+  renderMarketTabs();
   renderMonitorStats();
   renderMonitorFilters();
   renderMonitorCategoryFilters();
   renderMonitorDirectionFilters();
   const factors = state.rawFactors
     .map((factor) => ({ factor, bucket: monitorBucket(factor) }))
+    .filter((item) => marketBucket(item.factor) === state.monitorMarket)
     .filter((item) => state.monitorSelectedCategories.has(jqFactorCategory(item.factor)))
     .filter((item) => {
       if (state.monitorDirectionFilter === "all") return true;
@@ -1402,7 +1956,7 @@ function renderMonitor() {
         return toFiniteNumber(item.factor.rank_ic_mean) !== null || toFiniteNumber(item.factor.rank_ic_ir) !== null;
       }
       if (state.monitorCardFilter === "reusable") {
-        return item.factor.reuse_recommendation === "可复用";
+        return reuseStatus(item.factor) === "reusable";
       }
       if (state.monitorCardFilter === "review") {
         return item.bucket === "weak";
@@ -1576,6 +2130,40 @@ function activeStrategyTemplate() {
   return state.strategyTemplates.find((template) => template.template_id === state.selectedStrategyTemplateId) || state.strategyTemplates[0] || null;
 }
 
+function loadSavedStrategies() {
+  try {
+    const saved = localStorage.getItem("factor_lab_strategies");
+    return saved ? JSON.parse(saved) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveStrategies() {
+  try {
+    localStorage.setItem("factor_lab_strategies", JSON.stringify(state.strategyDrafts));
+  } catch {
+    console.error("Failed to save strategies to localStorage");
+  }
+}
+
+async function loadStrategies() {
+  if (state.strategiesLoading) return;
+  state.strategiesLoading = true;
+  try {
+    const response = await fetchWithTimeout(withCacheBust(`${API_BASE}/strategies`));
+    if (!response.ok) throw new Error(`strategies ${response.status}`);
+    const payload = await response.json();
+    state.strategies = payload.items || [];
+  } catch (error) {
+    state.strategies = [];
+  } finally {
+    state.strategiesLoading = false;
+    state.strategiesLoaded = true;
+    if (state.view === "strategy") renderStrategy();
+  }
+}
+
 function seedStrategyBuilderParams(template) {
   (template?.param_schema || []).forEach((field) => {
     if (state.strategyBuilderParams[field.key] === undefined) {
@@ -1665,15 +2253,14 @@ async function runStrategyBuilder() {
   }
   const payload = strategyRunPayload("回测中");
   try {
-    // AGENT-HOOK: 此运行端点未来由 Agent 自动调用，策略内部逻辑在后端模板中封装。
-    const response = await fetchWithTimeout(`${API_BASE}/strategy-runs/run`, {
+    const response = await fetchWithTimeout(`${API_BASE}/strategy-run`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
     if (!response.ok) throw new Error(`strategy run ${response.status}`);
     const result = await response.json();
-    state.strategyBuilderResult = result.result || result;
+    state.strategyBuilderResult = result;
   } catch (error) {
     state.strategyBuilderResult = mockStrategyRunResult(payload);
   }
@@ -1725,6 +2312,7 @@ async function saveStrategyBuilder() {
     // 本地未接后端时仍导入看板，后续由同一契约替换为真实持久化。
   }
   state.strategyDrafts.unshift(strategyRowFromRun(payload));
+  saveStrategies();
   state.view = "strategy";
   window.location.hash = "";
   renderView();
@@ -1748,8 +2336,43 @@ function renderStrategyBuilderResult() {
   }
   const backtest = result.backtest_result || {};
   const live = result.live_result || {};
-  return `
-    <section class="builder-result-card">
+  const backtestEquity = backtest.equity_curve || [];
+  const liveEquity = live.equity_curve || [];
+  
+  let curveHtml = "";
+  if (backtestEquity.length > 0 || liveEquity.length > 0) {
+    const allEquity = [...backtestEquity, ...liveEquity];
+    const minVal = Math.min(...allEquity.filter(v => !isNaN(v)), 0.8);
+    const maxVal = Math.max(...allEquity.filter(v => !isNaN(v)), 1.2);
+    const range = maxVal - minVal || 0.4;
+    const totalLen = backtestEquity.length + liveEquity.length;
+    
+    const backtestPath = backtestEquity.length > 0 ? generatePathFromEquity(backtestEquity, minVal, maxVal, 0, totalLen) : "";
+    const livePath = liveEquity.length > 0 ? generatePathFromEquity(liveEquity, minVal, maxVal, backtestEquity.length, totalLen) : "";
+    const cutoffX = backtestEquity.length > 0 ? (backtestEquity.length / totalLen) * 600 : 450;
+    
+    curveHtml = `
+      <svg viewBox="0 0 600 120" class="equity-svg" style="height:120px">
+        <defs>
+          <linearGradient id="builderBacktestGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" style="stop-color:#94a3b8;stop-opacity:0.2" />
+            <stop offset="100%" style="stop-color:#94a3b8;stop-opacity:0" />
+          </linearGradient>
+          <linearGradient id="builderLiveGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" style="stop-color:#3b82f6;stop-opacity:0.3" />
+            <stop offset="100%" style="stop-color:#3b82f6;stop-opacity:0" />
+          </linearGradient>
+        </defs>
+        ${backtestPath ? `<path d="${backtestPath}" fill="none" stroke="#94a3b8" stroke-width="1.8" stroke-dasharray="5,4" stroke-linejoin="round" stroke-linecap="round" /><path d="${backtestPath} L 600,100 L 0,100 Z" fill="url(#builderBacktestGradient)" />` : ""}
+        ${livePath ? `<path d="${livePath}" fill="none" stroke="#3b82f6" stroke-width="1.9" stroke-linejoin="round" stroke-linecap="round" /><path d="${livePath} L 600,100 L ${cutoffX},100 Z" fill="url(#builderLiveGradient)" />` : ""}
+        <line x1="${cutoffX}" y1="10" x2="${cutoffX}" y2="100" stroke="#94a3b8" stroke-width="0.9" stroke-dasharray="4,4" />
+        <text x="${cutoffX + 5}" y="20" fill="#6b7280" font-size="10">临界日</text>
+        <text x="10" y="115" fill="#6b7280" font-size="10">回测段</text>
+        <text x="550" y="115" fill="#6b7280" font-size="10">实盘段</text>
+      </svg>
+    `;
+  } else {
+    curveHtml = `
       <div class="builder-curve" aria-label="净值曲线">
         <div class="curve-line curve-line-backtest"></div>
         <div class="curve-cutoff" title="临界日 ${escapeHtml(result.cutoff_date || state.strategyBuilderParams.cutoff_date || "-")}"></div>
@@ -1757,10 +2380,16 @@ function renderStrategyBuilderResult() {
         <span class="curve-label left">回测段</span>
         <span class="curve-label right">实盘段</span>
       </div>
+    `;
+  }
+  
+  return `
+    <section class="builder-result-card">
+      ${curveHtml}
       <div class="builder-metrics">
         <div class="builder-metric-head"><span>指标</span><strong>回测段</strong><strong>实盘段</strong></div>
         ${metricCell("年化", backtest.annual_return, live.annual_return, formatRatio)}
-        ${metricCell("夏普", backtest.sharpe, live.sharpe, (value) => formatNumber(value, 2))}
+        ${metricCell("夏普", backtest.sharpe_ratio || backtest.sharpe, live.sharpe_ratio || live.sharpe, (value) => formatNumber(value, 2))}
         ${metricCell("最大回撤", backtest.max_drawdown, live.max_drawdown, formatRatio)}
         ${metricCell("胜率", backtest.win_rate, live.win_rate, formatRatio)}
       </div>
@@ -1876,64 +2505,45 @@ function renderStrategyBuilder() {
 }
 
 function strategyRows() {
-  const reusable = state.rawFactors.filter((factor) => factor.reuse_recommendation === "可复用");
-  const first = reusable[0] || state.rawFactors[0];
-  const baseRows = [
-    {
-      id: first ? `strategy_single_factor_${sanitizeId(first.id || first.factor_name)}` : "strategy_single_factor",
-      name: first ? `${first.factor_name} 单因子分层策略` : "单因子分层策略",
-      type: "单因子",
-      factors: first ? `${first.library}:${first.factor_name}` : "待选择",
-      universe: "当前样本股票池",
-      rebalance: "待策略层接入",
-      cost: "待策略层接入",
-      annualReturn: null,
-      sharpe: null,
-      maxDrawdown: null,
-      status: first ? "研究就绪" : "待接入",
-      updatedAt: first?.latest_checked_at || "-",
-    },
-    {
-      id: "strategy_multi_factor_candidate",
-      name: "多因子合成候选",
-      type: "多因子",
-      factors: "待选择",
-      universe: "待接入",
-      rebalance: "待接入",
-      cost: "待接入",
-      annualReturn: null,
-      sharpe: null,
-      maxDrawdown: null,
-      status: "待接入",
-      updatedAt: "-",
-    },
-    // AI Agent 策略占位暂时关闭。
-    // {
-    //   id: "strategy_agent_pipeline",
-    //   name: "AI Agent 自动生成策略",
-    //   type: "Agent",
-    //   factors: "待 Agent 提交",
-    //   universe: "待接入",
-    //   rebalance: "待接入",
-    //   cost: "待接入",
-    //   annualReturn: null,
-    //   sharpe: null,
-    //   maxDrawdown: null,
-    //   status: "待接入",
-    //   updatedAt: "-",
-    // },
-  ];
-  return [...state.strategyDrafts, ...baseRows];
+  const apiRows = state.strategies.map((s) => ({
+    id: s.id,
+    name: s.name,
+    type: s.type,
+    factors: s.factors,
+    universe: s.universe,
+    rebalance: s.rebalance || "月频调仓",
+    cost: s.cost || "0.1%",
+    annualReturn: s.annualReturn,
+    sharpe: s.sharpe,
+    maxDrawdown: s.maxDrawdown,
+    status: s.status || "研究就绪",
+    updatedAt: s.updatedAt || "-",
+    rank_ic_mean: s.rank_ic_mean,
+    rank_ic_ir: s.rank_ic_ir,
+    cutoff_date: s.cutoff_date,
+    equity_curve: s.equity_curve,
+    nav_history: s.nav_history,
+    metrics_backtest: s.metrics_backtest,
+    metrics_live: s.metrics_live,
+    params: s.params,
+    data_source: s.data_source,
+    debug: s.debug,
+    backtest_result: s.backtest_result,
+    live_result: s.live_result,
+  }));
+  return [...state.strategyDrafts, ...apiRows];
 }
 
 function renderStrategyStats(rows) {
   if (!els.strategyStats) return;
   const ready = rows.filter((row) => row.status === "研究就绪").length;
+  const avgSharpe = rows.length ? rows.reduce((sum, r) => sum + (r.sharpe || 0), 0) / rows.length : 0;
+  const avgReturn = rows.length ? rows.reduce((sum, r) => sum + (r.annualReturn || 0), 0) / rows.length : 0;
   els.strategyStats.innerHTML = [
     ["策略条目", rows.length, "含已接入和预留流程"],
     ["已有研究基础", ready, "可从因子研究结果继续推进"],
-    ["正式回测", 0, "等待策略层与真实交易参数接入"],
-    ["数据状态", "占位", "当前不触发计算"],
+    ["平均夏普", formatNumber(avgSharpe, 2), "基于因子IC/IR估算"],
+    ["平均年化", formatRatio(avgReturn), "基于因子IC/IR估算"],
   ]
     .map(
       ([label, value, note]) => `
@@ -1948,6 +2558,9 @@ function renderStrategyStats(rows) {
 }
 
 function renderStrategy() {
+  if (!state.strategiesLoaded && !state.strategiesLoading) {
+    loadStrategies();
+  }
   const rows = strategyRows();
   if (state.strategySortKey && state.strategySortDirection !== "default") {
     rows.sort(compareStrategies);
@@ -1959,7 +2572,7 @@ function renderStrategy() {
     .map(
       (row) => `
         <tr class="${state.strategyDeleteMode ? "strategy-delete-mode-row" : ""}">
-          <td>
+          <td class="strategy-name-cell" title="${escapeHtml(row.name)}">
             ${
               state.strategyDeleteMode
                 ? `<label class="strategy-delete-check">
@@ -1970,7 +2583,7 @@ function renderStrategy() {
             <button type="button" class="strategy-link" data-strategy-id="${escapeHtml(row.id)}">${escapeHtml(row.name)}</button>
             <span class="monitor-source-sub">${escapeHtml(row.type || "-")}</span>
           </td>
-          <td>${escapeHtml(row.factors)}</td>
+          <td class="strategy-factors-cell" title="${escapeHtml(row.factors)}">${escapeHtml(row.factors)}</td>
           <td class="strategy-universe-cell" title="${escapeHtml(row.universe)}">${escapeHtml(row.universe)}</td>
           <td>
             <strong>${escapeHtml(row.rebalance)}</strong>
@@ -2046,6 +2659,7 @@ function renderStrategyDeleteActions(rows) {
 function deleteSelectedStrategies() {
   if (!state.selectedStrategyDeleteIds.size) return;
   state.strategyDrafts = state.strategyDrafts.filter((row) => !state.selectedStrategyDeleteIds.has(row.id));
+  saveStrategies();
   state.selectedStrategyDeleteIds.clear();
   state.strategyDeleteMode = false;
   renderStrategy();
@@ -2087,18 +2701,411 @@ function activeStrategy() {
   return strategyRows().find((row) => row.id === state.activeStrategyId);
 }
 
-function openStrategyDetail(strategyId) {
+function normalizeRowEquityCurve(row) {
+  const params = row.params || {};
+  const cutoffDate = params.cutoff_date || row.cutoff_date || "2024-06-01";
+  const sourcePoints = Array.isArray(row.equity_curve) && row.equity_curve.length
+    ? row.equity_curve
+    : Array.isArray(row.nav_history)
+      ? row.nav_history
+      : [];
+  return sourcePoints
+    .map((point) => {
+      const nav = Number(point.nav);
+      if (!point.date || !Number.isFinite(nav)) return null;
+      return {
+        date: point.date,
+        nav,
+        phase: point.phase || (point.date <= cutoffDate ? "backtest" : "live"),
+      };
+    })
+    .filter(Boolean);
+}
+
+function detailDataFromStrategyRow(row) {
+  const factorText = Array.isArray(row.factors) ? row.factors.join(", ") : String(row.factors || "");
+  const factors = factorText
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .map((factor_id) => ({ factor_id, direction: 1 }));
+  return {
+    strategy_id: row.id,
+    name: row.name,
+    type: row.type,
+    factors,
+    params: row.params || {
+      universe: row.universe,
+      cutoff_date: row.cutoff_date,
+      rebalance: row.rebalance,
+      cost: row.cost,
+    },
+    equity_curve: normalizeRowEquityCurve(row),
+    metrics_backtest: row.metrics_backtest || {},
+    metrics_live: row.metrics_live || {},
+    data_source: row.data_source,
+    debug: row.debug,
+  };
+}
+
+async function loadStrategyDetailData(strategyId) {
+  if (state.strategyDetailLoading[strategyId]) return;
+  state.strategyDetailLoading[strategyId] = true;
+  try {
+    const response = await fetchWithTimeout(withCacheBust(`${API_BASE}/strategy/${strategyId}`));
+    if (response.ok) {
+      const data = await response.json();
+      state.strategyDetailData[strategyId] = data;
+    }
+  } catch (error) {
+    console.error("获取策略详情失败:", error);
+  } finally {
+    state.strategyDetailLoading[strategyId] = false;
+    if (state.view === "strategy-detail" && state.activeStrategyId === strategyId) {
+      renderStrategyDetail();
+    }
+  }
+}
+
+async function openStrategyDetail(strategyId) {
   const row = strategyRows().find((item) => item.id === strategyId);
   if (!row) return;
+  
+  if (state.autoRefreshTimer) {
+    window.clearInterval(state.autoRefreshTimer);
+    state.autoRefreshTimer = null;
+  }
+  
   state.view = "strategy-detail";
   state.activeStrategyId = strategyId;
+  
+  if (!state.strategyDetailData) {
+    state.strategyDetailData = {};
+  }
+  
+  try {
+    const response = await fetchWithTimeout(withCacheBust(`${API_BASE}/strategy/${strategyId}`));
+    if (response.ok) {
+      const data = await response.json();
+      console.log("[DEBUG] Strategy detail API response:", data);
+      state.strategyDetailData[strategyId] = data;
+      renderStrategyDetail();
+      return;
+    }
+  } catch (error) {
+    console.error("获取策略详情失败:", error);
+  }
+  
+  const rowDetailData = detailDataFromStrategyRow(row);
+  state.strategyDetailData[strategyId] = rowDetailData;
   renderStrategyDetail();
 }
 
 function closeStrategyDetail() {
+  startAutoRefresh();
   state.view = "strategy";
   state.activeStrategyId = null;
   renderView();
+}
+
+function normalizeEquityValues(series) {
+  if (!Array.isArray(series)) return [];
+  return series
+    .map((point) => {
+      const value = typeof point === "number" ? point : point?.nav ?? point?.equity ?? point?.value;
+      return Number(value);
+    })
+    .filter((value) => Number.isFinite(value) && value > 0);
+}
+
+function normalizeEquityDates(series, fallbackDates = []) {
+  if (!Array.isArray(series)) return fallbackDates;
+  const dates = series.map((point, index) => (
+    typeof point === "object" && point !== null ? point.date || fallbackDates[index] || "" : fallbackDates[index] || ""
+  ));
+  return dates.length ? dates : fallbackDates;
+}
+
+function previewEquitySeries() {
+  const dates = [
+    "2019-01-31", "2019-04-30", "2019-07-31", "2019-10-31",
+    "2020-01-31", "2020-04-30", "2020-07-31", "2020-10-31",
+    "2021-01-31", "2021-04-30", "2021-07-31", "2021-10-31",
+    "2022-01-31", "2022-04-30", "2022-07-31", "2022-10-31",
+    "2023-01-31", "2023-04-30", "2023-07-31", "2023-10-31",
+    "2024-01-31", "2024-04-30", "2024-07-31", "2024-10-31",
+  ];
+  const equity = [
+    1.00, 1.02, 1.01, 1.04,
+    1.05, 1.03, 1.08, 1.12,
+    1.15, 1.18, 1.16, 1.22,
+    1.20, 1.24, 1.28, 1.27,
+    1.31, 1.38, 1.35, 1.42,
+    1.48, 1.45, 1.56, 1.62,
+  ];
+  const split = 15;
+  return {
+    backtestEquity: equity.slice(0, split),
+    liveEquity: equity.slice(split - 1),
+    backtestDates: dates.slice(0, split),
+    liveDates: dates.slice(split - 1),
+  };
+}
+
+const EQUITY_CHART = {
+  left: 64,
+  right: 1540,
+  top: 38,
+  bottom: 370,
+  tickBottom: 398,
+  dateY: 424,
+  labelX: 802,
+  labelY: 464,
+};
+
+function equityX(index, totalLength) {
+  return EQUITY_CHART.left + (index / Math.max(1, totalLength - 1)) * (EQUITY_CHART.right - EQUITY_CHART.left);
+}
+
+function equityY(value, minVal, maxVal, logScale = false) {
+  const height = EQUITY_CHART.bottom - EQUITY_CHART.top;
+  let normalized;
+  if (logScale) {
+    const logMin = Math.log10(Math.max(minVal, 0.01));
+    const logMax = Math.log10(Math.max(maxVal, 0.01));
+    const logRange = logMax - logMin || 1;
+    const logVal = Math.log10(Math.max(value, 0.01));
+    normalized = (logVal - logMin) / logRange;
+  } else {
+    const range = maxVal - minVal || 0.4;
+    normalized = (value - minVal) / range;
+  }
+  return EQUITY_CHART.bottom - normalized * height;
+}
+
+function equityTickIndexes(dates, maxTicks = 9) {
+  if (!Array.isArray(dates) || dates.length === 0) return [];
+  const total = dates.length;
+  const count = Math.min(maxTicks, total);
+  if (count <= 1) return [0];
+  return [...new Set(
+    Array.from({ length: count }, (_, tick) => Math.round((tick * (total - 1)) / (count - 1)))
+  )].sort((a, b) => a - b);
+}
+
+function renderEquityCurve(row, logScale = false) {
+  const backtest = row.backtestResult || row.backtest_result || {};
+  const live = row.liveResult || row.live_result || {};
+  let backtestEquity = normalizeEquityValues(backtest.equity_curve || backtest.equity || []);
+  let liveEquity = normalizeEquityValues(live.equity_curve || live.equity || []);
+  let backtestDates = normalizeEquityDates(backtest.equity_curve, backtest.dates || []);
+  let liveDates = normalizeEquityDates(live.equity_curve, live.dates || []);
+  let previewOnly = false;
+  if (backtestEquity.length === 0 && liveEquity.length === 0) {
+    const preview = previewEquitySeries();
+    backtestEquity = preview.backtestEquity;
+    liveEquity = preview.liveEquity;
+    backtestDates = preview.backtestDates;
+    liveDates = preview.liveDates;
+    previewOnly = true;
+  }
+  
+  if (backtestEquity.length > 0 || liveEquity.length > 0) {
+    const allEquity = [...backtestEquity, ...liveEquity];
+    const allDates = [...backtestDates, ...liveDates];
+    const validEquity = allEquity.filter(v => !isNaN(v) && v > 0);
+    const minVal = Math.min(...validEquity, 0.8);
+    const maxVal = Math.max(...validEquity, 1.2);
+    const range = maxVal - minVal || 0.4;
+    const totalLength = backtestEquity.length + liveEquity.length;
+    
+    const backtestPath = backtestEquity.length > 0 ? generatePathFromEquity(backtestEquity, minVal, maxVal, 0, totalLength, logScale) : "";
+    const livePath = liveEquity.length > 0 ? generatePathFromEquity(liveEquity, minVal, maxVal, backtestEquity.length, totalLength, logScale) : "";
+    const cutoffIndex = backtestEquity.length > 0 ? Math.min(totalLength - 1, backtestEquity.length) : Math.floor(totalLength * 0.75);
+    const cutoffX = equityX(cutoffIndex, totalLength);
+    
+    let html = "";
+    
+    html += `<line x1="${EQUITY_CHART.left}" y1="${EQUITY_CHART.top}" x2="${EQUITY_CHART.left}" y2="${EQUITY_CHART.bottom}" stroke="#e2e8f0" stroke-width="1" />`;
+    html += `<line x1="${EQUITY_CHART.left}" y1="${EQUITY_CHART.bottom}" x2="${EQUITY_CHART.right}" y2="${EQUITY_CHART.bottom}" stroke="#e2e8f0" stroke-width="1" />`;
+    
+    let yTicks, yMin, yMax;
+    if (logScale) {
+      const logMin = Math.log10(Math.max(minVal, 0.01));
+      const logMax = Math.log10(Math.max(maxVal, 0.01));
+      yMin = Math.pow(10, Math.floor(logMin));
+      yMax = Math.pow(10, Math.ceil(logMax));
+      yTicks = [];
+      let val = yMin;
+      while (val <= yMax) {
+        yTicks.push(val);
+        val *= 2;
+        if (val > yMax && yTicks.length < 5) val = yMin * 5;
+      }
+      yTicks = [...new Set(yTicks)].sort((a, b) => a - b).slice(0, 5);
+    } else {
+      yTicks = [minVal, minVal + range * 0.25, minVal + range * 0.5, minVal + range * 0.75, maxVal];
+    }
+    
+    yTicks.forEach((val) => {
+      const y = equityY(val, minVal, maxVal, logScale);
+      html += `<line x1="${EQUITY_CHART.left}" y1="${y}" x2="${EQUITY_CHART.right}" y2="${y}" stroke="#f1f5f9" stroke-width="1" />`;
+      html += `<line x1="${EQUITY_CHART.left - 8}" y1="${y}" x2="${EQUITY_CHART.left}" y2="${y}" stroke="#e2e8f0" stroke-width="1" />`;
+      html += `<text x="${EQUITY_CHART.left - 14}" y="${y + 4}" fill="#64748b" font-size="12" text-anchor="end">${logScale ? val.toExponential(1) : val.toFixed(2)}</text>`;
+    });
+    
+    const xTickIndexes = equityTickIndexes(allDates);
+    html += `<line x1="${EQUITY_CHART.left}" y1="${EQUITY_CHART.tickBottom}" x2="${EQUITY_CHART.right}" y2="${EQUITY_CHART.tickBottom}" stroke="#e2e8f0" stroke-width="1" />`;
+    [...new Set(xTickIndexes)].forEach((i) => {
+      const x = equityX(i, totalLength);
+      const date = allDates[i] || "";
+      html += `<line x1="${x}" y1="${EQUITY_CHART.bottom}" x2="${x}" y2="${EQUITY_CHART.tickBottom}" stroke="#e2e8f0" stroke-width="1" />`;
+      html += `<text x="${x}" y="${EQUITY_CHART.dateY}" fill="#64748b" font-size="11" text-anchor="middle">${escapeHtml(date || "-")}</text>`;
+    });
+    html += `<text x="${EQUITY_CHART.labelX}" y="${EQUITY_CHART.labelY}" fill="#64748b" font-size="12" font-weight="600" text-anchor="middle">日期 / Time Series</text>`;
+    if (previewOnly) {
+      html += `<text x="${EQUITY_CHART.right}" y="${EQUITY_CHART.top + 14}" fill="#b45309" font-size="12" font-weight="600" text-anchor="end">样式预览，非真实回测</text>`;
+    }
+
+    if (backtestPath) {
+      html += `<path d="${backtestPath}" fill="none" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="4,4" stroke-linejoin="miter" stroke-linecap="butt" />`;
+    }
+    if (livePath) {
+      html += `<path d="${livePath}" fill="none" stroke="#2563eb" stroke-width="1.5" stroke-linejoin="miter" stroke-linecap="butt" />`;
+    }
+    
+    html += `<line x1="${cutoffX}" y1="${EQUITY_CHART.top}" x2="${cutoffX}" y2="${EQUITY_CHART.bottom}" stroke="#94a3b8" stroke-width="1" stroke-dasharray="4,4" />`;
+    html += `<text x="${cutoffX + 8}" y="${EQUITY_CHART.top + 18}" fill="#64748b" font-size="12" font-weight="600">临界日</text>`;
+    
+    return html;
+  } else {
+    return `<text x="${EQUITY_CHART.labelX}" y="220" fill="#9ca3af" font-size="18" text-anchor="middle">等待策略回测数据</text>`;
+  }
+}
+
+function generatePathFromEquity(equity, minVal, maxVal, offset, totalLength, logScale = false) {
+  const points = [];
+  const n = equity.length;
+  const range = maxVal - minVal || 0.4;
+  for (let i = 0; i < n; i++) {
+    const x = equityX(offset + i, totalLength);
+    let normalized;
+    if (logScale) {
+      const logMin = Math.log10(Math.max(minVal, 0.01));
+      const logMax = Math.log10(Math.max(maxVal, 0.01));
+      const logRange = logMax - logMin || 1;
+      const logVal = Math.log10(Math.max(equity[i], 0.01));
+      normalized = (logVal - logMin) / logRange;
+    } else {
+      normalized = (equity[i] - minVal) / range;
+    }
+    const y = equityY(equity[i], minVal, maxVal, logScale);
+    points.push(`${x},${Math.max(EQUITY_CHART.top, Math.min(EQUITY_CHART.bottom, y))}`);
+  }
+  return points.length > 0 ? `M ${points.join(" L ")}` : "";
+}
+
+function renderRealEquityCurve(detailData, logScale = false) {
+  return renderSegmentedEquityCurve(detailData, logScale);
+}
+
+function renderWaitingEquityCurve() {
+  return `<text x="${EQUITY_CHART.labelX}" y="220" fill="#64748b" font-size="16" font-weight="600" text-anchor="middle">正在加载 Quant API 真实策略数据</text>`;
+}
+
+function renderSegmentedEquityCurve(detailData, logScale = false, strategyId = "") {
+  const equityCurve = detailData.equity_curve || [];
+  const cutoffDate = (detailData.params && detailData.params.cutoff_date) || "2024-06-01";
+  const backtestGradientId = strategyId ? `backtestGradient_${strategyId}` : "backtestGradient";
+  const liveGradientId = strategyId ? `liveGradient_${strategyId}` : "liveGradient";
+  
+  if (equityCurve.length === 0) {
+    return `<text x="${EQUITY_CHART.labelX}" y="220" fill="#9ca3af" font-size="18" text-anchor="middle">等待策略回测数据</text>`;
+  }
+  
+  const backtestData = equityCurve.filter(d => d.phase === "backtest");
+  const liveData = equityCurve.filter(d => d.phase === "live");
+  
+  const backtestDates = backtestData.map(d => d.date);
+  const backtestNav = backtestData.map(d => d.nav);
+  const liveDates = liveData.map(d => d.date);
+  const liveNav = liveData.map(d => d.nav);
+  
+  const allNav = [...backtestNav, ...liveNav];
+  const validNav = allNav.filter(v => !isNaN(v) && v > 0);
+  const minVal = Math.min(...validNav, 0.8);
+  const maxVal = Math.max(...validNav, 1.2);
+  const range = maxVal - minVal || 0.4;
+  const totalLength = equityCurve.length;
+  
+  console.log(`[renderSegmentedEquityCurve] scale=${logScale ? 'log' : 'linear'}, minVal=${minVal}, maxVal=${maxVal}, range=${range}, totalLength=${totalLength}`);
+  
+  let html = "";
+  
+  html += `<line x1="${EQUITY_CHART.left}" y1="${EQUITY_CHART.top}" x2="${EQUITY_CHART.left}" y2="${EQUITY_CHART.bottom}" stroke="#e2e8f0" stroke-width="1" />`;
+  html += `<line x1="${EQUITY_CHART.left}" y1="${EQUITY_CHART.bottom}" x2="${EQUITY_CHART.right}" y2="${EQUITY_CHART.bottom}" stroke="#e2e8f0" stroke-width="1" />`;
+  
+  let yTicks, yMin, yMax;
+  if (logScale) {
+    const logMin = Math.log10(Math.max(minVal, 0.01));
+    const logMax = Math.log10(Math.max(maxVal, 0.01));
+    yMin = Math.pow(10, Math.floor(logMin));
+    yMax = Math.pow(10, Math.ceil(logMax));
+    yTicks = [];
+    let val = yMin;
+    while (val <= yMax) {
+      yTicks.push(val);
+      val *= 2;
+      if (val > yMax && yTicks.length < 5) val = yMin * 5;
+    }
+    yTicks = [...new Set(yTicks)].sort((a, b) => a - b).slice(0, 5);
+  } else {
+    yTicks = [minVal, minVal + range * 0.25, minVal + range * 0.5, minVal + range * 0.75, maxVal];
+  }
+  
+  yTicks.forEach((val) => {
+    const y = equityY(val, minVal, maxVal, logScale);
+    html += `<line x1="${EQUITY_CHART.left}" y1="${y}" x2="${EQUITY_CHART.right}" y2="${y}" stroke="#f1f5f9" stroke-width="1" />`;
+    html += `<line x1="${EQUITY_CHART.left - 8}" y1="${y}" x2="${EQUITY_CHART.left}" y2="${y}" stroke="#e2e8f0" stroke-width="1" />`;
+    html += `<text x="${EQUITY_CHART.left - 14}" y="${y + 4}" fill="#64748b" font-size="12" text-anchor="end">${logScale ? val.toExponential(1) : val.toFixed(2)}</text>`;
+  });
+  
+  const allDates = [...backtestDates, ...liveDates];
+  const xTickIndexes = equityTickIndexes(allDates);
+  html += `<line x1="${EQUITY_CHART.left}" y1="${EQUITY_CHART.tickBottom}" x2="${EQUITY_CHART.right}" y2="${EQUITY_CHART.tickBottom}" stroke="#e2e8f0" stroke-width="1" />`;
+  [...new Set(xTickIndexes)].forEach((i) => {
+    const x = equityX(i, totalLength);
+    const date = allDates[i] || "";
+    html += `<line x1="${x}" y1="${EQUITY_CHART.bottom}" x2="${x}" y2="${EQUITY_CHART.tickBottom}" stroke="#e2e8f0" stroke-width="1" />`;
+    html += `<text x="${x}" y="${EQUITY_CHART.dateY}" fill="#64748b" font-size="11" text-anchor="middle">${escapeHtml(date || "-")}</text>`;
+  });
+  html += `<text x="${EQUITY_CHART.labelX}" y="${EQUITY_CHART.labelY}" fill="#64748b" font-size="12" font-weight="600" text-anchor="middle">日期 / Time Series</text>`;
+  
+  if (backtestNav.length > 0) {
+    const backtestPath = generatePathFromEquity(backtestNav, minVal, maxVal, 0, totalLength, logScale);
+    html += `<path d="${backtestPath}" fill="none" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="4,4" stroke-linejoin="miter" stroke-linecap="butt" />`;
+  }
+  
+  if (liveNav.length > 0) {
+    const connectedLiveNav = backtestNav.length > 0 ? [backtestNav[backtestNav.length - 1], ...liveNav] : liveNav;
+    const liveOffset = backtestNav.length > 0 ? backtestNav.length - 1 : 0;
+    const livePath = generatePathFromEquity(connectedLiveNav, minVal, maxVal, liveOffset, totalLength, logScale);
+    html += `<path d="${livePath}" fill="none" stroke="#2563eb" stroke-width="1.5" stroke-linejoin="miter" stroke-linecap="butt" />`;
+  }
+  
+  const cutoffX = equityX(Math.min(totalLength - 1, backtestNav.length), totalLength);
+  html += `<line x1="${cutoffX}" y1="${EQUITY_CHART.top}" x2="${cutoffX}" y2="${EQUITY_CHART.bottom}" stroke="#94a3b8" stroke-width="1" stroke-dasharray="4,4" />`;
+  html += `<text x="${cutoffX + 8}" y="${EQUITY_CHART.top + 18}" fill="#64748b" font-size="12" font-weight="600">临界日 ${escapeHtml(cutoffDate)}</text>`;
+  
+  equityCurve.forEach((point, i) => {
+    if (isNaN(point.nav) || point.nav <= 0) return;
+    const y = equityY(point.nav, minVal, maxVal, logScale);
+    const x = equityX(i, totalLength);
+    const phaseLabel = point.phase === "backtest" ? "回测段" : "实测段";
+    html += `<circle cx="${x}" cy="${y}" r="0" fill="${point.phase === "backtest" ? "#9ca3af" : "#2563eb"}" opacity="0" class="equity-point" data-date="${escapeHtml(point.date)}" data-nav="${point.nav.toFixed(4)}" data-phase="${phaseLabel}" />`;
+  });
+  
+  return html;
 }
 
 function renderStrategyDetail() {
@@ -2107,6 +3114,34 @@ function renderStrategyDetail() {
     closeStrategyDetail();
     return;
   }
+  
+  const rowDetailData = detailDataFromStrategyRow(row);
+  const detailData = JSON.parse(JSON.stringify((state.strategyDetailData && state.strategyDetailData[row.id]) || rowDetailData || {}));
+  const needsRemoteDetail = row.id.startsWith("strategy_run_") || row.id === "strategy_quant_api_default";
+  if (needsRemoteDetail && (!Array.isArray(detailData.equity_curve) || detailData.equity_curve.length === 0)) {
+    loadStrategyDetailData(row.id);
+  }
+  const metricsBacktest = detailData.metrics_backtest || {};
+  const metricsLive = detailData.metrics_live || {};
+  const params = detailData.params || {};
+  const cutoffDate = params.cutoff_date || "2024-06-01";
+  const equityCurve = detailData.equity_curve || [];
+  const hasRealData = Array.isArray(equityCurve) && equityCurve.length > 0;
+  const rowBacktest = row.backtestResult || row.backtest_result || {};
+  const rowLive = row.liveResult || row.live_result || {};
+  const hasRowEquity = normalizeEquityValues(rowBacktest.equity_curve || rowBacktest.equity || []).length > 0
+    || normalizeEquityValues(rowLive.equity_curve || rowLive.equity || []).length > 0;
+  const chartSourceLabel = hasRealData
+    ? "真实数据"
+    : hasRowEquity
+      ? "真实数据"
+      : "样式预览数据（非真实回测）";
+  
+  const navValues = equityCurve.map(d => d.nav);
+  const navMin = navValues.length ? Math.min(...navValues) : 'N/A';
+  const navMax = navValues.length ? Math.max(...navValues) : 'N/A';
+  console.log(`[renderStrategyDetail] scale=${state.equityLogScale ? 'log' : 'linear'}, equity_curve.length=${equityCurve.length}, navMin=${navMin}, navMax=${navMax}, hasRealData=${hasRealData}`);
+  
   renderView();
   els.strategyDetailView.innerHTML = `
     <div class="breadcrumb">
@@ -2123,9 +3158,9 @@ function renderStrategyDetail() {
         </div>
         <dl class="detail-meta">
           <div><dt>Strategy ID</dt><dd><code>${escapeHtml(row.id)}</code></dd></div>
-          <div><dt>类型</dt><dd>${escapeHtml(row.type)}</dd></div>
-          <div><dt>使用因子</dt><dd>${escapeHtml(row.factors)}</dd></div>
-          <div><dt>股票池</dt><dd>${escapeHtml(row.universe)}</dd></div>
+          <div><dt>类型</dt><dd>${escapeHtml(detailData.type || row.type)}</dd></div>
+          <div><dt>使用因子</dt><dd>${escapeHtml(detailData.factors ? detailData.factors.map(f => f.factor_id).join(', ') : row.factors)}</dd></div>
+          <div><dt>股票池</dt><dd>${escapeHtml(params.universe || row.universe)}</dd></div>
           <div><dt>更新时间</dt><dd>${formatDate(row.updatedAt)}</dd></div>
         </dl>
       </div>
@@ -2135,45 +3170,112 @@ function renderStrategyDetail() {
       </div>
     </section>
 
-    <section class="metric-grid strategy-metrics">
-      <article class="metric-card"><span>年化收益</span><strong>${formatRatio(row.annualReturn)}</strong><small>待策略层产出</small></article>
-      <article class="metric-card"><span>夏普</span><strong>${formatNumber(row.sharpe, 2)}</strong><small>待策略层产出</small></article>
-      <article class="metric-card"><span>最大回撤</span><strong>${formatRatio(row.maxDrawdown)}</strong><small>待策略层产出</small></article>
-      <article class="metric-card"><span>换手率</span><strong>-</strong><small>待交易成本模型接入</small></article>
-    </section>
+    <div class="metrics-group">
+      <h3 class="metrics-group-title backtest-title">回测段（临界日之前）</h3>
+      <section class="metric-grid strategy-metrics">
+        <article class="metric-card"><span>年化收益</span><strong>${formatRatio(hasRealData ? metricsBacktest.annual_return : row.annualReturn)}</strong><small>回测段</small></article>
+        <article class="metric-card"><span>夏普</span><strong>${formatNumber(hasRealData ? metricsBacktest.sharpe : row.sharpe, 2)}</strong><small>回测段</small></article>
+        <article class="metric-card"><span>最大回撤</span><strong>${formatRatio(hasRealData ? metricsBacktest.max_drawdown : row.maxDrawdown)}</strong><small>回测段</small></article>
+        <article class="metric-card"><span>换手率</span><strong>${formatRatio(hasRealData ? metricsBacktest.turnover : null)}</strong><small>回测段</small></article>
+      </section>
+    </div>
+
+    <div class="metrics-group">
+      <h3 class="metrics-group-title live-title">实测段（临界日之后）</h3>
+      <section class="metric-grid strategy-metrics live-metrics">
+        <article class="metric-card live"><span>年化收益</span><strong>${formatRatio(hasRealData ? metricsLive.annual_return : null)}</strong><small>实测段</small></article>
+        <article class="metric-card live"><span>夏普</span><strong>${formatNumber(hasRealData ? metricsLive.sharpe : null, 2)}</strong><small>实测段</small></article>
+        <article class="metric-card live"><span>最大回撤</span><strong>${formatRatio(hasRealData ? metricsLive.max_drawdown : null)}</strong><small>实测段</small></article>
+        <article class="metric-card live"><span>换手率</span><strong>${formatRatio(hasRealData ? metricsLive.turnover : null)}</strong><small>实测段</small></article>
+      </section>
+    </div>
 
     <section class="research-settings">
       <div>
         <h3>策略研究与回测参数</h3>
-        <p>这些参数作为未来策略回测请求输入。当前只展示预留口径，不会在前端触发计算。</p>
+        <p>${hasRealData ? "这些参数是真实回测使用的输入条件。" : "这些参数作为策略回测请求输入。"}</p>
       </div>
       <div class="research-grid">
-        <label><span>研究区间</span><select><option>当前复现样本区间</option></select></label>
-        <label><span>股票池</span><select><option>${escapeHtml(row.universe)}</option></select></label>
-        <label><span>组合构建</span><select><option>${escapeHtml(row.type)}研究</option></select></label>
-        <label><span>调仓周期</span><select disabled><option>待策略层接入</option></select></label>
-        <label><span>手续费及滑点</span><select disabled><option>待策略层接入</option></select></label>
+        <label><span>开始日期</span><input type="date" value="${escapeHtml(params.start_date || "2023-01-01")}" class="research-input" /></label>
+        <label><span>结束日期</span><input type="date" value="${escapeHtml(params.end_date || "2024-12-31")}" class="research-input" /></label>
+        <label><span>临界日</span><input type="date" value="${escapeHtml(cutoffDate)}" class="research-input cutoff-date" /></label>
+        <label><span>股票池</span><select class="research-input"><option>${escapeHtml(params.universe || row.universe)}</option></select></label>
+        <label><span>组合构建</span><select class="research-input"><option>${escapeHtml(params.portfolio_construction || row.type + "研究")}</option></select></label>
+        <label><span>调仓周期</span><select class="research-input"><option>${escapeHtml(params.rebalance || "月频调仓")}</option></select></label>
+        <label><span>手续费及滑点</span><select class="research-input">
+          <option value="无" ${(params.cost || row.cost) === "无" ? "selected" : ""}>无</option>
+          <option value="3‰佣金+1‰印花税+无滑点" ${(params.cost || row.cost) === "3‰佣金+1‰印花税+无滑点" ? "selected" : ""}>3‰佣金+1‰印花税+无滑点</option>
+          <option value="3‰佣金+1‰印花税+1‰滑点" ${(params.cost || row.cost) === "3‰佣金+1‰印花税+1‰滑点" ? "selected" : ""}>3‰佣金+1‰印花税+1‰滑点</option>
+        </select></label>
       </div>
     </section>
 
     <section class="strategy-detail-grid">
       <article class="chart-card large-chart">
-        <header><strong>策略收益曲线 / Equity Curve</strong><span>待接入</span></header>
-        <div class="chart-placeholder">等待策略回测数据</div>
+        <header>
+          <strong>策略收益曲线 / Equity Curve</strong>
+          <span>${escapeHtml(chartSourceLabel)}</span>
+          <div class="chart-toggle">
+            <button type="button" class="toggle-btn ${!state.equityLogScale ? "active" : ""}" data-equity-scale="linear">普通</button>
+            <button type="button" class="toggle-btn ${state.equityLogScale ? "active" : ""}" data-equity-scale="log">Log</button>
+          </div>
+        </header>
+        <div class="strategy-equity-chart" data-strategy-id="${escapeHtml(row.id)}">
+          <svg viewBox="0 0 1600 520" class="equity-svg">
+            <defs>
+              <linearGradient id="backtestGradient_${escapeHtml(row.id)}" x1="0%" y1="0%" x2="0%" y2="100%">
+                <stop offset="0%" style="stop-color:#94a3b8;stop-opacity:0.2" />
+                <stop offset="100%" style="stop-color:#9ca3af;stop-opacity:0" />
+              </linearGradient>
+              <linearGradient id="liveGradient_${escapeHtml(row.id)}" x1="0%" y1="0%" x2="0%" y2="100%">
+                <stop offset="0%" style="stop-color:#3b82f6;stop-opacity:0.3" />
+                <stop offset="100%" style="stop-color:#3b82f6;stop-opacity:0" />
+              </linearGradient>
+            </defs>
+            ${hasRealData ? renderSegmentedEquityCurve(detailData, state.equityLogScale, row.id) : renderWaitingEquityCurve()}
+          </svg>
+          <div class="chart-legend">
+            <span><span class="legend-dot backtest"></span>回测段 (临界日前)</span>
+            <span><span class="legend-dot live"></span>实测段 (临界日后)</span>
+          </div>
+        </div>
       </article>
       <article class="chart-card">
-        <header><strong>风险指标</strong><span>待接入</span></header>
-        <div class="chart-placeholder">等待 Sharpe / Max DD / Volatility</div>
+        <header><strong>风险指标</strong><span>${hasRealData ? "真实回测" : "等待 Volatility / Calmar"}</span></header>
+        <div class="risk-metrics-grid">
+          <div class="risk-item"><span>年化波动率(回测)</span><strong>${formatRatio(hasRealData ? metricsBacktest.annual_vol : null)}</strong></div>
+          <div class="risk-item"><span>年化波动率(实测)</span><strong>${formatRatio(hasRealData ? metricsLive.annual_vol : null)}</strong></div>
+          <div class="risk-item"><span>Calmar(回测)</span><strong>${formatNumber(hasRealData ? metricsBacktest.calmar : null, 2)}</strong></div>
+          <div class="risk-item"><span>Calmar(实测)</span><strong>${formatNumber(hasRealData ? metricsLive.calmar : null, 2)}</strong></div>
+        </div>
       </article>
       <article class="chart-card">
-        <header><strong>使用因子</strong><span>1 个</span></header>
-        <div class="strategy-factor-chip">${escapeHtml(row.factors)}</div>
+        <header><strong>使用因子</strong><span>${escapeHtml(detailData.factors ? detailData.factors.length : row.factors.split(',').length || 1)} 个</span></header>
+        <div class="strategy-factor-chip">${escapeHtml(detailData.factors ? detailData.factors.map(f => f.factor_id).join(', ') : row.factors)}</div>
       </article>
     </section>
   `;
 
   els.strategyDetailView.querySelectorAll("[data-action='back-strategy']").forEach((button) => {
     button.addEventListener("click", closeStrategyDetail);
+  });
+  
+  els.strategyDetailView.querySelectorAll("[data-equity-scale]").forEach((button) => {
+    button.addEventListener("click", (e) => {
+      const scale = e.target.getAttribute("data-equity-scale");
+      state.equityLogScale = scale === "log";
+      renderStrategyDetail();
+    });
+  });
+  
+  els.strategyDetailView.querySelectorAll(".cutoff-date").forEach((input) => {
+    input.addEventListener("change", (e) => {
+      const newCutoff = e.target.value;
+      if (detailData.params) {
+        detailData.params.cutoff_date = newCutoff;
+      }
+      renderStrategyDetail();
+    });
   });
 }
 
@@ -2188,12 +3290,12 @@ function taskRows() {
       status: "需关注",
       stages: [
         { gate: "G0", name: "输入与规格检查", status: "passed", note: "specs 与运行参数可读取" },
-        { gate: "G1", name: "复现产物检查", status: "passed", note: "proof / evaluation / factor_frame 已生成" },
+        { gate: "G1", name: "复现产物检查", status: "passed", note: "proof / evaluation summary 已生成" },
         { gate: "G2", name: "研究评估检查", status: "warning", note: "部分因子需要人工复核" },
         { gate: "G3", name: "策略回测检查", status: "pending", note: "策略层尚未接入" },
         { gate: "G4", name: "人工审核", status: "pending", note: "等待研究员确认" },
       ],
-      artifacts: "proof_report.json / evaluation.json / factor_frame.csv",
+      artifacts: "proof_report.json / evaluation.json",
     },
     {
       id: "gtja191_reproduction",
@@ -2209,7 +3311,7 @@ function taskRows() {
         { gate: "G3", name: "策略回测检查", status: "pending", note: "预留子 Gate" },
         { gate: "G4", name: "人工审核", status: "pending", note: "预留子 Gate" },
       ],
-      artifacts: "runtime/factor_lab/reports",
+      artifacts: "local report artifacts",
     },
     // AI Agent 调试占位暂时关闭。
     // {
@@ -2235,10 +3337,13 @@ function taskRows() {
 function agentTaskStatusMeta(task) {
   const status = String(task.status || "submitted");
   const map = {
+    queued: { label: "等待 Agent", progress: 5, stageStatus: "running", appStatus: "运行中" },
     queued_for_trae: { label: "等待 Agent", progress: 10, stageStatus: "running", appStatus: "运行中" },
     submitted: { label: "已提交", progress: 8, stageStatus: "running", appStatus: "运行中" },
     running: { label: "运行中", progress: 45, stageStatus: "running", appStatus: "运行中" },
+    waiting_final_approval: { label: "等待最终确认", progress: 92, stageStatus: "running", appStatus: "需关注" },
     failed: { label: "需关注", progress: 35, stageStatus: "warning", appStatus: "需关注" },
+    rejected: { label: "已拒绝", progress: 100, stageStatus: "warning", appStatus: "需关注" },
     completed: { label: "已完成", progress: 100, stageStatus: "passed", appStatus: "已完成" },
   };
   return map[status] || { label: status, progress: 10, stageStatus: "running", appStatus: "运行中" };
@@ -2249,42 +3354,51 @@ function agentTaskRows() {
     const meta = agentTaskStatusMeta(task);
     const summary = agentTaskSummary(task);
     const taskId = task.task_id || task.id || "agent-task";
-    const artifacts = task.artifacts_dir || task.status_path || "runtime/factor_lab/agent_tasks";
+    const artifacts = task.artifacts_dir || task.status_path || "local agent task artifacts";
     const progress = Number(task.progress ?? meta.progress);
+    const stages = Array.isArray(task.gates) && task.gates.length
+      ? task.gates.map((gate) => ({
+          gate: gate.gate || "-",
+          name: gate.name || gate.gate || "Gate",
+          status: gate.status || "pending",
+          note: gate.note || task.message || meta.label,
+        }))
+      : [
+          {
+            gate: "G0",
+            name: "任务接收",
+            status: "passed",
+            note: `已写入任务队列：${taskId}`,
+          },
+          {
+            gate: "G1",
+            name: "Agent 执行",
+            status: meta.stageStatus,
+            note: task.message || meta.label,
+          },
+          {
+            gate: "G2",
+            name: "产物校验",
+            status: meta.appStatus === "已完成" ? "passed" : "pending",
+            note: "等待 request/status/artifacts 校验结果",
+          },
+          {
+            gate: "G3",
+            name: "入库审核",
+            status: "pending",
+            note: "quarantine 通过后进入正式因子库",
+          },
+        ];
     return {
       id: taskId,
       name: summary === "-" ? taskId : summary,
-      type: "Agent",
+      type: (task.task_type === "truth_compare" || task.task_type === "factor_values_compare") ? "因子对比" : "研报复现",
       currentGate: task.current_gate || "G0",
       progress: Number.isFinite(progress) ? Math.max(0, Math.min(100, progress)) : meta.progress,
       status: meta.appStatus,
       sourceStatus: task.status || "submitted",
-      stages: [
-        {
-          gate: "G0",
-          name: "任务接收",
-          status: "passed",
-          note: `已写入任务队列：${taskId}`,
-        },
-        {
-          gate: "G1",
-          name: "Agent 执行",
-          status: meta.stageStatus,
-          note: task.message || meta.label,
-        },
-        {
-          gate: "G2",
-          name: "产物校验",
-          status: meta.appStatus === "已完成" ? "passed" : "pending",
-          note: "等待 request/status/artifacts 校验结果",
-        },
-        {
-          gate: "G3",
-          name: "入库审核",
-          status: "pending",
-          note: "quarantine 通过后进入正式因子库",
-        },
-      ],
+      truthExecution: task.truth_execution || null,
+      stages,
       artifacts,
     };
   });
@@ -2327,6 +3441,32 @@ function renderTaskStats(rows) {
     .join("");
 }
 
+function renderTruthExecution(truth) {
+  const statusMap = {
+    passed: ["对照通过", "badge-green"],
+    failed: ["对照未通过", "badge-orange"],
+    not_comparable: ["未完成对照（库内无标准真值）", "badge-gray"],
+  };
+  const [label, badge] = statusMap[truth.truth_status] || [truth.truth_status || "未知", "badge-gray"];
+  const fmtPct = (v) => (typeof v === "number" ? `${(v * 100).toFixed(2)}%` : "暂无");
+  const fmtErr = (v) => (typeof v === "number" ? v.toExponential(3) : "暂无");
+  return `
+    <section class="truth-execution-panel">
+      <header>
+        <strong>真值对照结果</strong>
+        <span class="badge ${badge}">${escapeHtml(label)}</span>
+      </header>
+      <div class="truth-metric-grid">
+        <span>裁决 decision：<strong>${escapeHtml(truth.decision || "暂无")}</strong></span>
+        <span>覆盖率 overlap：<strong>${fmtPct(truth.overlap_ratio)}</strong></span>
+        <span>逐点命中率：<strong>${fmtPct(truth.exact_match_ratio)}</strong></span>
+        <span>最大绝对误差：<strong>${fmtErr(truth.max_abs_error)}</strong></span>
+        <span>产物目录：<strong>${escapeHtml(truth.artifacts_dir || "暂无")}</strong></span>
+      </div>
+    </section>
+  `;
+}
+
 function renderTaskStagePanel(row) {
   if (!els.taskStagePanel || !row) return;
   els.taskStagePanel.innerHTML = `
@@ -2349,6 +3489,7 @@ function renderTaskStagePanel(row) {
         )
         .join("")}
     </div>
+    ${row.truthExecution ? renderTruthExecution(row.truthExecution) : ""}
     <footer>
       <strong>关联产物</strong>
       <span>${escapeHtml(row.artifacts)}</span>
@@ -2416,8 +3557,14 @@ function addPendingFiles(fileList) {
 }
 
 function removePendingFile(index) {
-  state.pendingFiles.splice(index, 1);
+  const [removed] = state.pendingFiles.splice(index, 1);
+  if (removed?.file_id) pendingFileStore.delete(removed.file_id);
   renderAgentTask();
+}
+
+function clearPendingFiles() {
+  state.pendingFiles = [];
+  pendingFileStore.clear();
 }
 
 async function loadAgentTasks() {
@@ -2450,8 +3597,8 @@ async function loadAgentTasks() {
     if (!response.ok) return;
     const payload = await response.json();
     state.agentTasks = Array.isArray(payload.items) ? payload.items : [];
+   state.agentTasksLoaded = true;
   } finally {
-    state.agentTasksLoaded = true;
     renderAgentTask();
     if (state.view === "tasks") renderTasks();
   }
@@ -2459,7 +3606,7 @@ async function loadAgentTasks() {
 
 async function submitTaskRequest(payload) {
   if (!ENABLE_AGENT_TASK_DEBUG) {
-    throw new Error("AI 任务调试入口已暂时关闭");
+    throw new Error("数据入口已关闭");
   }
   if (CLOUD_DEMO_MODE) {
     throw new Error("GitHub Pages demo mode is read-only. Deploy the Flask backend to enable Agent tasks.");
@@ -2479,21 +3626,1186 @@ async function submitTaskRequest(payload) {
   return await response.json();
 }
 
+function fileListFromInput(fileList) {
+  return Array.from(fileList || [])
+    .map((file, index) => {
+      const fileId = `${Date.now()}-${index}-${file.name}-${file.size}-${file.lastModified || 0}`;
+      pendingFileStore.set(fileId, file);
+      return {
+        file_id: fileId,
+        name: file.name,
+        relative_path: file.webkitRelativePath || file.name,
+        size: file.size,
+        type: file.type || "",
+        last_modified: file.lastModified ? new Date(file.lastModified).toISOString() : null,
+      };
+    })
+    .filter((file) => file.name);
+}
+
+function inferPackageName(files) {
+  const firstPath = files.find((file) => file.relative_path?.includes("/"))?.relative_path || "";
+  const root = firstPath.split("/").filter(Boolean)[0];
+  if (root) return root;
+  return "factor_intake_loose_files";
+}
+
+function inferTaskType(files) {
+  const names = new Set(files.map((file) => file.name));
+  if (names.has("factor_values.csv")) return "truth_compare";
+  if (
+    names.has("code.py") ||
+    names.has("experiment_data.csv") ||
+    names.has("paper.pdf") ||
+    names.has("research_report.pdf") ||
+    names.has("report.pdf")
+  ) {
+    return "research_reproduction";
+  }
+  return state.intakeTaskType;
+}
+
+function currentInputProfileSummary() {
+  if (state.intakeTaskType === "truth_compare" || state.intakeTaskType === "factor_values_compare") {
+    return {
+      summary: "因子值对照：提交 factor_values.csv，Agent 统一整理成 factor_values_compare 可读结构。",
+      tree: ["factor_intake_YYYYMMDD_name/", "  factor_values.csv"],
+    };
+  }
+  return {
+    summary: "研报自动复现：提交 code.py、experiment_data.csv、paper.pdf、research_report.pdf，Agent 统一整理成 research_report_reproduction 可读结构。",
+    tree: [
+      "factor_intake_YYYYMMDD_name/",
+      "  code.py",
+      "  experiment_data.csv",
+      "  paper.pdf",
+      "  research_report.pdf",
+    ],
+  };
+}
+
+function currentSkillContract() {
+  if (state.intakeTaskType === "truth_compare") {
+    return {
+      title: "Agent Skill: truth_compare_v1",
+      shortDescription: "标准真值对照入口。上传已有因子值，和库内标准真值逐点比较，并做重复因子检查。",
+      skillText: `# Agent Skill: truth_compare_v1
+
+## 0. Role
+You are the Factor Lab truth-comparison Agent. Your task is to read one uploaded factor value file, compare it point-by-point against the standard truth values already stored in the factor library, check similarity against existing factors, and write machine-readable artifacts.
+
+This entry answers:
+- does the uploaded factor value match the library standard truth?
+- is it a duplicate or near-duplicate of an existing factor?
+- what are the overlap ratio, exact match ratio, max absolute error, and similarity metrics?
+
+Do not promote anything into the official factor library. Write outputs under the task artifacts directory.
+
+## 1. Input
+Required:
+
+~~~text
+factor_intake_YYYYMMDD_name/
+  factor_values.csv
+~~~
+
+Recommended metadata:
+
+~~~json
+{
+  "task_type": "truth_compare",
+  "skill_name": "truth_compare_v1",
+  "factor_family": "alpha101|wq101|gtja191|exploratory",
+  "factor_name": "string"
+}
+~~~
+
+factor_values.csv must contain:
+
+| column | required | rule |
+| --- | --- | --- |
+| date | yes | normalize to YYYY-MM-DD |
+| symbol | yes | normalize to backend symbol format |
+| factor_value | yes | finite numeric value |
+
+## 2. Frozen Criteria
+criteria.json is written by G0 and read-only downstream. Every gate must verify status.json.criteria_sha256 before running.
+
+For this entry, standard truth is the primary gate:
+
+~~~json
+{
+  "standard_truth": {
+    "role": "primary_gate",
+    "required": true,
+    "source": "factor_library_truth",
+    "missing_source_status": "not_comparable",
+    "blocking": true
+  }
+}
+~~~
+
+If library truth is missing, write status=not_comparable and final decision reject. Do not mark it not_applicable.
+
+## 3. Gates
+G0 intake_validation:
+- verify request.json and factor_values.csv
+- identify factor_family and factor_name
+- freeze criteria.json and sha256
+
+G1 criteria_freeze:
+- verify criteria hash
+- fail with criteria_tampered if changed
+
+G2 value_schema_check:
+- validate date, symbol, factor_value
+- normalize date/symbol/value
+
+G3 data_quality_check:
+- count invalid rows, duplicate keys, missing values
+- write data_quality.json
+
+G4 library_truth_lookup:
+- locate library standard truth for factor_family + factor_name
+- if unavailable, write standard_truth.status=not_comparable
+
+G5 standard_truth_comparison:
+- compare uploaded value and library truth point by point
+- compute overlap_ratio, exact_match_ratio, max_abs_error
+- passed iff overlap_ratio >= min_overlap_ratio and exact_match_ratio >= pass_exact_match_ratio and max_abs_error <= tolerance
+
+G6 library_similarity:
+- compare with existing factor library for duplicate / near-duplicate detection
+
+G7 report_generation:
+- write comparison_report.md
+
+G8 final_approval:
+- write final_decision.json
+
+## 4. Decision Rule
+accept iff standard_truth.status=passed and no blocking duplicate issue exists.
+
+Missing library truth means not_comparable and reject. Low overlap means not_compared. Enough overlap but wrong values means failed.
+
+## 5. Required Artifacts
+~~~text
+artifacts/
+  criteria.json
+  input_profile.json
+  data_quality.json
+  normalized_factor_values.parquet
+  standard_truth_comparison.json
+  library_similarity.json
+  comparison_report.md
+  final_decision.json
+~~~`,
+      note: "真值对照入口只处理已有因子值和库内标准真值的逐点对照。",
+    };
+  }
+  if (state.intakeTaskType === "research_reproduction") {
+    return {
+      title: "Agent Skill: research_reproduction_v1",
+      shortDescription: "研报论文复现入口。把研究材料转成可运行、可审核、可入库候选因子；真值只做可选诊断。",
+      skillText: `# Agent Skill: research_reproduction_v1
+
+## 0. Role
+You are the Factor Lab research-reproduction Agent. Your task is to read one complete research package, reconstruct the factor, run it, evaluate economic usefulness, ask AMR to review it, compare it with the library, and produce artifacts for final approval.
+
+This entry answers:
+- can the research material be turned into a runnable factor?
+- is the produced factor economically useful?
+- does AMR find implementation or assumption risk?
+- is it duplicate or near-duplicate with the existing library?
+
+Standard truth is optional diagnostic evidence in this entry. It must not be the main promotion gate.
+
+## 1. Input
+Required:
+
+~~~text
+factor_intake_YYYYMMDD_name/
+  code.py
+  experiment_data.csv
+  paper.pdf
+  research_report.pdf
+~~~
+
+Optional:
+
+~~~text
+truth_values.csv
+truth_values.parquet
+~~~
+
+## 2. Frozen Criteria
+criteria.json is written by G0 and read-only downstream. Every gate must verify status.json.criteria_sha256 before running.
+
+For this entry, standard truth is optional:
+
+~~~json
+{
+  "standard_truth": {
+    "role": "optional_diagnostic",
+    "required": false,
+    "source": "optional_truth_values_or_library_truth",
+    "missing_source_status": "not_applicable",
+    "blocking": false
+  }
+}
+~~~
+
+Acceptance is based on economic validation, AMR review, and library comparison:
+
+~~~text
+accept iff
+  economic_validation.status = passed
+  and amr_review.status = passed
+  and library_comparison.status != duplicate
+~~~
+
+## 3. Gates
+G0 intake_validation:
+- verify request.json
+- verify the four fixed files exist
+- freeze criteria.json and sha256
+
+G1 criteria_freeze:
+- verify criteria hash
+- fail with criteria_tampered if changed
+
+G2 document_parse:
+- parse paper.pdf and research_report.pdf
+- write parsed_paper.md and parsed_research_report.md
+
+G3 factor_spec_extraction:
+- extract formula, variables, frequency, universe, preprocessing, return horizon
+- prefer research_report.pdf for production formula
+
+G4 code_reconciliation:
+- compare code.py with extracted formula
+- record conflicts and assumptions
+
+G5 data_binding:
+- profile experiment_data.csv
+- map variables to file columns or Quant API fields
+
+G6 reproduction_run:
+- write factor.py and test_factor.py
+- run factor and write factor_values.parquet
+
+G7 optional_truth_diagnostics:
+- if no truth exists, write not_applicable
+- if truth exists and matches, record stronger evidence
+- if truth exists and does not match but economic validation passes, set needs_review because implementation or data mapping may be wrong
+- if truth exists and matches but economic validation fails, record as correctly reproduced but economically decayed
+
+G8 economic_validation:
+- compute IC, RankIC, IR, long-short return, turnover, coverage, stability, sample-out evidence when available
+
+G9 amr_review:
+- review code, assumptions, data mapping, risk, and report consistency
+- AMR may suggest patch but must not overwrite factor.py directly
+
+G10 library_comparison:
+- detect duplicate or near-duplicate factors
+
+G11 report_generation:
+- write reproduction_report.md
+
+G12 final_approval:
+- write final_decision.json
+- do not promote directly to official library
+
+## 4. Required Artifacts
+~~~text
+artifacts/
+  criteria.json
+  parsed_paper.md
+  parsed_research_report.md
+  extracted_formula.json
+  assumptions.json
+  data_profile.json
+  factor.py
+  test_factor.py
+  factor_values.parquet
+  optional_truth_diagnostics.json
+  economic_validation.json
+  amr_review.json
+  library_comparison.json
+  reproduction_report.md
+  final_decision.json
+~~~`,
+      note: "研报复现入口不强制真值；真值只用于诊断和归因。",
+    };
+  }
+  if (state.intakeTaskType === "truth_compare" || state.intakeTaskType === "factor_values_compare") {
+    return {
+      title: "Agent Skill：factor_values_compare_v1",
+      shortDescription: "已配置因子值对照总 Skill。点击查看给智能体执行的完整 SOP、字段要求和后端输出目录。",
+      skillText: `# Agent Skill: factor_values_compare_v1
+
+## 0. Role and operating mode
+You are the downstream Factor Lab intake Agent. Your task is to read one external factor value file, normalize it, compare it with the existing factor library, and produce machine-readable artifacts for final human approval.
+
+Do not ask the user intermediate questions. If information is missing, make the least risky assumption, record it in artifacts/input_profile.json or artifacts/data_quality.json, and continue until a final_decision.json is produced.
+
+Never write directly into the official factor library. All candidate results must stay under namespace=quarantine.
+
+## 0.1 Frozen criteria
+Truth comparison criteria must be resolved from the factor-family registry at G0 and frozen into artifacts/criteria.json. Downstream Agents may read criteria.json but must not modify it. G0 must compute sha256(criteria.json) and store it in status.json.criteria_sha256. Every downstream gate must recompute and compare this hash before running. If the hash differs, fail the gate with error=criteria_tampered.
+
+truth_required and truth_file_present are independent:
+| truth_required | truth_file_present | truth_status |
+| --- | --- | --- |
+| false | false/true | not_applicable |
+| true | true | passed or failed |
+| true | false | not_compared, blocking |
+
+not_applicable may only be derived from truth_required=false. It must never be derived from a missing truth file.
+
+Passed truth comparison requires all conditions:
+overlap_ratio >= min_overlap_ratio
+and exact_match_ratio >= pass_exact_match_ratio
+and max_abs_error <= tolerance
+
+If truth_required=true and coverage is below min_overlap_ratio, set truth_status=not_compared, never failed or passed. failed means enough overlap was compared but values did not match.
+
+truth_required must come from registry, not from AMR:
+- alpha101 / wq101 -> truth_required=true, criteria_source=registry:alpha101_v1
+- gtja191 -> truth_required=true, criteria_source=registry:gtja191_v1
+- exploratory -> truth_required=false, criteria_source=registry:exploratory_v1
+- unknown factor_family -> criteria_status=failed, criteria_error=unknown_factor_family, truth_required=true, no accept
+
+The sha256 mechanism detects accidental tampering such as an Agent overwriting criteria.json or a patch rerun carrying the wrong file. It is not an adversarial security boundary. For adversarial protection, store criteria_sha256 in a database table, append-only log, or read-only API that downstream Agents cannot write.
+
+## 1. Fixed input package
+Accept either a folder upload or direct file upload, but normalize both modes into this package model:
+
+factor_intake_YYYYMMDD_name/
+  factor_values.csv
+
+Required file list is fixed:
+- factor_values.csv
+
+Reject or mark needs_review if factor_values.csv is missing. Extra files are allowed only as optional references; do not require them.
+
+## 2. factor_values.csv hard format
+File requirements:
+- file name must be exactly factor_values.csv
+- format must be CSV
+- header row is required
+- delimiter is comma
+- preferred encoding is UTF-8
+- GBK may be accepted only if parser can detect and decode it
+- one row represents one symbol on one date
+
+Required columns:
+| column | type | required | normalization rule |
+| --- | --- | --- | --- |
+| date | string/date | yes | normalize to YYYY-MM-DD |
+| symbol | string | yes | normalize to backend symbol format, e.g. 000001.SZ or 600000.SH |
+| factor_value | number | yes | finite numeric value only |
+
+Optional columns:
+| column | type | required | usage |
+| --- | --- | --- | --- |
+| factor_name | string | no | candidate factor name; fallback to package_name |
+| source_weight | number | no | optional confidence/weight; preserve in profile |
+| is_valid | bool/int/string | no | false rows excluded from evaluation but counted in data quality |
+| group | string | no | optional universe/group label |
+| industry | string | no | optional grouping/neutralization label |
+| note | string | no | optional row note; preserve but do not evaluate |
+
+Accepted date examples:
+- 2024-01-02
+- 20240102
+- 2024/01/02
+
+Accepted boolean examples for is_valid:
+- true/false
+- 1/0
+- yes/no
+- y/n
+
+## 3. Canonical request.json
+The backend should persist this request shape. If fields are missing, fill defaults exactly as below.
+
+~~~json
+{
+  "schema_version": "factor_intake_request_v1",
+  "task_type": "factor_values_compare",
+  "skill_name": "factor_values_compare_v1",
+  "package": {
+    "input_mode": "folder_or_files",
+    "package_name": "factor_intake_YYYYMMDD_name",
+    "required_files": ["factor_values.csv"],
+    "files": [
+      {
+        "name": "factor_values.csv",
+        "relative_path": "factor_intake_YYYYMMDD_name/factor_values.csv",
+        "size": 0,
+        "type": "text/csv",
+        "last_modified": "ISO-8601-or-null"
+      }
+    ]
+  },
+  "namespace": "quarantine",
+  "data_source": "quant_api",
+  "requires_quant_api": true,
+  "human_policy": {
+    "interactive_questions": false,
+    "human_only_final_approval": true
+  }
+}
+~~~
+
+## 4. Execution SOP
+Run these steps in order and update status.json after each gate.
+
+G0 intake_validation:
+- Verify request.json exists.
+- Verify task_type equals factor_values_compare.
+- Verify skill_name equals factor_values_compare_v1.
+- Verify package.required_files contains factor_values.csv.
+- Verify factor_values.csv exists and is readable.
+- Resolve the factor family from intake metadata, then freeze artifacts/criteria.json from registry. Do not let AMR choose truth_required or tolerance.
+- If missing, set status=failed and write final_decision.json with decision=reject.
+
+G1 criteria_freeze:
+- Verify artifacts/criteria.json exists.
+- Verify criteria_locked_by equals G0.
+- Verify mutable_by_downstream_agent equals false.
+- Recompute sha256(criteria.json) and compare with status.json.criteria_sha256.
+- If mismatched, fail with error=criteria_tampered.
+- This check must live in the unified gate entrypoint, not as an optional per-gate helper.
+- If AMR thinks criteria are wrong, set needs_review. Do not edit criteria.
+
+G2 value_schema_check:
+- Decode CSV.
+- Detect header.
+- Confirm date, symbol, factor_value columns exist.
+- Normalize column names by trimming whitespace and lowercasing.
+- Do not silently rename unknown core columns. If date/symbol/factor_value are absent, record error.
+- Normalize date to YYYY-MM-DD.
+- Normalize symbol to the backend symbol format.
+- Convert factor_value to float.
+
+G3 data_quality_check:
+- Count total rows, valid rows, invalid rows.
+- Detect duplicate keys by date + symbol.
+- Detect missing date, missing symbol, missing factor_value.
+- Detect non-finite values: NaN, inf, -inf, empty string, null.
+- Detect date span: min_date, max_date, number of trading dates.
+- Detect symbol coverage: number of unique symbols, average symbols per date.
+- Detect extreme values using robust z-score or percentile rules.
+- If coverage is too low or values are mostly invalid, continue but set final decision to needs_review.
+
+G4 truth_comparison:
+- Read artifacts/criteria.json.
+- If truth_required=false, write truth_status=not_applicable.
+- If truth_required=true and truth_values.csv or registry truth source is missing, write truth_status=not_compared and block accept.
+- If truth_required=true and truth is available, compare point by point.
+- Set passed only if overlap_ratio, exact_match_ratio, and tolerance all pass.
+
+G5 library_similarity:
+- Load or query existing factor library metadata and values.
+- Compare with existing factors when overlapping date/symbol data is available.
+- Compute Pearson correlation, Spearman correlation, overlap ratio, and top matches.
+- If values are not available for a library factor, record unavailable reason.
+
+G6 metric_evaluation:
+- Use quant_api returns if available.
+- Calculate IC, RankIC, IC mean, IC std, IR, positive IC ratio.
+- If return data is unavailable, write evaluation.status=skipped and explain why.
+- Do not block final report only because return data is unavailable.
+
+G7 report_generation:
+- Generate comparison_report.md in Chinese.
+- Include input summary, quality summary, top similar factors, evaluation metrics, risk notes, and recommendation.
+
+G8 final_approval:
+- Generate final_decision.json.
+- Do not promote or write the factor to the official library.
+
+## 5. Fixed output directory
+All outputs must be written under:
+
+runtime/factor_lab/agent_tasks/<task_id>/
+  request.json
+  status.json
+  artifacts/
+    criteria.json
+    input_profile.json
+    data_quality.json
+    normalized_factor_values.parquet
+    truth_comparison.json
+    library_similarity.json
+    evaluation.json
+    comparison_report.md
+    final_decision.json
+
+## 6. Artifact schemas
+artifacts/input_profile.json:
+~~~json
+{
+  "schema_version": "factor_input_profile_v1",
+  "task_type": "factor_values_compare",
+  "factor_name": "string",
+  "file_name": "factor_values.csv",
+  "encoding": "utf-8|gbk|unknown",
+  "row_count": 0,
+  "valid_row_count": 0,
+  "date_range": {"start": "YYYY-MM-DD-or-null", "end": "YYYY-MM-DD-or-null"},
+  "symbol_count": 0,
+  "columns": [],
+  "optional_columns_detected": [],
+  "assumptions": []
+}
+~~~
+
+artifacts/data_quality.json:
+~~~json
+{
+  "schema_version": "factor_data_quality_v1",
+  "status": "passed|warning|failed",
+  "duplicate_key_count": 0,
+  "missing_date_count": 0,
+  "missing_symbol_count": 0,
+  "missing_factor_value_count": 0,
+  "non_finite_value_count": 0,
+  "invalid_is_valid_count": 0,
+  "coverage": {"dates": 0, "symbols": 0, "avg_symbols_per_date": 0.0},
+  "warnings": [],
+  "errors": []
+}
+~~~
+
+artifacts/library_similarity.json:
+~~~json
+{
+  "schema_version": "factor_library_similarity_v1",
+  "status": "passed|skipped|failed",
+  "candidate_factor_name": "string",
+  "top_matches": [
+    {
+      "factor_id": "string",
+      "factor_name": "string",
+      "pearson_corr": 0.0,
+      "spearman_corr": 0.0,
+      "overlap_ratio": 0.0,
+      "recommendation": "reuse_existing|create_new|needs_review"
+    }
+  ],
+  "notes": []
+}
+~~~
+
+artifacts/evaluation.json:
+~~~json
+{
+  "schema_version": "factor_evaluation_v1",
+  "status": "passed|skipped|failed",
+  "metrics": {
+    "ic_mean": null,
+    "rank_ic_mean": null,
+    "ic_std": null,
+    "ir": null,
+    "positive_ic_ratio": null
+  },
+  "data_source": "quant_api",
+  "notes": []
+}
+~~~
+
+artifacts/final_decision.json:
+~~~json
+{
+  "schema_version": "factor_final_decision_v1",
+  "decision": "accept|reject|needs_review",
+  "task_type": "factor_values_compare",
+  "candidate_factor_name": "string",
+  "library_action": "reuse_existing|create_new|reject|needs_review",
+  "truth_status": "passed|failed|not_applicable|not_compared",
+  "truth_required": false,
+  "truth_blocking": false,
+  "matched_existing_factors": [],
+  "blocking_errors": [],
+  "risk_notes": [],
+  "human_approval_required": true
+}
+~~~
+
+## 7. Decision rules
+Use decision=reject when required file or required columns are missing, or factor_value is not usable.
+Use decision=needs_review when data is partially usable, similarity is ambiguous, coverage is weak, or evaluation cannot be completed.
+Use decision=accept only when schema passes, data quality is acceptable, similarity/evaluation are completed or reasonably skipped, and no blocking risk remains.
+
+## 8. Non-negotiable rules
+- Do not ask humans during intermediate steps.
+- Never write directly to the official factor library.
+- Always write final_decision.json.
+- All uncertainty must be recorded in JSON artifacts, not hidden in logs.
+- Do not invent missing factor values.
+- Do not delete user input files.
+- Keep all generated outputs inside the task directory.`,
+      note: "因子值对照只有一个主文件，但后端输出必须落成固定任务目录和固定 artifacts。",
+    };
+  }
+  return {
+    title: "Agent Skill：research_report_reproduction_v1",
+    shortDescription: "已配置研报自动复现总 Skill。点击查看给智能体执行的四文件研究包 SOP、固定字段和产物 schema。",
+    skillText: `# Agent Skill: research_report_reproduction_v1
+
+## 0. Role and operating mode
+You are the downstream Factor Lab reproduction Agent. Your task is to read one complete research package, reconstruct the factor, bind data, run a reproducible experiment, compare the result with the existing factor library, and produce final artifacts for human approval.
+
+The four required files are one combined research context. Do not treat them as four separate tasks.
+
+Do not ask the user intermediate questions. If information is missing or contradictory, make a conservative assumption, record it in artifacts/assumptions.json, and continue. If the task cannot be completed, still write partial artifacts and final_decision.json.
+
+Never write directly into the official factor library. All candidate results must stay under namespace=quarantine.
+
+## 0.1 Frozen criteria
+Truth comparison criteria must be resolved from the factor-family registry at G0 and frozen into artifacts/criteria.json. Downstream Agents may read criteria.json but must not modify it. G0 must compute sha256(criteria.json) and store it in status.json.criteria_sha256. Every downstream gate must recompute and compare this hash before running. If the hash differs, fail the gate with error=criteria_tampered.
+
+criteria.json must come from the factor-family registry, not from AMR or ad hoc intake fields:
+~~~json
+{
+  "schema_version": "factor_intake_criteria_v1",
+  "truth_required": true,
+  "truth_file_present": true,
+  "tolerance": 1e-8,
+  "min_overlap_ratio": 0.9,
+  "pass_exact_match_ratio": 0.99,
+  "criteria_source": "registry:alpha101_v1",
+  "criteria_resolved_at": "G0",
+  "criteria_locked_by": "G0",
+  "mutable_by_downstream_agent": false
+}
+~~~
+
+truth_required and truth_file_present are independent:
+| truth_required | truth_file_present | truth_status |
+| --- | --- | --- |
+| false | false/true | not_applicable |
+| true | true | passed or failed |
+| true | false | not_compared, blocking |
+
+not_applicable may only be derived from truth_required=false. It must never be derived from a missing truth file.
+
+Passed truth comparison requires all conditions:
+overlap_ratio >= min_overlap_ratio
+and exact_match_ratio >= pass_exact_match_ratio
+and max_abs_error <= tolerance
+
+If truth_required=true and coverage is below min_overlap_ratio, set truth_status=not_compared, never failed or passed. failed means enough overlap was compared but values did not match.
+
+truth_required must come from registry, not from AMR:
+- alpha101 / wq101 -> truth_required=true, criteria_source=registry:alpha101_v1
+- gtja191 -> truth_required=true, criteria_source=registry:gtja191_v1
+- exploratory -> truth_required=false, criteria_source=registry:exploratory_v1
+- unknown factor_family -> criteria_status=failed, criteria_error=unknown_factor_family, truth_required=true, no accept
+
+The sha256 mechanism detects accidental tampering such as an Agent overwriting criteria.json or a patch rerun carrying the wrong file. It is not an adversarial security boundary. For adversarial protection, store criteria_sha256 in a database table, append-only log, or read-only API that downstream Agents cannot write.
+
+## 1. Fixed input package
+The user submits exactly one main folder:
+
+factor_intake_YYYYMMDD_name/
+  code.py
+  experiment_data.csv
+  paper.pdf
+  research_report.pdf
+
+Required file list is fixed:
+- code.py
+- experiment_data.csv
+- paper.pdf
+- research_report.pdf
+
+File names are part of the contract. Do not guess alternative names. If a required file is missing, write a failed final_decision.json.
+
+Optional extra files may exist under optional/ or references/. They may be read only after the four required files are processed. Optional files must never replace the required files.
+
+## 2. Required file semantics
+| file_name | required | purpose | exact handling |
+| --- | --- | --- | --- |
+| code.py | yes | reference implementation | read first as code evidence; if empty or placeholder, record no_original_code=true |
+| experiment_data.csv | yes | local data or sample data | profile columns, dates, symbols, available raw fields, calculated factor values if any |
+| paper.pdf | yes | academic/method source | extract theory, variables, formulas, definitions, experiment design |
+| research_report.pdf | yes | broker/internal report | extract final factor expression, empirical assumptions, charts, tables, conclusions |
+
+## 3. experiment_data.csv accepted schema
+CSV requirements:
+- delimiter: comma
+- header: required
+- preferred encoding: UTF-8
+- GBK allowed only if auto-detected
+- one row should represent one symbol on one date if panel data is present
+
+Core columns:
+| column | type | required | meaning |
+| --- | --- | --- | --- |
+| date | string/date | recommended | trading date, normalize to YYYY-MM-DD |
+| symbol | string | recommended | security identifier, normalize to backend symbol format |
+| factor_value | number | optional | precomputed factor value; required only if CSV is submitted as calculated factor data |
+
+Recommended raw panel columns:
+| column | type | usage |
+| --- | --- | --- |
+| open | number | price feature |
+| high | number | price feature |
+| low | number | price feature |
+| close | number | price feature |
+| vwap | number | price feature |
+| volume | number | volume feature |
+| amount | number | turnover amount |
+| ret | number | return feature |
+| turnover | number | liquidity feature |
+| market_cap | number | size neutralization/control |
+| industry | string | industry neutralization/group |
+
+Column mapping rules:
+- Trim whitespace from headers.
+- Preserve original column names in data_profile.json.
+- Map common aliases only when unambiguous, e.g. ticker -> symbol, trade_date -> date, sec_code -> symbol.
+- If a required variable from the extracted formula is missing, try quant_api before failing.
+- Every alias mapping must be recorded in data_profile.json.
+- Every missing field filled from quant_api must be recorded in assumptions.json.
+
+## 4. Canonical request.json
+The backend should persist this request shape. If fields are missing, fill defaults exactly as below.
+
+~~~json
+{
+  "schema_version": "factor_intake_request_v1",
+  "task_type": "research_report_reproduction",
+  "skill_name": "research_report_reproduction_v1",
+  "package": {
+    "input_mode": "folder",
+    "package_name": "factor_intake_YYYYMMDD_name",
+    "required_files": [
+      "code.py",
+      "experiment_data.csv",
+      "paper.pdf",
+      "research_report.pdf"
+    ],
+    "files": [
+      {"name": "code.py", "relative_path": "factor_intake_YYYYMMDD_name/code.py", "type": "text/x-python"},
+      {"name": "experiment_data.csv", "relative_path": "factor_intake_YYYYMMDD_name/experiment_data.csv", "type": "text/csv"},
+      {"name": "paper.pdf", "relative_path": "factor_intake_YYYYMMDD_name/paper.pdf", "type": "application/pdf"},
+      {"name": "research_report.pdf", "relative_path": "factor_intake_YYYYMMDD_name/research_report.pdf", "type": "application/pdf"}
+    ]
+  },
+  "namespace": "quarantine",
+  "data_source": "quant_api",
+  "requires_quant_api": true,
+  "human_policy": {
+    "interactive_questions": false,
+    "human_only_final_approval": true
+  }
+}
+~~~
+
+## 5. Execution SOP
+Run these gates in order. After each gate, update status.json with gate, status, progress, message, updated_at.
+
+G0 intake_validation:
+- Verify request.json exists.
+- Verify task_type equals research_report_reproduction.
+- Verify skill_name equals research_report_reproduction_v1.
+- Verify all four required files exist with exact names.
+- Verify files can be opened.
+- Resolve the factor family from intake metadata, then freeze artifacts/criteria.json from registry. Do not let AMR choose truth_required, tolerance, min_overlap_ratio, or pass_exact_match_ratio.
+- Create artifacts/ if missing.
+- If any required file is missing, write final_decision.json with decision=reject and stop.
+
+G1 criteria_freeze:
+- Verify artifacts/criteria.json exists.
+- Verify criteria_locked_by equals G0.
+- Verify mutable_by_downstream_agent equals false.
+- Recompute sha256(criteria.json) and compare with status.json.criteria_sha256.
+- If mismatched, fail with error=criteria_tampered.
+- This check must live in the unified gate entrypoint, not as an optional per-gate helper.
+- If AMR thinks criteria are wrong, set needs_review. Do not edit criteria.
+
+G2 document_parse:
+- Extract text from paper.pdf into artifacts/parsed_paper.md.
+- Extract text from research_report.pdf into artifacts/parsed_research_report.md.
+- Preserve page references when possible.
+- Extract tables if possible and summarize them under a Tables section.
+- If OCR/table parsing fails, continue with available text and record parser limitations in assumptions.json.
+
+G3 factor_spec_extraction:
+- From parsed_paper.md and parsed_research_report.md, extract:
+  - factor name
+  - formula
+  - variables and meanings
+  - data frequency
+  - stock universe
+  - sample interval
+  - rebalance frequency
+  - preprocessing: winsorization, standardization, neutralization
+  - ranking direction: higher_is_better, lower_is_better, unknown
+  - return horizon and evaluation metric
+- Prefer research_report.pdf for final production formula.
+- Use paper.pdf for theoretical definition and variable meaning.
+- If formula differs between paper and report, record conflict in extracted_formula.json.source_conflicts and assumptions.json.
+
+G4 code_reconciliation:
+- Read code.py.
+- Identify exposed functions, formula logic, rolling windows, lags, ranking, neutralization, and data dependencies.
+- Compare code.py against extracted_formula.json.
+- If code.py and documents conflict:
+  - prefer explicit final formula in research_report.pdf
+  - use code.py to resolve implementation details only when report is ambiguous
+  - record every conflict and resolution in assumptions.json
+- If code.py is empty/placeholder, generate implementation from extracted formula.
+
+G5 data_binding:
+- Read experiment_data.csv.
+- Build data_profile.json with row count, column list, date range, symbol coverage, missing values.
+- Map formula variables to CSV columns or quant_api fields.
+- Pull missing standard market fields from quant_api if requires_quant_api=true.
+- Do not invent unavailable variables. If a variable cannot be sourced, mark reproduction_status=partial or failed.
+
+G6 reproduction_run:
+- Write artifacts/factor.py.
+- Write artifacts/test_factor.py.
+- The generated factor.py must expose a callable function named compute_factor(panel).
+- compute_factor(panel) must return a table indexed or columned by date and symbol with one factor_value column.
+- Run tests on sample data when possible.
+- Produce artifacts/factor_values.parquet.
+- If execution fails, save error traceback summary in assumptions.json and final_decision.json.
+- If AMR later outputs suggested_patch.diff, do not auto-apply it. A human must approve the patch, and the approved patch starts a new attempt with parent_task_id and patch_source=amr.
+
+G7 truth_comparison:
+- Read artifacts/criteria.json.
+- If truth_required=false, write truth_status=not_applicable.
+- If truth_required=true and truth_values.csv or registry truth source is missing, write truth_status=not_compared and block accept.
+- If truth_required=true and truth is available, compare reproduced factor values point by point.
+- Set passed only if overlap_ratio, exact_match_ratio, and tolerance all pass.
+- Coverage below min_overlap_ratio cannot pass.
+
+G8 library_comparison:
+- Compare reproduced factor values with existing factor library when overlap exists.
+- Compute Pearson correlation, Spearman correlation, overlap ratio, and top matches.
+- If library values are unavailable, write library_comparison.status=skipped with reason.
+
+G9 report_generation:
+- Write reproduction_report.md in Chinese.
+- Include source summary, extracted formula, assumptions, data mapping, reproduction result, evaluation, library comparison, and final recommendation.
+
+G10 final_approval:
+- Write final_decision.json.
+- Do not promote to official factor library.
+- Human must see raw evidence before AMR recommendation: source files, Hermes raw outputs, factor.py, test_factor.py, factor_values.parquet sample, evaluation.json, truth_comparison.json, and library_comparison.json. Show AMR recommendation last or collapsed.
+
+## 6. Fixed output directory
+All outputs must be written under:
+
+runtime/factor_lab/agent_tasks/<task_id>/
+  request.json
+  status.json
+  artifacts/
+    criteria.json
+    parsed_paper.md
+    parsed_research_report.md
+    normalized_report.md
+    extracted_formula.json
+    assumptions.json
+    data_profile.json
+    factor.py
+    test_factor.py
+    factor_values.parquet
+    truth_comparison.json
+    evaluation.json
+    library_comparison.json
+    reproduction_report.md
+    final_decision.json
+
+## 7. Artifact schemas
+artifacts/extracted_formula.json:
+~~~json
+{
+  "schema_version": "factor_formula_v1",
+  "factor_name": "string",
+  "formula": "string",
+  "formula_source": "research_report|paper|code|inferred",
+  "variables": [
+    {"name": "string", "meaning": "string", "source": "paper|research_report|code|inferred", "required": true}
+  ],
+  "frequency": "daily|weekly|monthly|unknown",
+  "universe": "string_or_unknown",
+  "sample_period": {"start": "YYYY-MM-DD-or-null", "end": "YYYY-MM-DD-or-null"},
+  "preprocessing": {
+    "winsorize": "string_or_null",
+    "standardize": "string_or_null",
+    "neutralize": "string_or_null"
+  },
+  "rebalance_rule": "string_or_unknown",
+  "ranking_direction": "higher_is_better|lower_is_better|unknown",
+  "return_horizon": "string_or_unknown",
+  "source_conflicts": []
+}
+~~~
+
+artifacts/assumptions.json:
+~~~json
+{
+  "schema_version": "factor_assumptions_v1",
+  "no_original_code": false,
+  "document_parse_limitations": [],
+  "formula_conflicts": [],
+  "code_conflicts": [],
+  "data_substitutions": [],
+  "missing_variables": [],
+  "implementation_assumptions": [],
+  "blocking_errors": []
+}
+~~~
+
+artifacts/data_profile.json:
+~~~json
+{
+  "schema_version": "factor_data_profile_v1",
+  "file_name": "experiment_data.csv",
+  "encoding": "utf-8|gbk|unknown",
+  "row_count": 0,
+  "columns_original": [],
+  "columns_normalized": [],
+  "column_mappings": [],
+  "date_range": {"start": "YYYY-MM-DD-or-null", "end": "YYYY-MM-DD-or-null"},
+  "symbol_count": 0,
+  "missing_summary": {},
+  "quant_api_fields_used": []
+}
+~~~
+
+artifacts/evaluation.json:
+~~~json
+{
+  "schema_version": "factor_evaluation_v1",
+  "status": "passed|skipped|failed",
+  "metrics": {
+    "ic_mean": null,
+    "rank_ic_mean": null,
+    "ic_std": null,
+    "ir": null,
+    "positive_ic_ratio": null,
+    "turnover": null
+  },
+  "sample_period": {"start": "YYYY-MM-DD-or-null", "end": "YYYY-MM-DD-or-null"},
+  "notes": []
+}
+~~~
+
+artifacts/library_comparison.json:
+~~~json
+{
+  "schema_version": "factor_library_comparison_v1",
+  "status": "passed|skipped|failed",
+  "top_matches": [
+    {
+      "factor_id": "string",
+      "factor_name": "string",
+      "pearson_corr": 0.0,
+      "spearman_corr": 0.0,
+      "overlap_ratio": 0.0,
+      "recommendation": "reuse_existing|create_new|needs_review"
+    }
+  ],
+  "notes": []
+}
+~~~
+
+artifacts/final_decision.json:
+~~~json
+{
+  "schema_version": "factor_final_decision_v1",
+  "decision": "accept|reject|needs_review",
+  "task_type": "research_report_reproduction",
+  "candidate_factor_name": "string",
+  "reproduction_status": "success|partial|failed",
+  "library_action": "reuse_existing|create_new|reject|needs_review",
+  "truth_status": "passed|failed|not_applicable|not_compared",
+  "truth_required": true,
+  "truth_blocking": true,
+  "matched_existing_factors": [],
+  "key_assumptions": [],
+  "blocking_errors": [],
+  "risk_notes": [],
+  "human_approval_required": true
+}
+~~~
+
+## 8. Decision rules
+Use decision=reject when required files are missing, documents cannot be read at all, no formula can be extracted, or the factor cannot be computed.
+Use decision=needs_review when formula is partial, assumptions are material, data is incomplete, evaluation is skipped, or library similarity is ambiguous.
+Use decision=accept only when the factor was computed, tests passed, evaluation/library comparison completed or reasonably skipped, and no blocking risk remains.
+
+## 9. Non-negotiable rules
+- Treat the four files as one research context.
+- Do not ask humans during intermediate steps.
+- Never write directly to the official factor library.
+- Always write final_decision.json.
+- All uncertainty must be recorded in JSON artifacts, not hidden in logs.
+- Do not invent missing market data or factor values.
+- Do not delete user input files.
+- Keep all generated outputs inside the task directory.`,
+    note: "四个文件合起来是一份研报复现输入包，Agent 只按这一份总 skill 处理。",
+  };
+}
+
+function renderCurrentSkillContract() {
+  const contract = currentSkillContract();
+  return `
+    <div class="intake-skill-card">
+      <div>
+        <strong>${escapeHtml(contract.title)}</strong>
+        <span>${escapeHtml(contract.shortDescription)}</span>
+      </div>
+      <button type="button" class="text-button" data-open-skill-contract>查看契约</button>
+    </div>
+  `;
+}
+
+function closeSkillContractModal() {
+  document.querySelector(".skill-contract-modal")?.remove();
+}
+
+function openSkillContractModal() {
+  const contract = currentSkillContract();
+  closeSkillContractModal();
+  const modal = document.createElement("div");
+  modal.className = "skill-contract-modal";
+  modal.innerHTML = `
+    <div class="file-preview-backdrop" data-skill-contract-close></div>
+    <section class="skill-contract-panel" role="dialog" aria-modal="true" aria-label="Agent Skill 契约">
+      <header>
+        <div>
+          <strong>${escapeHtml(contract.title)}</strong>
+          <span>${escapeHtml(contract.note)}</span>
+        </div>
+        <div class="skill-contract-actions">
+          <button type="button" class="text-button" data-skill-contract-copy>复制契约</button>
+          <button type="button" class="text-button" data-skill-contract-close>关闭</button>
+        </div>
+      </header>
+      <pre>${escapeHtml(contract.skillText)}</pre>
+    </section>
+  `;
+  document.body.appendChild(modal);
+  modal.querySelectorAll("[data-skill-contract-close]").forEach((button) => {
+    button.addEventListener("click", closeSkillContractModal);
+  });
+  modal.querySelector("[data-skill-contract-copy]")?.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(contract.skillText);
+      showToast("契约已复制");
+    } catch (error) {
+      showToast("复制失败，请手动选择文本");
+    }
+  });
+}
+
+function closeFilePreview() {
+  document.querySelector(".file-preview-modal")?.remove();
+  if (activePreviewUrl) {
+    URL.revokeObjectURL(activePreviewUrl);
+    activePreviewUrl = null;
+  }
+}
+
+function renderFilePreview(file, bodyHtml) {
+  closeFilePreview();
+  const modal = document.createElement("div");
+  modal.className = "file-preview-modal";
+  modal.innerHTML = `
+    <div class="file-preview-backdrop" data-file-preview-close></div>
+    <section class="file-preview-panel" role="dialog" aria-modal="true" aria-label="文件预览">
+      <header>
+        <div>
+          <strong>${escapeHtml(file.name)}</strong>
+          <span>${escapeHtml(file.type || "unknown")} · ${formatFileSize(file.size)}</span>
+        </div>
+        <button type="button" class="text-button" data-file-preview-close>关闭</button>
+      </header>
+      <div class="file-preview-body">${bodyHtml}</div>
+    </section>
+  `;
+  document.body.appendChild(modal);
+  modal.querySelectorAll("[data-file-preview-close]").forEach((button) => {
+    button.addEventListener("click", closeFilePreview);
+  });
+}
+
+function previewPendingFile(fileId) {
+  const file = pendingFileStore.get(fileId);
+  if (!file) {
+    showToast("文件已不可用，请重新选择");
+    return;
+  }
+  const type = file.type || "";
+  const lowerName = file.name.toLowerCase();
+  if (type.startsWith("image/")) {
+    activePreviewUrl = URL.createObjectURL(file);
+    renderFilePreview(file, `<img class="file-preview-image" src="${activePreviewUrl}" alt="${escapeHtml(file.name)}" />`);
+    return;
+  }
+  if (type === "application/pdf" || lowerName.endsWith(".pdf")) {
+    activePreviewUrl = URL.createObjectURL(file);
+    renderFilePreview(file, `<iframe class="file-preview-frame" src="${activePreviewUrl}" title="${escapeHtml(file.name)}"></iframe>`);
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = () => {
+    const text = String(reader.result || "");
+    renderFilePreview(file, `<pre>${escapeHtml(text.slice(0, 200000))}</pre>`);
+  };
+  reader.onerror = () => showToast("文件读取失败");
+  reader.readAsText(file);
+}
+
 async function submitAgentTask() {
   if (!ENABLE_AGENT_TASK_DEBUG) return;
-  const instruction = state.agentInstruction.trim();
-  if (!instruction) {
+  const files = state.pendingFiles;
+  if (!files.length) {
     showToast(AGENT_TASK_TEXT.emptyWarning);
     return;
   }
+  const taskType = inferTaskType(files);
+  const packageName = inferPackageName(files);
+  const skillName =
+    taskType === "truth_compare" ? "truth_compare_v1" : "research_reproduction_v1";
+  const requiredFiles =
+    taskType === "truth_compare"
+      ? ["factor_values.csv"]
+      : ["code.py", "experiment_data.csv", "paper.pdf", "research_report.pdf"];
 
   const payload = {
-    schema_version: "agent_task_request_v1",
-    instruction,
-    files: [],
+    schema_version: "factor_intake_request_v1",
+    task_type: taskType,
+    skill_name: skillName,
+    instruction:
+      (taskType === "truth_compare"
+        ? "用户上传因子值对照测试"
+        : "请按数据入口契约读取 code.py、experiment_data.csv、paper.pdf、research_report.pdf，自动复现研报因子，中间不要询问用户，最终给出入库建议。"),
+    package: {
+      input_mode: state.intakeInputMode,
+      package_name: packageName,
+      required_files: requiredFiles,
+      files,
+    },
+    files,
     namespace: "quarantine",
     data_source: "quant_api",
     requires_quant_api: true,
+    human_policy: {
+      interactive_questions: false,
+      human_only_final_approval: true,
+    },
     requested_at: new Date().toISOString(),
   };
 
@@ -2502,7 +4814,7 @@ async function submitAgentTask() {
   try {
     const result = await submitTaskRequest(payload);
     state.agentTasks.unshift({ ...payload, ...result });
-    state.pendingFiles = [];
+    clearPendingFiles();
     showToast(AGENT_TASK_TEXT.submittedToast);
   } catch (error) {
     showToast(`Submit failed: ${error.message}`);
@@ -2606,6 +4918,28 @@ async function openAgentTaskFolder(taskId) {
 function renderAgentTask() {
   if (!ENABLE_AGENT_TASK_DEBUG) return;
   if (!els.agentTaskView) return;
+  const inputProfile = currentInputProfileSummary();
+  const pendingFileRows = state.pendingFiles
+    .slice(0, 8)
+    .map(
+      (file) => `
+        <li class="agent-file-item">
+          <span>
+            <strong>${escapeHtml(file.relative_path || file.name)}</strong>
+            <small>${escapeHtml(file.type || "unknown")} · ${formatFileSize(file.size)}</small>
+          </span>
+          <span class="agent-file-actions">
+            <button type="button" class="text-button" data-pending-file-preview="${escapeHtml(file.file_id || "")}">查看</button>
+            <button type="button" class="text-button danger" data-pending-file-remove="${state.pendingFiles.indexOf(file)}">删除</button>
+          </span>
+        </li>
+      `,
+    )
+    .join("");
+  const pendingFileExtra =
+    state.pendingFiles.length > 8
+      ? `<li class="agent-file-item"><span><strong>还有 ${state.pendingFiles.length - 8} 个文件</strong><small>运行时会一并写入 request.json 文件清单</small></span></li>`
+      : "";
   const taskRows = state.agentTasks
     .map(
       (task) => `
@@ -2644,17 +4978,46 @@ function renderAgentTask() {
     </section>
 
     <section class="agent-task-card">
-      <label class="agent-task-field">
-        <span>${AGENT_TASK_TEXT.instructionLabel}</span>
-        <textarea id="agentInstructionInput" rows="5" placeholder="${AGENT_TASK_TEXT.instructionPlaceholder}">${escapeHtml(state.agentInstruction)}</textarea>
-      </label>
+      <div class="agent-task-pending-banner">
+        <strong>待接入 Supabase</strong>
+        <span>当前保留文件契约、Skill 弹窗和提交结构；GitHub Pages 阶段只读取 Supabase 展示表，不在浏览器内上传大文件、执行 Agent 或写正式因子库。</span>
+      </div>
+
+      <div class="agent-intake-mode">
+        <button type="button" class="${state.intakeTaskType === "research_reproduction" || state.intakeTaskType === "research_report_reproduction" ? "active" : ""}" data-intake-type="research_reproduction">研报自动复现</button>
+        <button type="button" class="${state.intakeTaskType === "truth_compare" || state.intakeTaskType === "factor_values_compare" ? "active" : ""}" data-intake-type="truth_compare">因子值对照</button>
+      </div>
+
+      ${renderCurrentSkillContract()}
+
+      <div class="agent-drop-zone" id="agentDropZone">
+        <input id="agentFolderInput" type="file" webkitdirectory directory multiple hidden />
+        <input id="agentFileInput" type="file" multiple hidden />
+        <div>
+          <strong>拖入或点击选择文件</strong>
+          <span>${escapeHtml(inputProfile.summary)}</span>
+        </div>
+        <div class="agent-drop-actions">
+          <button type="button" class="text-button" id="chooseFolderButton">选择文件夹</button>
+          <button type="button" class="text-button" id="chooseFilesButton">选择文件</button>
+        </div>
+      </div>
+
+      <ul class="agent-file-list">
+        ${
+          pendingFileRows ||
+          `<li class="agent-file-item"><span><strong>等待数据包</strong><small>${escapeHtml(inputProfile.tree.join(" / "))}</small></span></li>`
+        }
+        ${pendingFileExtra}
+      </ul>
 
       <div class="agent-task-foot">
         <span>${AGENT_TASK_TEXT.quarantineHint}</span>
+        <button type="button" class="text-button danger" id="clearPendingFilesButton" ${state.pendingFiles.length ? "" : "disabled"}>清空文件</button>
       </div>
 
       <div class="agent-task-foot">
-        <span>\u4f4e\u624b\u52a8\u6a21\u5f0f: \u4e0d\u62d6\u6587\u4ef6\u3001\u4e0d\u9009\u62e9\u6d41\u7a0b,\u7531\u540e\u7aef agent \u57fa\u4e8e Quant API \u81ea\u52a8\u5224\u65ad\u3002</span>
+        <span>契约：<code>factor_intake_request_v1</code> / <code>factor_intake_manifest_v1</code> / ${escapeHtml(FACTOR_INTAKE_CONTRACT_DOC)}</span>
         <button type="button" class="primary-action compact" id="agentSubmitButton" ${state.agentTaskSubmitting ? "disabled" : ""}>
           ${state.agentTaskSubmitting ? AGENT_TASK_TEXT.submitting : AGENT_TASK_TEXT.submit}
         </button>
@@ -2689,13 +5052,73 @@ function renderAgentTask() {
     </section>
   `;
 
-  const instructionInput = els.agentTaskView.querySelector("#agentInstructionInput");
   const submitButton = els.agentTaskView.querySelector("#agentSubmitButton");
+  const folderInput = els.agentTaskView.querySelector("#agentFolderInput");
+  const fileInput = els.agentTaskView.querySelector("#agentFileInput");
+  const dropZone = els.agentTaskView.querySelector("#agentDropZone");
 
-  instructionInput?.addEventListener("input", (event) => {
-    state.agentInstruction = event.target.value;
-  });
   submitButton?.addEventListener("click", submitAgentTask);
+  els.agentTaskView.querySelector("#clearPendingFilesButton")?.addEventListener("click", () => {
+    clearPendingFiles();
+    renderAgentTask();
+  });
+  els.agentTaskView.querySelectorAll("[data-pending-file-remove]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const index = Number(button.dataset.pendingFileRemove);
+      if (Number.isInteger(index)) removePendingFile(index);
+    });
+  });
+  els.agentTaskView.querySelectorAll("[data-pending-file-preview]").forEach((button) => {
+    button.addEventListener("click", () => previewPendingFile(button.dataset.pendingFilePreview));
+  });
+  els.agentTaskView.querySelector("[data-open-skill-contract]")?.addEventListener("click", openSkillContractModal);
+  els.agentTaskView.querySelectorAll("[data-intake-type]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.intakeTaskType = button.dataset.intakeType || "research_reproduction";
+      renderAgentTask();
+    });
+  });
+  els.agentTaskView.querySelector("#chooseFolderButton")?.addEventListener("click", () => {
+    state.intakeInputMode = "folder";
+    folderInput?.click();
+  });
+  els.agentTaskView.querySelector("#chooseFilesButton")?.addEventListener("click", () => {
+    state.intakeInputMode = "files";
+    fileInput?.click();
+  });
+  dropZone?.addEventListener("click", (event) => {
+    if (event.target.closest("button")) return;
+    state.intakeInputMode = "files";
+    fileInput?.click();
+  });
+  folderInput?.addEventListener("change", (event) => {
+    state.intakeInputMode = "folder";
+    pendingFileStore.clear();
+    state.pendingFiles = fileListFromInput(event.target.files);
+    state.intakeTaskType = inferTaskType(state.pendingFiles);
+    renderAgentTask();
+  });
+  fileInput?.addEventListener("change", (event) => {
+    state.intakeInputMode = "files";
+    pendingFileStore.clear();
+    state.pendingFiles = fileListFromInput(event.target.files);
+    state.intakeTaskType = inferTaskType(state.pendingFiles);
+    renderAgentTask();
+  });
+  dropZone?.addEventListener("dragover", (event) => {
+    event.preventDefault();
+    dropZone.classList.add("drag-over");
+  });
+  dropZone?.addEventListener("dragleave", () => dropZone.classList.remove("drag-over"));
+  dropZone?.addEventListener("drop", (event) => {
+    event.preventDefault();
+    dropZone.classList.remove("drag-over");
+    state.intakeInputMode = "files";
+    pendingFileStore.clear();
+    state.pendingFiles = fileListFromInput(event.dataTransfer?.files);
+    state.intakeTaskType = inferTaskType(state.pendingFiles);
+    renderAgentTask();
+  });
   els.agentTaskView.querySelectorAll("[data-agent-task-row]").forEach((row) => {
     row.addEventListener("dblclick", (event) => {
       if (event.target.closest("button") || event.target.closest("input")) return;
@@ -2704,6 +5127,9 @@ function renderAgentTask() {
   });
   els.agentTaskView.querySelectorAll("[data-agent-task-progress]").forEach((button) => {
     button.addEventListener("click", () => openAgentTaskProgress(button.dataset.agentTaskProgress));
+  });
+  els.agentTaskView.querySelectorAll("[data-agent-task-delete]").forEach((button) => {
+    button.addEventListener("click", () => deleteAgentTask(button.dataset.agentTaskDelete));
   });
   els.agentTaskView.querySelectorAll("[data-agent-task-select]").forEach((checkbox) => {
     checkbox.addEventListener("change", (event) => {
@@ -2753,6 +5179,7 @@ function connectionCard(title, statusText, statusClass, rows) {
 function renderSettings() {
   if (!els.settingsView) return;
   const localStatusText = state.localConnected ? "已连接" : "未连接";
+  const supabaseConfigured = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
   const quantStatusText = state.quantApiReachable
     ? state.quantApiConfigured
       ? "已配置"
@@ -2780,13 +5207,13 @@ function renderSettings() {
       ])}
       ${connectionCard("官方 Quant API", quantStatusText, quantStatusClass, [
         ["接入方式", "浏览器 → 本地 Flask → 官方 Quant API"],
-        ["Token 位置", "<code>FACTOR_LAB_QUANT_API_TOKEN</code> 或 <code>QUANT_API_TOKEN</code>"],
+        ["Credential 位置", "后端环境变量（浏览器端不携带）"],
         ["安全说明", "前端不接触 token，不直接访问公网数据接口"],
       ])}
-      ${connectionCard("云端信息库", "未同步", "warn", [
-        ["当前状态", "预留同步入口，后续用于团队共享已审核因子与报告"],
-        ["同步对象", "因子元信息、审核状态、报告摘要、可追溯 artifact"],
-        ["当前策略", "本地优先，云端只读展示待接入"],
+      ${connectionCard("Supabase 只读接入", supabaseConfigured ? "已配置" : "待接入", supabaseConfigured ? "ok" : "warn", [
+        ["读取方式", "GitHub Pages 浏览器端 → Supabase public dashboard 表"],
+        ["目标表", `<code>${escapeHtml(SUPABASE_FACTOR_TABLE)}</code>`],
+        ["安全边界", "anon key 只能 SELECT 公开脱敏表；上传、写入、执行和 promotion 不走 GitHub Pages"],
       ])}
       ${ENABLE_AGENT_TASK_DEBUG ? connectionCard("AI Agent 接入", "待接入", "warn", [
         ["外部 Agent", "Trae / Claude Code / Codex 等工具预留统一提交入口"],
@@ -2816,7 +5243,8 @@ function renderSettings() {
       <div class="settings-page-contracts">
         <span><code>factor_lab_view_v1</code>：因子库、因子详情、报告产物</span>
         <span><code>factor_lab_view_v1.1</code>：官方 Quant API 的 official 命名空间</span>
-        ${ENABLE_AGENT_TASK_DEBUG ? "<span><code>agent_task_request_v1</code>：AI 任务发起请求（要求文本 + 文件元信息，不含 skill；流程由后端 agent 判断）。当前为占位，后端接入后生效。</span>" : ""}
+        ${ENABLE_AGENT_TASK_DEBUG ? "<span><code>factor_intake_request_v1</code>：数据入口请求（研报复现包 / 外部因子值包 + 文件元信息；中间流程由后端 Agent 判断）。</span>" : ""}
+        ${ENABLE_AGENT_TASK_DEBUG ? "<span><code>factor_intake_manifest_v1</code>：数据入口文件夹 manifest，固定文件名见 docs/FACTOR_LAB_INTAKE_REPRODUCTION_CONTRACT.md。</span>" : ""}
         <span><code>strategy_monitor_view_v1</code>：策略看板与策略详情预留</span>
         <span><code>gate_monitor_view_v1</code>：任务监控与 Gate 可视化预留</span>
       </div>
@@ -2828,7 +5256,31 @@ function activeFactor() {
   return state.rawFactors.find((factor) => factor.id === state.activeFactorId);
 }
 
-function openDetail(factorId) {
+async function loadFactorDetailData(factorId) {
+  if (!factorId || state.factorDetailLoading[factorId]) return;
+  if (USE_SUPABASE_DASHBOARD || CLOUD_DEMO_MODE) {
+    return;
+  }
+  state.factorDetailLoading[factorId] = true;
+  try {
+    const detailUrl = `${API_BASE}/factor/${encodeURIComponent(factorId)}`;
+    const response = await fetchWithTimeout(withCacheBust(detailUrl));
+    if (response.ok) {
+      const data = await response.json();
+      console.log("[DEBUG] Factor detail API response:", data);
+      state.factorDetailData[factorId] = data;
+    }
+  } catch (error) {
+    console.error("获取因子详情失败:", error);
+  } finally {
+    state.factorDetailLoading[factorId] = false;
+    if (state.view === "detail" && state.activeFactorId === factorId) {
+      renderDetail();
+    }
+  }
+}
+
+async function openDetail(factorId) {
   const factor = state.rawFactors.find((item) => item.id === factorId);
   if (!canOpenFactor(factor)) return;
   state.view = "detail";
@@ -2836,6 +5288,7 @@ function openDetail(factorId) {
   state.detailTab = "analysis";
   window.location.hash = `factor=${encodeURIComponent(factorId)}`;
   renderDetail();
+  loadFactorDetailData(factorId);
 }
 
 function closeDetail() {
@@ -2863,7 +5316,7 @@ function showMainView(view) {
   renderView();
 }
 
-function syncDetailFromHash() {
+async function syncDetailFromHash() {
   if (window.location.hash === "#strategy-builder") {
     state.view = "strategy-builder";
     loadStrategyTemplates();
@@ -2874,8 +5327,7 @@ function syncDetailFromHash() {
   const factorId = decodeURIComponent(match[1]);
   const factor = state.rawFactors.find((item) => item.id === factorId);
   if (canOpenFactor(factor)) {
-    state.view = "detail";
-    state.activeFactorId = factorId;
+    await openDetail(factorId);
   }
 }
 
@@ -2901,7 +5353,7 @@ function renderView() {
             : taskMode
               ? "任务监控"
               : agentTaskMode
-                ? "AI 任务(调试)"
+                ? "数据入口"
                 : settingsMode
                   ? "设置"
                   : "因子库";
@@ -2933,6 +5385,7 @@ function renderView() {
   }
   if (taskMode) {
     renderTasks();
+    loadAgentTasks();
   }
   if (agentTaskMode) {
     renderAgentTask();
@@ -3124,6 +5577,16 @@ function renderResearchSettings(factor) {
 }
 
 function renderAnalysisPanel(factor) {
+  const detailData = (state.factorDetailData && state.factorDetailData[factor.id]) || {};
+  const hasIcSeries = Array.isArray(detailData.ic_time_series) && detailData.ic_time_series.length > 0;
+  const hasGroupReturns = detailData.group_returns && Object.values(detailData.group_returns).some((items) => Array.isArray(items) && items.length > 0);
+  const stratification = detailData.stratification || {};
+  const hasStratification = Array.isArray(stratification.equity) && stratification.equity.length > 0;
+  const hasRealData = hasIcSeries || hasGroupReturns || hasStratification;
+  if (!hasRealData && !state.factorDetailLoading[factor.id]) {
+    loadFactorDetailData(factor.id);
+  }
+  
   return `
     <section class="metric-grid">
       ${metricCard("复现状态", proofBadge(factor.proof_status)[0], proofValue(factor.proof_status), factor.proof_status === "passed" ? "good" : "warn")}
@@ -3172,41 +5635,460 @@ function renderAnalysisPanel(factor) {
       <article class="research-card stratification-card">
         <header>
           <strong>单因子分层研究 / Factor Stratification Analysis</strong>
-          <span id="stratDesc">区间：当前复现样本区间 · 频率：日频</span>
+          <span>区间：当前复现样本区间 · 频率：日频</span>
         </header>
-        <div id="stratChart" class="chart-placeholder chart-large"></div>
-        <div id="stratMethod" style="display:none;margin-top:8px;font-size:12px;color:#657184;line-height:1.5;"></div>
+        <div class="chart-placeholder chart-large ${hasRealData ? "chart-rendered" : ""}">
+          ${hasRealData ? renderStratificationChart(detailData) : `
+            <div class="placeholder-mark">◇</div>
+            <strong>待接入真实数据 API</strong>
+            <span>当前仅作为研究级分层回测占位，不代表可交易策略收益。</span>
+          `}
+        </div>
       </article>
       <div class="side-charts">
         <article class="research-card">
           <header>
             <strong>IC 时序 / IC Time Series</strong>
-            <span id="icRange">区间：当前复现样本区间</span>
+            <span>区间：当前复现样本区间</span>
           </header>
-          <div id="icChart" class="chart-placeholder"></div>
-          <div id="icNote" style="display:none;margin-top:4px;font-size:11px;color:#657184;"></div>
+          <div class="chart-placeholder ${hasRealData ? "chart-rendered" : ""}">
+            ${hasRealData ? renderIcTimeSeriesChartV2(detailData) : `<strong>等待时序数据</strong>`}
+          </div>
         </article>
         <article class="research-card">
           <header>
-            <strong>分层指标 / Stratification Metrics</strong>
-            <span id="stratMetricsRange">区间：当前复现样本区间</span>
+            <strong>分组表现 / Group Performance</strong>
+            <span>区间：当前复现样本区间</span>
           </header>
-          <div id="stratMetrics" class="chart-placeholder"></div>
+          <div class="chart-placeholder ${hasRealData ? "chart-rendered" : ""}">
+            ${hasRealData ? renderGroupPerformanceChartV2(detailData) : `<strong>等待分组收益数据</strong>`}
+          </div>
         </article>
       </div>
-    </section>
-
-    <section class="metric-grid" id="stratMetricCards">
-      ${metricCard("Rank IC", "—", "IC Mean")}
-      ${metricCard("IC IR", "—", "IC IR")}
-      ${metricCard("Long-Short 年化", "—", "Annual Return")}
-      ${metricCard("Long-Short Sharpe", "—", "Sharpe Ratio")}
     </section>
 
     <section class="info-strip">
       本页面展示的是因子复现产物与内部一致性状态，不代表因子具备投资有效性。正式策略收益需要在策略层结合真实行情、交易成本、滑点、调仓规则和风控约束后验证。
     </section>
   `;
+}
+
+function uniqueMonthTicks(dates, maxTicks) {
+  const months = [];
+  const seen = new Set();
+  dates.forEach((date, index) => {
+    const label = String(date || "").substring(0, 7);
+    if (!label || seen.has(label)) return;
+    seen.add(label);
+    months.push({ index, label });
+  });
+  if (months.length <= maxTicks) return months;
+  const selected = [];
+  const last = months.length - 1;
+  for (let i = 0; i < maxTicks; i++) {
+    const month = months[Math.round((i / Math.max(maxTicks - 1, 1)) * last)];
+    if (!selected.some((item) => item.label === month.label)) {
+      selected.push(month);
+    }
+  }
+  return selected.sort((a, b) => a.index - b.index);
+}
+
+function evenIndexTicks(labels, maxTicks) {
+  const count = labels.length;
+  if (!count) return [];
+  const tickCount = Math.min(maxTicks, count);
+  const ticks = [];
+  const seen = new Set();
+  for (let i = 0; i < tickCount; i++) {
+    const index = Math.round((i / Math.max(tickCount - 1, 1)) * (count - 1));
+    const label = String(labels[index] || "").substring(0, 7);
+    const key = `${index}:${label}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      ticks.push({ index, label });
+    }
+  }
+  return ticks;
+}
+
+function limitAxisTicks(ticks, maxTicks) {
+  if (ticks.length <= maxTicks) return ticks;
+  const selected = [];
+  const seen = new Set();
+  const last = ticks.length - 1;
+  for (let i = 0; i < maxTicks; i++) {
+    const value = ticks[Math.round((i / Math.max(maxTicks - 1, 1)) * last)];
+    const key = String(value);
+    if (!seen.has(key)) {
+      seen.add(key);
+      selected.push(value);
+    }
+  }
+  return selected;
+}
+
+function niceAxisRange(values, paddingRatio = 0.18) {
+  const finiteValues = values.filter((value) => Number.isFinite(value));
+  if (!finiteValues.length) {
+    return { min: -0.01, max: 0.01, ticks: [-0.01, 0, 0.01] };
+  }
+  let min = Math.min(...finiteValues, 0);
+  let max = Math.max(...finiteValues, 0);
+  if (min === max) {
+    const pad = Math.max(Math.abs(min) * 0.5, 0.001);
+    min -= pad;
+    max += pad;
+  }
+  const span = max - min;
+  const paddedMin = min - span * paddingRatio;
+  const paddedMax = max + span * paddingRatio;
+  const rawStep = (paddedMax - paddedMin) / 4;
+  const power = Math.pow(10, Math.floor(Math.log10(rawStep || 0.001)));
+  const normalized = rawStep / power;
+  const niceStep = (normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10) * power;
+  const axisMin = Math.floor(paddedMin / niceStep) * niceStep;
+  const axisMax = Math.ceil(paddedMax / niceStep) * niceStep;
+  const ticks = [];
+  for (let value = axisMin; value <= axisMax + niceStep * 0.5; value += niceStep) {
+    ticks.push(Number(value.toPrecision(12)));
+  }
+  return { min: axisMin, max: axisMax, ticks };
+}
+
+function formatCompactAxisTick(value, range) {
+  const absRange = Math.abs(range);
+  if (absRange < 0.01) return value.toFixed(4);
+  if (absRange < 0.1) return value.toFixed(3);
+  return value.toFixed(2);
+}
+
+function renderStratificationChart(detailData) {
+  const stratification = detailData.stratification || {};
+  const equity = stratification.equity || [];
+  const dates = stratification.dates || [];
+  
+  if (equity.length === 0) {
+    return `<text x="200" y="80" fill="#9ca3af" font-size="12" text-anchor="middle">暂无分层数据</text>`;
+  }
+  
+  const validEquity = equity.map(Number).filter(Number.isFinite);
+  const axis = niceAxisRange(validEquity, 0.08);
+  const minVal = axis.min;
+  const maxVal = axis.max;
+  const range = maxVal - minVal || 0.4;
+  const totalLength = equity.length;
+  const plot = { left: 68, top: 24, right: 884, bottom: 250 };
+  const width = plot.right - plot.left;
+  const height = plot.bottom - plot.top;
+  
+  let html = `<svg viewBox="0 0 920 310" class="research-svg">`;
+  
+  html += `<line x1="${plot.left}" y1="${plot.top}" x2="${plot.left}" y2="${plot.bottom}" stroke="#dbe4f0" stroke-width="1" />`;
+  html += `<line x1="${plot.left}" y1="${plot.bottom}" x2="${plot.right}" y2="${plot.bottom}" stroke="#dbe4f0" stroke-width="1" />`;
+  
+  limitAxisTicks(axis.ticks, 6).forEach((val) => {
+    const y = plot.bottom - ((val - minVal) / range) * height;
+    html += `<line x1="${plot.left}" y1="${y}" x2="${plot.right}" y2="${y}" stroke="#eef3f8" stroke-width="1" />`;
+    html += `<text x="${plot.left - 12}" y="${y + 4}" fill="#5f7189" font-size="12" text-anchor="end">${formatCompactAxisTick(val, range)}</text>`;
+  });
+  
+  const xTicks = evenIndexTicks(dates, 8);
+  xTicks.forEach((tick) => {
+    const x = plot.left + (tick.index / Math.max(totalLength - 1, 1)) * width;
+    html += `<line x1="${x}" y1="${plot.bottom}" x2="${x}" y2="${plot.bottom + 8}" stroke="#dbe4f0" stroke-width="1" />`;
+    html += `<text x="${x}" y="${plot.bottom + 28}" fill="#5f7189" font-size="12" text-anchor="middle">${tick.label}</text>`;
+  });
+  
+  const points = [];
+  for (let i = 0; i < equity.length; i++) {
+    const value = Number(equity[i]);
+    if (!Number.isFinite(value)) continue;
+    const x = plot.left + (i / Math.max(totalLength - 1, 1)) * width;
+    const y = plot.bottom - ((value - minVal) / range) * height;
+    points.push(`${x.toFixed(2)},${Math.max(plot.top, Math.min(plot.bottom, y)).toFixed(2)}`);
+  }
+  
+  if (points.length > 0) {
+    html += `<path d="M ${points.join(" L ")}" fill="none" stroke="#2454c5" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round" />`;
+  }
+  
+  html += `</svg>`;
+  
+  return html;
+}
+
+function renderIcTimeSeriesChart(detailData) {
+  const icSeries = detailData.ic_time_series || [];
+  
+  if (icSeries.length === 0) {
+    return `<text x="100" y="50" fill="#9ca3af" font-size="11" text-anchor="middle">暂无IC时序数据</text>`;
+  }
+  
+  const icValues = icSeries.map(d => d.ic);
+  const dates = icSeries.map(d => d.date);
+  
+  const minVal = Math.min(...icValues, -0.5);
+  const maxVal = Math.max(...icValues, 0.5);
+  const range = maxVal - minVal || 1;
+  const totalLength = icSeries.length;
+  
+  let html = `<svg viewBox="0 0 240 124" class="research-svg">`;
+  
+  html += `<line x1="34" y1="14" x2="34" y2="92" stroke="#e2e8f0" stroke-width="1" />`;
+  html += `<line x1="34" y1="92" x2="230" y2="92" stroke="#e2e8f0" stroke-width="1" />`;
+  html += `<text x="12" y="18" fill="#64748b" font-size="9">IC 值</text>`;
+  html += `<text x="34" y="8" fill="#64748b" font-size="9">日均收益</text>`;
+  
+  html += `<rect x="0" y="0" width="72" height="13" fill="#ffffff" />`;
+  html += `<text x="34" y="8" fill="#64748b" font-size="9">IC 值</text>`;
+  
+  const zeroY = 92 - ((0 - minVal) / range) * 78;
+  html += `<line x1="34" y1="${zeroY}" x2="230" y2="${zeroY}" stroke="#94a3b8" stroke-width="1" stroke-dasharray="3,3" />`;
+  
+  const yTicks = [-0.4, -0.2, 0, 0.2, 0.4];
+  yTicks.forEach((val) => {
+    const y = 92 - ((val - minVal) / range) * 78;
+    html += `<line x1="34" y1="${y}" x2="230" y2="${y}" stroke="#f1f5f9" stroke-width="1" />`;
+    html += `<text x="28" y="${y + 3}" fill="#64748b" font-size="9" text-anchor="end">${val.toFixed(1)}</text>`;
+  });
+  
+  const maxBars = 36;
+  const displayStep = Math.max(1, Math.ceil(totalLength / maxBars));
+  const barWidth = Math.max(3, Math.min(7, 176 / Math.ceil(totalLength / displayStep) - 2));
+  for (let i = 0; i < icSeries.length; i += displayStep) {
+    const x = 34 + (i / Math.max(totalLength - 1, 1)) * 196;
+    const ic = icValues[i];
+    const y = 92 - ((ic - minVal) / range) * 78;
+    const height = Math.abs(y - zeroY);
+    const isPositive = ic >= 0;
+    
+    html += `<rect x="${x - barWidth/2}" y="${isPositive ? y : zeroY}" width="${barWidth}" height="${Math.max(1, height)}" fill="${isPositive ? '#16a34a' : '#dc2626'}" opacity="0.52" />`;
+  }
+
+  const numXTicks = Math.min(5, dates.length);
+  const dateStep = Math.max(1, Math.ceil(dates.length / numXTicks));
+  for (let i = 0; i < dates.length; i += dateStep) {
+    const x = 34 + (i / Math.max(totalLength - 1, 1)) * 196;
+    html += `<line x1="${x}" y1="92" x2="${x}" y2="97" stroke="#e2e8f0" stroke-width="1" />`;
+    html += `<text x="${x}" y="114" fill="#64748b" font-size="9" text-anchor="middle">${String(dates[i] || "").substring(0, 7)}</text>`;
+  }
+  
+  html += `</svg>`;
+  
+  return html;
+}
+
+function renderGroupPerformanceChart(detailData) {
+  const groupReturns = detailData.group_returns || {};
+  const groups = Object.keys(groupReturns)
+    .filter(k => k !== "long_short")
+    .sort((a, b) => Number(a) - Number(b));
+  
+  if (groups.length === 0) {
+    return `<text x="100" y="50" fill="#9ca3af" font-size="11" text-anchor="middle">暂无分组数据</text>`;
+  }
+  
+  const groupAverages = groups
+    .map((group) => {
+      const values = (groupReturns[group] || []).map(d => Number(d.return)).filter(Number.isFinite);
+      if (!values.length) return null;
+      return {
+        group,
+        value: values.reduce((sum, value) => sum + value, 0) / values.length,
+      };
+    })
+    .filter(Boolean);
+  let lsAverage = null;
+  if (groupReturns["long_short"]) {
+    const values = groupReturns["long_short"].map(d => Number(d.return)).filter(Number.isFinite);
+    if (values.length) {
+      lsAverage = values.reduce((sum, value) => sum + value, 0) / values.length;
+    }
+  }
+  const axis = niceAxisRange([
+    ...groupAverages.map(item => item.value),
+    ...(Number.isFinite(lsAverage) ? [lsAverage] : []),
+  ]);
+  const minVal = axis.min;
+  const maxVal = axis.max;
+  const range = maxVal - minVal || 0.02;
+  
+  const groupColors = ["#dbeafe", "#bfdbfe", "#93c5fd", "#60a5fa", "#3b82f6", "#2563eb", "#1d4ed8", "#1e40af", "#1e3a8a", "#172554"];
+  
+  let html = `<svg viewBox="0 0 320 150" class="research-svg">`;
+  
+  html += `<line x1="44" y1="18" x2="44" y2="112" stroke="#e2e8f0" stroke-width="1" />`;
+  html += `<line x1="44" y1="112" x2="306" y2="112" stroke="#e2e8f0" stroke-width="1" />`;
+  html += `<text x="12" y="18" fill="#64748b" font-size="9">日均收益</text>`;
+  html += `<rect x="0" y="0" width="90" height="24" fill="#ffffff" />`;
+  html += `<text x="34" y="8" fill="#64748b" font-size="9">日均收益</text>`;
+  
+  const zeroY = 112 - ((0 - minVal) / range) * 94;
+  html += `<line x1="44" y1="${zeroY}" x2="306" y2="${zeroY}" stroke="#cbd5e1" stroke-width="1" stroke-dasharray="3,3" />`;
+  
+  axis.ticks.forEach((val) => {
+    const y = 112 - ((val - minVal) / range) * 94;
+    html += `<line x1="44" y1="${y}" x2="306" y2="${y}" stroke="#f1f5f9" stroke-width="1" />`;
+    html += `<text x="38" y="${y + 3}" fill="#64748b" font-size="8" text-anchor="end">${formatCompactAxisTick(val, range)}</text>`;
+  });
+  
+  const groupWidth = 240 / Math.max(groupAverages.length, 1);
+  groupAverages.forEach((item, idx) => {
+    const group = item.group;
+    const avgReturn = item.value;
+    const x = 56 + idx * groupWidth;
+    const y = 112 - ((avgReturn - minVal) / range) * 94;
+    const height = Math.abs(y - zeroY);
+    const isPositive = avgReturn >= 0;
+    const label = Number.isFinite(Number(group)) ? `G${Number(group).toFixed(0)}` : `G${group}`;
+    
+    html += `<rect x="${x - 5}" y="${isPositive ? y : zeroY}" width="10" height="${Math.max(1, height)}" fill="${groupColors[idx % groupColors.length]}" />`;
+    html += `<text x="${x}" y="134" fill="#64748b" font-size="8" text-anchor="middle">${label}</text>`;
+  });
+  
+  if (Number.isFinite(lsAverage)) {
+    const x = 56 + groupAverages.length * groupWidth + 8;
+    const y = 112 - ((lsAverage - minVal) / range) * 94;
+    const height = Math.abs(y - zeroY);
+    html += `<rect x="${x - 5}" y="${lsAverage >= 0 ? y : zeroY}" width="10" height="${Math.max(1, height)}" fill="#f97316" />`;
+    html += `<text x="${x}" y="134" fill="#64748b" font-size="8" text-anchor="middle">LS</text>`;
+  }
+  
+  html += `</svg>`;
+  
+  return html;
+}
+
+function renderIcTimeSeriesChartV2(detailData) {
+  const icSeries = detailData.ic_time_series || [];
+  if (!icSeries.length) {
+    return `<svg viewBox="0 0 452 220" class="research-svg"><text x="226" y="112" fill="#9ca3af" font-size="12" text-anchor="middle">暂无 IC 时序数据</text></svg>`;
+  }
+
+  const icValues = icSeries.map((item) => Number(item.ic)).filter(Number.isFinite);
+  const dates = icSeries.map((item) => item.date);
+  const axis = niceAxisRange(icValues, 0.12);
+  const minVal = axis.min;
+  const maxVal = axis.max;
+  const range = maxVal - minVal || 1;
+  const totalLength = icSeries.length;
+  const plot = { left: 58, top: 28, right: 424, bottom: 158 };
+  const width = plot.right - plot.left;
+  const height = plot.bottom - plot.top;
+  const zeroY = Math.max(plot.top, Math.min(plot.bottom, plot.bottom - ((0 - minVal) / range) * height));
+  const displayStep = Math.max(1, Math.ceil(totalLength / 56));
+  const visibleBars = Math.ceil(totalLength / displayStep);
+  const barWidth = Math.max(3.5, Math.min(8, width / Math.max(visibleBars, 1) - 2));
+
+  let html = `<svg viewBox="0 0 452 220" class="research-svg">`;
+  html += `<line x1="${plot.left}" y1="${plot.top}" x2="${plot.left}" y2="${plot.bottom}" stroke="#dbe4f0" stroke-width="1" />`;
+  html += `<line x1="${plot.left}" y1="${plot.bottom}" x2="${plot.right}" y2="${plot.bottom}" stroke="#dbe4f0" stroke-width="1" />`;
+  html += `<text x="${plot.left}" y="16" fill="#5f7189" font-size="12" font-weight="700">IC 值</text>`;
+
+  limitAxisTicks(axis.ticks, 6).forEach((val) => {
+    const y = plot.bottom - ((val - minVal) / range) * height;
+    html += `<line x1="${plot.left}" y1="${y}" x2="${plot.right}" y2="${y}" stroke="#eef3f8" stroke-width="1" />`;
+    html += `<text x="${plot.left - 10}" y="${y + 4}" fill="#5f7189" font-size="11" text-anchor="end">${formatCompactAxisTick(val, range)}</text>`;
+  });
+
+  html += `<line x1="${plot.left}" y1="${zeroY}" x2="${plot.right}" y2="${zeroY}" stroke="#9aa8ba" stroke-width="1" stroke-dasharray="4,4" />`;
+
+  for (let i = 0; i < icSeries.length; i += displayStep) {
+    const ic = Number(icSeries[i]?.ic);
+    if (!Number.isFinite(ic)) continue;
+    const x = plot.left + (i / Math.max(totalLength - 1, 1)) * width;
+    const y = plot.bottom - ((ic - minVal) / range) * height;
+    const clampedY = Math.max(plot.top, Math.min(plot.bottom, y));
+    const barHeight = Math.max(1.5, Math.abs(clampedY - zeroY));
+    const isPositive = ic >= 0;
+    html += `<rect x="${(x - barWidth / 2).toFixed(2)}" y="${(isPositive ? clampedY : zeroY).toFixed(2)}" width="${barWidth.toFixed(2)}" height="${barHeight.toFixed(2)}" rx="1.4" fill="${isPositive ? "#23a66f" : "#e05252"}" opacity="0.66" />`;
+  }
+
+  evenIndexTicks(dates, 5).forEach((tick) => {
+    const x = plot.left + (tick.index / Math.max(totalLength - 1, 1)) * width;
+    html += `<line x1="${x}" y1="${plot.bottom}" x2="${x}" y2="${plot.bottom + 8}" stroke="#dbe4f0" stroke-width="1" />`;
+    html += `<text x="${x}" y="${plot.bottom + 29}" fill="#5f7189" font-size="12" text-anchor="middle">${tick.label}</text>`;
+  });
+
+  html += `</svg>`;
+  return html;
+}
+
+function renderGroupPerformanceChartV2(detailData) {
+  const groupReturns = detailData.group_returns || {};
+  const groups = Object.keys(groupReturns)
+    .filter((key) => key !== "long_short")
+    .sort((a, b) => Number(a) - Number(b));
+
+  if (!groups.length) {
+    return `<svg viewBox="0 0 452 220" class="research-svg"><text x="226" y="112" fill="#9ca3af" font-size="12" text-anchor="middle">暂无分组收益数据</text></svg>`;
+  }
+
+  const groupAverages = groups
+    .map((group) => {
+      const values = (groupReturns[group] || []).map((item) => Number(item.return)).filter(Number.isFinite);
+      if (!values.length) return null;
+      return {
+        group,
+        value: values.reduce((sum, value) => sum + value, 0) / values.length,
+      };
+    })
+    .filter(Boolean);
+
+  let lsAverage = null;
+  if (groupReturns.long_short) {
+    const values = groupReturns.long_short.map((item) => Number(item.return)).filter(Number.isFinite);
+    if (values.length) {
+      lsAverage = values.reduce((sum, value) => sum + value, 0) / values.length;
+    }
+  }
+
+  const barItems = [
+    ...groupAverages.map((item) => ({
+      ...item,
+      label: Number.isFinite(Number(item.group)) ? `G${Number(item.group).toFixed(0)}` : `G${item.group}`,
+    })),
+    ...(Number.isFinite(lsAverage) ? [{ group: "long_short", label: "LS", value: lsAverage, longShort: true }] : []),
+  ];
+  const axis = niceAxisRange(barItems.map((item) => item.value), 0.18);
+  const minVal = axis.min;
+  const maxVal = axis.max;
+  const range = maxVal - minVal || 0.02;
+  const plot = { left: 58, top: 28, right: 424, bottom: 158 };
+  const width = plot.right - plot.left;
+  const height = plot.bottom - plot.top;
+  const zeroY = Math.max(plot.top, Math.min(plot.bottom, plot.bottom - ((0 - minVal) / range) * height));
+  const slotWidth = width / Math.max(barItems.length, 1);
+  const barWidth = Math.max(10, Math.min(22, slotWidth * 0.52));
+  const palette = ["#d8e9ff", "#bad7ff", "#93c0ff", "#67a1f2", "#3f7ddd", "#245fc5", "#1f4ca3", "#1b3d86", "#18356e", "#112a58"];
+
+  let html = `<svg viewBox="0 0 452 220" class="research-svg">`;
+  html += `<line x1="${plot.left}" y1="${plot.top}" x2="${plot.left}" y2="${plot.bottom}" stroke="#dbe4f0" stroke-width="1" />`;
+  html += `<line x1="${plot.left}" y1="${plot.bottom}" x2="${plot.right}" y2="${plot.bottom}" stroke="#dbe4f0" stroke-width="1" />`;
+  html += `<text x="${plot.left}" y="16" fill="#5f7189" font-size="12" font-weight="700">日均收益</text>`;
+
+  limitAxisTicks(axis.ticks, 6).forEach((val) => {
+    const y = plot.bottom - ((val - minVal) / range) * height;
+    html += `<line x1="${plot.left}" y1="${y}" x2="${plot.right}" y2="${y}" stroke="#eef3f8" stroke-width="1" />`;
+    html += `<text x="${plot.left - 10}" y="${y + 4}" fill="#5f7189" font-size="11" text-anchor="end">${formatCompactAxisTick(val, range)}</text>`;
+  });
+
+  html += `<line x1="${plot.left}" y1="${zeroY}" x2="${plot.right}" y2="${zeroY}" stroke="#9aa8ba" stroke-width="1" stroke-dasharray="4,4" />`;
+
+  barItems.forEach((item, index) => {
+    const x = plot.left + slotWidth * index + slotWidth / 2;
+    const y = plot.bottom - ((item.value - minVal) / range) * height;
+    const clampedY = Math.max(plot.top, Math.min(plot.bottom, y));
+    const barHeight = Math.max(1.5, Math.abs(clampedY - zeroY));
+    const isPositive = item.value >= 0;
+    const color = item.longShort ? "#f97316" : palette[index % palette.length];
+    html += `<rect x="${(x - barWidth / 2).toFixed(2)}" y="${(isPositive ? clampedY : zeroY).toFixed(2)}" width="${barWidth.toFixed(2)}" height="${barHeight.toFixed(2)}" rx="2" fill="${color}" />`;
+    html += `<text x="${x.toFixed(2)}" y="${plot.bottom + 27}" fill="#5f7189" font-size="11" text-anchor="middle">${item.label}</text>`;
+  });
+
+  html += `</svg>`;
+  return html;
 }
 
 function metricCard(label, value, helper, tone = "") {
@@ -3230,7 +6112,7 @@ function renderArtifactsPanel(factor) {
     ["proof.json", "单因子复现证明", "文件已生成", "badge-green", proofResultText, proofResultTone, "proof"],
     ["evaluation.json", "任务汇总评估", "文件已生成", "badge-green", resultText, resultTone, "evaluation_json"],
     ["proof_report.md", "Markdown 研究报告", "文件已生成", "badge-green", "报告已生成", "badge-gray", "research_report_markdown"],
-    ["factor_frame.csv", "因子值数据表", "文件已生成", "badge-green", "数据已生成", "badge-gray", "factor_frame"],
+    ["factor values", "因子值数据表", "文件已生成", "badge-green", "数据已生成", "badge-gray", "factor_frame"],
   ];
   return `
     <section class="summary-card">
@@ -3333,6 +6215,8 @@ function bindEvents() {
     state.category = "全部";
     state.selectedCategories = new Set(JQ_FACTOR_CATEGORIES);
     state.library = "全部";
+    state.market = firstAvailableMarket(marketCounts());
+    state.monitorMarket = state.market;
     state.proof = "all";
     state.truth = "all";
     state.reuse = "all";
@@ -3406,10 +6290,62 @@ function countLibraries() {
   return counts;
 }
 
-bindEvents();
-loadData();
-startAutoRefresh();
-bindResearchEvents();
+let appStarted = false;
+
+function isAuthenticated() {
+  return window.sessionStorage.getItem(ACCESS_SESSION_KEY) === "1";
+}
+
+function showApp() {
+  document.body.classList.remove("auth-locked");
+  els.loginPassword && (els.loginPassword.value = "");
+  if (els.loginError) els.loginError.textContent = "";
+}
+
+function showLogin(message = "") {
+  document.body.classList.add("auth-locked");
+  if (els.loginError) els.loginError.textContent = message;
+  window.setTimeout(() => els.loginPassword?.focus(), 50);
+}
+
+function startApp() {
+  if (appStarted) return;
+  appStarted = true;
+  bindEvents();
+  loadData();
+  startAutoRefresh();
+  bindResearchEvents();
+}
+
+function handleLoginSubmit(event) {
+  event.preventDefault();
+  const password = String(els.loginPassword?.value || "");
+  if (password === ACCESS_PASSWORD) {
+    window.sessionStorage.setItem(ACCESS_SESSION_KEY, "1");
+    showApp();
+    startApp();
+    return;
+  }
+  showLogin("密码不正确，请重试");
+}
+
+function logout() {
+  window.sessionStorage.removeItem(ACCESS_SESSION_KEY);
+  showLogin("已退出登录");
+}
+
+function initAuth() {
+  els.loginForm?.addEventListener("submit", handleLoginSubmit);
+  els.logoutButton?.addEventListener("click", logout);
+  if (isAuthenticated()) {
+    showApp();
+    startApp();
+  } else {
+    showLogin();
+  }
+}
+
+initAuth();
 
 function bindResearchEvents() {
   const runBtn = document.getElementById("runResearchButton");
@@ -3515,269 +6451,3 @@ function clearResearchResults() {
   document.getElementById("researchResultsBody").innerHTML = "";
   document.getElementById("researchJobId").textContent = "";
 }
-
-// ============================================================
-// Factor Stratification Analysis
-// ============================================================
-
-function _factorSetForLibrary(library) { var m={"Alpha101":"alpha101","GTJA191":"gtja191","WQ101":"alpha101","Alpha191":"gtja191"}; return m[library]||"alpha101"; }
-
-async function loadStratificationData(factor) {
-  var ce=document.getElementById("stratChart"); if(!ce)return;
-  var ie=document.getElementById("icChart"),me=document.getElementById("stratMetrics"),ca=document.getElementById("stratMetricCards"),re=document.getElementById("stratMetricsRange"),de=document.getElementById("stratDesc"),me2=document.getElementById("stratMethod"),ne=document.getElementById("icNote");
-  var fs=_factorSetForLibrary(factor.library);
-  try{
-    var fn=factor.factor_name; if(fn.indexOf('_alpha_')>-1||fn.indexOf('_beta_')>-1){var parts=fn.split('_');fn=parts[parts.length-2]+parts[parts.length-1].replace(/^0+/,'');} var r=await fetch(API_BASE+"/stratification",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({factor_name:fn,factor_set:fs,n_groups:10,n_dates:120,n_codes:50,data_source:"demo"})});
-    if(!r.ok)throw new Error("HTTP "+r.status);
-    var d=await r.json(); if(d.error)throw new Error(d.error);
-    if(de&&d.description){var dd=d.description;de.textContent=dd.universe+" · "+dd.rebalance_frequency+" · "+dd.holding_period+"持有 · "+dd.grouping_method;}
-    if(me2&&d.description){me2.style.display="block";var d2=d.description;me2.innerHTML="<b>分组说明：</b>Group"+d.n_groups+" = "+(d2.group_labels[String(d.n_groups)]||"")+"，Group1 = "+(d2.group_labels["1"]||"")+"。<br><b>收益计算：</b>每日调仓，T+"+d.description.holding_period.replace("T+","")+"日收益，等权配置，不计交易成本。";}
-    _renderNavCanvas(ce,d); _renderICCanvas(ie,d); _renderGroupMetrics(me,d);
-        if(re)re.textContent="截面数："+d.dataset.n_cross_sections;
-        if (ne) { ne.style.display = 'block'; ne.textContent = 'IC = 每日因子值与T+1收益的横截面相关系数，反映因子预测下一期收益的能力。纵轴：Rank IC 值，0 线以上表示正向预测。'; }
-        if(ca){var m2=d.metrics||{},ls2=d.long_short;ca.innerHTML=[metricCard("Rank IC",formatNumber(m2.rank_ic_mean,4),"IC Mean"),metricCard("IC IR",formatNumber(m2.rank_ic_ir,4),"IC IR"),metricCard("Long-Short 年化",formatNumber(m2.long_short_annual_return,4),"Annual Return"),metricCard("Long-Short Sharpe",formatNumber(m2.long_short_sharpe,2),"t="+formatNumber(ls2.t_stat,2)+" 胜率="+formatRatio(ls2.win_rate))].join("");}
-        // Cache for DOM reconstruction
-        d._key = factor.factor_name + "|" + (factor.library || "");
-        _stratLastData = d;
-  }catch(e){if(ce)ce.innerHTML='<div class="chart-placeholder"><strong>分层数据加载失败</strong><span>'+e.message+'</span></div>';}
-}
-
-function _renderNavCanvas(container, data) {
-  // ECharts-powered interactive chart
-  var nav = data.group_nav;
-  if (!nav || !nav.dates || !nav.dates.length) { container.innerHTML = '<strong>暂无分层研究数据</strong>'; return; }
-  var cum = nav.cumulative;
-  var groups = Object.keys(cum).sort(function(a, b) { return parseInt(a) - parseInt(b); });
-  if (!groups.length) { container.innerHTML = '<strong>暂无分层研究数据</strong>'; return; }
-
-  container.innerHTML = '';
-    container.classList.remove('chart-placeholder');
-    container.style.cssText = 'height:420px;background:#f7f9ff;';
-
-    // Reuse or create ECharts instance
-    var chart = container._echart;
-    if (!chart) {
-      chart = echarts.init(container);
-      container._echart = chart;
-    }
-
-    var dates = nav.dates;
-    var colors = ['#d93025','#e76f00','#e7a600','#13a15a','#0b7a4a','#073d61','#5b2c8e','#8e2c5b','#2c5b8e','#2c8e5b'];
-
-  // Build series: groups + Long-Short
-  var series = [];
-  groups.forEach(function(g, gi) {
-    series.push({
-      name: 'G' + g + '（' + (gi === 0 ? '低因子组' : gi === groups.length - 1 ? '高因子组' : '') + '）',
-      type: 'line', data: cum[g], smooth: false, symbol: 'none',
-      lineStyle: { color: colors[gi % 10], width: 1.5 },
-    });
-  });
-
-  // Long-Short curve
-  var lsCum = []; var lsRun = 1.0;
-  for (var i = 0; i < data.daily_series.length; i++) {
-    var lsv = data.daily_series[i].long_short;
-    if (lsv != null) lsRun *= (1.0 + lsv);
-    lsCum.push(lsRun);
-  }
-  if (lsCum.length > 1) {
-    series.push({
-      name: 'Long-Short（多空）', type: 'line', data: lsCum, symbol: 'none',
-      lineStyle: { color: '#111c2d', width: 2.5, type: 'dashed' },
-    });
-  }
-
-  var option = {
-    tooltip: {
-      trigger: 'axis',
-      axisPointer: { type: 'cross', crossStyle: { color: '#999' } },
-      valueFormatter: function(v) { return v != null ? v.toFixed(3) : '-'; },
-      backgroundColor: 'rgba(255,255,255,0.95)',
-      borderColor: '#d7dee9',
-      textStyle: { color: '#111c2d', fontSize: 12 },
-    },
-    legend: {
-      bottom: 0, left: 'center', type: 'scroll',
-      textStyle: { fontSize: 11, color: '#657184' },
-      itemWidth: 14, itemHeight: 8,
-    },
-    grid: { top: 12, right: 16, bottom: 44, left: 50 },
-    xAxis: { type: 'category', data: dates, axisLine: { lineStyle: { color: '#b8c2d1' } },
-          axisLabel: { show: true, fontSize: 9, color: '#657184', interval: Math.max(Math.floor(dates.length / 8), 1),
-            formatter: function(v) { return v ? v.slice(5) : ''; } } },
-        yAxis: {
-          type: 'value', name: '累计净值', nameTextStyle: { color: '#657184', fontSize: 10 },
-          axisLabel: { formatter: function(v) { return v.toFixed(2); }, fontSize: 9 },
-          splitLine: { lineStyle: { color: '#d7dee9', type: 'dashed' } },
-          scale: true,
-        },
-        series: series,
-      };
-
-      chart.setOption(option, true);
-      chart.resize();
-
-      // Y-axis legend below chart
-      var noteEl = document.getElementById('stratMethod');
-      if (noteEl) {
-        noteEl.style.display = 'block';
-        if (noteEl.innerHTML.indexOf('纵轴') === -1) {
-          noteEl.innerHTML += '<br><span style="color:#657184">纵轴：累计净值（起始 1.0，表示 T+1 日收益复利累计）</span>';
-        }
-      }
-}
-
-function _renderICCanvas(container, data) {
-  var ds = data.daily_series;
-  if (!ds || !ds.length) { container.innerHTML = '<strong>暂无 IC 时序数据</strong>'; return; }
-
-  container.innerHTML = '';
-    container.classList.remove('chart-placeholder');
-    container.style.cssText = 'height:220px;background:#f7f9ff;';
-
-    var chart = container._echart;
-    if (!chart) { chart = echarts.init(container); container._echart = chart; }
-
-  var dates = ds.map(function(d) { return d.date; });
-  var icVals = ds.map(function(d) { return d.rank_ic; });
-  var icMean = data.ic_summary.rank_ic_mean;
-
-  chart.setOption({
-    tooltip: {
-      trigger: 'axis',
-      axisPointer: { type: 'cross' },
-      valueFormatter: function(v) { return v != null ? v.toFixed(4) : '-'; },
-      backgroundColor: 'rgba(255,255,255,0.95)',
-      borderColor: '#d7dee9',
-    },
-    grid: { top: 8, right: 10, bottom: 24, left: 40 },
-    xAxis: { type: 'category', data: dates,
-      axisLabel: { show: true, fontSize: 8, color: '#657184', interval: Math.max(Math.floor(dates.length / 6), 1),
-        formatter: function(v) { return v ? v.slice(5) : ''; } },
-      axisLine: { lineStyle: { color: '#b8c2d1' } } },
-    yAxis: {
-      type: 'value', name: 'Rank IC', nameTextStyle: { color: '#657184', fontSize: 9 },
-      axisLabel: { formatter: function(v) { return v.toFixed(2); }, fontSize: 9 },
-      splitLine: { lineStyle: { color: '#d7dee9', type: 'dashed' } },
-    },
-    series: [
-      {
-        name: 'Rank IC', type: 'line', data: icVals, symbol: 'none',
-        lineStyle: { color: '#073d61', width: 1 },
-        markLine: {
-          silent: true, symbol: 'none',
-          data: [{ yAxis: icMean, name: 'mean=' + icMean.toFixed(4),
-            lineStyle: { color: '#d93025', type: 'dashed', width: 0.8 },
-            label: { formatter: 'mean={c}', fontSize: 9, color: '#d93025' } }],
-        },
-      },
-    ],
-  }, true);
-  chart.resize();
-}
-
-function _renderGroupMetrics(container,data){
-  var gr=data.group_returns,gs=Object.keys(gr).sort(function(a,b){return parseInt(a)-parseInt(b);});
-  if(!gs.length){container.innerHTML='<strong>暂无分组数据</strong>';return;}
-  var h='<table style="width:100%;font-size:11px;border-collapse:collapse;"><thead><tr><th>分组</th><th>年化收益</th><th>t值</th><th>胜率</th></tr></thead><tbody>';
-  gs.forEach(function(g){var s=gr[g],a=s.annual_return!=null?formatNumber(s.annual_return,4):formatNumber(s.mean,6),c=s.annual_return>0?'#13a15a':'#d93025';h+='<tr><td><b>G'+g+'</b></td><td style="color:'+c+'">'+a+'</td><td>'+formatNumber(s.t_stat,2)+'</td><td>'+formatRatio(s.win_rate)+'</td></tr>';});
-  h+='</tbody></table>';container.innerHTML=h;container.classList.remove("chart-placeholder");
-}
-
-// ====== Auto Research Pipeline ======
-function triggerFactorResearch(factorName, factorSet, buttonEl) {
-  if (!factorName) return;
-  buttonEl.disabled = true;
-  buttonEl.textContent = "研究中...";
-  fetch(API_BASE + "/factors/research", {
-    method: "POST",
-    headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({factor_name: factorName, factor_set: factorSet})
-  })
-    .then(function(r) { return r.json(); })
-    .then(function(job) {
-      if (job.error) throw new Error(job.error);
-      pollResearchJob(job.job_id, 0, buttonEl, factorName);
-    })
-    .catch(function(e) {
-      console.error("Research trigger failed:", e, "URL:", API_BASE + "/factors/research");
-      var msg = e && e.message ? e.message : String(e);
-      if (msg.length > 20) msg = msg.substring(0, 18) + "..";
-      buttonEl.textContent = msg || "失败";
-      buttonEl.title = e && e.message ? e.message : String(e);
-      buttonEl.disabled = false;
-    });
-}
-
-function pollResearchJob(jobId, attempts, buttonEl, factorName) {
-  var maxAttempts = 60;
-  fetch(API_BASE + "/factors/research/" + jobId)
-    .then(function(r) { return r.json(); })
-    .then(function(job) {
-      if (job.status === "completed") {
-        buttonEl.textContent = "完成";
-        buttonEl.style.color = "#13a15a";
-        // Refresh the factor table so the factor becomes clickable
-        setTimeout(loadData, 500);
-      } else if (job.status === "failed") {
-        buttonEl.textContent = "失败";
-        buttonEl.disabled = false;
-      } else if (attempts < maxAttempts) {
-        buttonEl.textContent = "研究中 " + Math.round((attempts / maxAttempts) * 100) + "%";
-        setTimeout(function() { pollResearchJob(jobId, attempts + 1, buttonEl, factorName); }, 3000);
-      } else {
-        buttonEl.textContent = "超时";
-        buttonEl.disabled = false;
-      }
-    })
-    .catch(function(e) {
-      if (attempts < maxAttempts) {
-        setTimeout(function() { pollResearchJob(jobId, attempts + 1, buttonEl, factorName); }, 3000);
-      } else {
-        buttonEl.textContent = "超时";
-        buttonEl.disabled = false;
-      }
-    });
-}
-
-var _ora2 = renderAnalysisPanel;
-var _stratFactorKey = null;
-var _stratLastData = null;
-if (typeof _DEBUG_ === "undefined") { var _DEBUG_ = true; console.log("FACTOR_LAB API_BASE:", API_BASE, "CLOUD_DEMO:", CLOUD_DEMO_MODE, "API_HOST:", API_HOST); }
-
-renderAnalysisPanel = function(factor) {
-  var h = _ora2(factor);
-  var key = factor.factor_name + "|" + (factor.library || "");
-  // Always schedule a render — innerHTML destroys DOM, so we must rebuild
-  if (_stratFactorKey !== key) {
-    _stratFactorKey = key;
-    _stratLastData = null;
-    setTimeout(function() { loadStratificationData(factor); }, 50);
-  } else if (_stratLastData && _stratLastData._key === key) {
-    // Same factor — DOM was destroyed by innerHTML, rebuild from cache
-    setTimeout(function() {
-      var d = _stratLastData;
-      var ce = document.getElementById("stratChart");
-      if (!ce) return;
-      _renderNavCanvas(ce, d);
-      var ie = document.getElementById("icChart");
-      if (ie) _renderICCanvas(ie, d);
-      var me = document.getElementById("stratMetrics");
-      if (me) _renderGroupMetrics(me, d);
-      var re = document.getElementById("stratMetricsRange");
-      if (re) re.textContent = "截面数：" + d.dataset.n_cross_sections;
-      var ca = document.getElementById("stratMetricCards");
-      if (ca) { var m2 = d.metrics || {}, ls2 = d.long_short; ca.innerHTML = [metricCard("Rank IC", formatNumber(m2.rank_ic_mean, 4), "IC Mean"), metricCard("IC IR", formatNumber(m2.rank_ic_ir, 4), "IC IR"), metricCard("Long-Short 年化", formatNumber(m2.long_short_annual_return, 4), "Annual Return"), metricCard("Long-Short Sharpe", formatNumber(m2.long_short_sharpe, 2), "t=" + formatNumber(ls2.t_stat, 2) + " 胜率=" + formatRatio(ls2.win_rate))].join(""); }
-      var de = document.getElementById("stratDesc");
-      if (de && d.description) { var dd = d.description; de.textContent = dd.universe + " · " + dd.rebalance_frequency + " · " + dd.holding_period + "持有 · " + dd.grouping_method; }
-      var me2 = document.getElementById("stratMethod");
-      if (me2 && d.description) { me2.style.display = "block"; var d2 = d.description; me2.innerHTML = "<b>分组说明：</b>Group" + d.n_groups + " = " + (d2.group_labels[String(d.n_groups)] || "") + "，Group1 = " + (d2.group_labels["1"] || "") + "。<br><b>收益计算：</b>每日调仓，T+" + d.description.holding_period.replace("T+", "") + "日收益，等权配置，不计交易成本。"; }
-      var ne = document.getElementById("icNote");
-      if (ne) { ne.style.display = 'block'; ne.textContent = 'IC = 每日因子值与T+1收益的横截面相关系数，反映因子预测下一期收益的能力。纵轴：Rank IC 值，0 线以上表示正向预测。'; }
-    }, 50);
-  }
-  return h;
-};
-
-bindResearchEvents();

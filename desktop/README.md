@@ -16,14 +16,14 @@ http://127.0.0.1:8012/api/agents/factor-lab
 Start Flask separately before opening the desktop app:
 
 ```powershell
-cd C:\Users\ALIENWARE\Desktop\agentmatrix-research
+cd <repo-root>
 .\.venv\Scripts\python.exe backend\factor_lab_api.py
 ```
 
 ## Install desktop dependencies
 
 ```powershell
-cd C:\Users\ALIENWARE\Desktop\agentmatrix-research\desktop
+cd <repo-root>\desktop
 npm install
 ```
 

@@ -248,7 +248,7 @@ data = call("/ch/ods_income_raw", {"limit": 10000, "offset": 0, "with_total": Tr
 - log/text → 头 200 行
 
 ```python
-d = call("/files/home/data/RQdata_files/rq_factor_market_cap_20260604.parquet")
+d = call("/files/<server_data_root>/RQdata_files/rq_factor_market_cap_20260604.parquet")
 # → {
 #     ok: True,
 #     type: "parquet",
@@ -262,7 +262,7 @@ d = call("/files/home/data/RQdata_files/rq_factor_market_cap_20260604.parquet")
 如果是大文件, 想拿完整数据, 用 `requests.get` + `pd.read_parquet`:
 ```python
 import pandas as pd
-r = requests.get(f"{BASE}/files/home/data/RQdata_files/rq_factor_market_cap_20260604.parquet",
+r = requests.get(f"{BASE}/files/<server_data_root>/RQdata_files/rq_factor_market_cap_20260604.parquet",
                  headers=H)
 with open("local.parquet", "wb") as f:
     f.write(r.content)
@@ -275,10 +275,10 @@ df = pd.read_parquet("local.parquet")
 **4 个白名单目录** (只能读这些):
 | 目录 | 内容 |
 |------|------|
-| `/home/data/RQdata_files/` | 因子 parquet (market_cap/pe/pb/ps) |
+| `<server_data_root>/RQdata_files/` | 因子 parquet (market_cap/pe/pb/ps) |
 | `/srv/factor-truth/manifests/` | 因子名清单 |
 | `/srv/factor-truth/snapshots/` | 因子快照 |
-| `/home/data/quant_api_v2/logs/` | 服务日志 (api.log 等) |
+| `<quant_api_deploy_root>/logs/` | 服务日志 (api.log 等) |
 
 ### 类别 D: 因子评估 (`/factor_ic`)
 
@@ -342,7 +342,7 @@ dtypes:
 **进度**: 0-100%, log_tail 有子进程 stdout 末 30 行
 **约束**:
 - 最多同时 2 个任务在跑 (`_MAX_CONCURRENT = 2`)
-- 任务结果保留在服务器 `/home/data/RQdata_files/alpha101/job_xxx/`
+- 任务结果保留在服务器 `<server_data_root>/RQdata_files/alpha101/job_xxx/`
 - 不自动清理
 
 ---
@@ -618,7 +618,7 @@ df['out_date'] = pd.to_datetime(df['out_date'], unit='D', origin='unix')
 6. **ods_balance_sheet_raw** 才有完整数据, `dwd_financial_pit_daily` 是空的
 7. **RQData 拉取很慢** (一个因子 ~5-10 秒, 全 A 股 5553 × 多月): **必须异步**! 用 `/admin/pull` 触发, **不要同步等** (HTTP 会超时)
 8. **RQData order_book_id 格式**: `000001.XSHE` / `600000.XSHG` (不是 `000001.SZ`!), rqdatac 拒绝 `000001.SZ` 格式
-9. **RQData 任务结果目录**: `/home/data/RQdata_files/alpha101/job_xxx/`, **不在 `/files` 白名单**, 必须用专属 `/admin/pull/jobs/{job_id}/download/{filename}` 端点下载
+9. **RQData 任务结果目录**: `<server_data_root>/RQdata_files/alpha101/job_xxx/`, **不在 `/files` 白名单**, 必须用专属 `/admin/pull/jobs/{job_id}/download/{filename}` 端点下载
 10. **限流未启用**: 当前 token 可任意调用, 不卡 429. 切勿给外部用户或泄露 token
 11. **客户端分页会 OOM**: `/ch/{table}?limit=&offset=` 累积所有 data 到客户端, 大表用流式或 Parquet 替代
 12. **`top` 已无上限**: 不传 top 可拿全表, 大表会自动触发 count() + 全表序列化, **大表会卡**! 走 `/parquet`
@@ -667,9 +667,9 @@ df['out_date'] = pd.to_datetime(df['out_date'], unit='D', origin='unix')
 
 - **API 公网地址**: `http://115.159.73.134:8765`
 - **服务器**: Ubuntu 24.04, `115.159.73.134`
-- **部署目录**: `/home/data/quant_api_v2/`
-- **数据目录**: `/home/data/RQdata_files/` (因子 parquet)
-- **本地项目**: `c:\Users\Mine\Desktop\连通服务器\quant_api_v2_local\`
+- **部署目录**: `<quant_api_deploy_root>/`
+- **数据目录**: `<server_data_root>/RQdata_files/` (因子 parquet)
+- **本地项目**: `<local_quant_api_repo>/`
 - **配套 skill**: `rqdata-factor-pulling` (拉数据), `quant-api-v2` (查数据)
 - **配套文档**: README.md (上手), USER_MANUAL.md (端点详解)
 

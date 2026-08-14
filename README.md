@@ -4,6 +4,11 @@
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
+## Pages Portal
+
+- GitHub Pages portal: [agentmatrixlab.github.io/agentmatrix-research](https://agentmatrixlab.github.io/agentmatrix-research/)
+- Use the portal for repo navigation, docs entry, workflow links, and common test commands.
+
 ## What Is This?
 
 `agentmatrix-research` is the research backbone of [AgentMatrixLab](https://agentmatrixlab.com). It provides:
@@ -78,6 +83,7 @@ See [QLIB_FACTOR_WORKFLOW.md](docs/QLIB_FACTOR_WORKFLOW.md) for the full intern 
 See [ALPHA158_STARTER.md](docs/ALPHA158_STARTER.md) for the baseline model workflow.
 See [FACTOR_LAB_BACKEND_BOUNDARY.md](docs/FACTOR_LAB_BACKEND_BOUNDARY.md) for the back-end vs front-end ownership split.
 See [FACTOR_LAB_ALPHA101_WORKFLOW.md](docs/FACTOR_LAB_ALPHA101_WORKFLOW.md) for the unified Alpha101 back-end research workflow.
+See [AMAZINGDATA_ALPHA_PIPELINE.md](docs/AMAZINGDATA_ALPHA_PIPELINE.md) for the amazingdata internal-validation to external-simulation workflow.
 See [CONTRIBUTING.md](CONTRIBUTING.md) for PR, factor proposal, and experiment report conventions.
 
 ### Factor Lab Bootstrap
@@ -90,13 +96,51 @@ python -m research_core.factor_lab.cli export-alpha101 --proof-factor alpha101
 python -m research_core.factor_lab.cli export-alpha101-truth-template --n-dates 420 --n-codes 8 --seed 29
 python -m research_core.factor_lab.cli validate-alpha101-truth --truth-csv data/factor_lab/alpha101_truth_template_101f_420d_8c_s29.csv
 python -m research_core.factor_lab.cli run-alpha101-proof-batch --truth-csv data/factor_lab/alpha101_truth_template_101f_420d_8c_s29.csv --n-dates 420 --n-codes 8 --seed 29
+python -m research_core.factor_lab.cli check-amazingdata
+python -m research_core.factor_lab.cli run-factor-research --factor-set wq101 --data-source demo --n-dates 160 --n-codes 8 --seed 7
+python -m research_core.strategy_engine.cli build-alpha-strategy --validated-run runtime/factor_lab/jobs/<job_id>.json --rebalance-frequency daily --top-n 50
 ```
+
+### Factor Lab Truth Compare (factor values validation)
+
+Upload-style factor values are compared point-by-point against the library truth
+(local CSV or Supabase `factor_truth_values`). Fully testable offline:
+
+```bash
+python -m research_core.factor_lab.cli export-alpha101-truth-template --n-dates 60 --n-codes 5 --seed 29
+python scripts/dev/make_truth_compare_samples.py
+python scripts/run_truth_compare.py --factor-family alpha101 --factor-name alpha1 \
+  --values-csv data/factor_lab/samples/factor_values_alpha1_pass.csv \
+  --truth-csv data/factor_lab/alpha101_truth_template_101f_60d_5c_s29.csv
+# Optional: sync results to Supabase (requires service_role key, see .env.example)
+python scripts/sync_truth_compare_to_supabase.py
+```
+
+See [docs/FACTOR_LAB_TRUTH_COMPARE.md](docs/FACTOR_LAB_TRUTH_COMPARE.md) for the full
+test walkthrough (passed / failed / not_comparable branches), the Supabase migration
+order, and which keys must be provided by the project team.
 
 ### Factor Lab API
 
 ```bash
 python backend/factor_lab_api.py
 ```
+
+### Factor Lab Dashboard
+
+Start the local Flask API first, then open the dashboard served by the same backend:
+
+```text
+http://127.0.0.1:8012/factor-lab-dashboard
+```
+
+The dashboard is a zero-build static frontend under `frontend/factor-lab-dashboard/`. When opened from the Flask URL above, it automatically reads:
+
+```text
+http://127.0.0.1:8012/api/agents/factor-lab
+```
+
+For a static host such as GitHub Pages, set `window.FACTOR_LAB_API_HOST` in `frontend/factor-lab-dashboard/config.js` to a deployed Flask backend URL. Do not put Quant API tokens in frontend code. Keep tokens in `.env` / backend environment variables only; runtime research artifacts under `runtime/factor_lab/` and local data under `data/factor_lab/` are intentionally ignored by git.
 
 API endpoints for front-end and agent orchestration:
 

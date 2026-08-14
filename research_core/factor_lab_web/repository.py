@@ -123,6 +123,10 @@ def latest_factor_reports_with_diagnostics(
                 "data_source": report.get("data_source") or job.get("data_source"),
                 "dataset": report.get("dataset") or job.get("dataset") or {},
             }
+    for key, payload in _factor_detail_cache_reports(workspace, diagnostics).items():
+        existing = reports.get(key)
+        if existing is None or _report_timestamp(payload) > _report_timestamp(existing):
+            reports[key] = payload
     return reports, diagnostics
 
 
@@ -168,3 +172,49 @@ def _real_job_factor_reports(
             "strategy": strategy_summary,
         }
     return reports
+
+
+def _factor_detail_cache_reports(
+    workspace: FactorLabWorkspaceConfig,
+    diagnostics: list[dict[str, str]],
+) -> dict[tuple[str, str], dict[str, Any]]:
+    cache_dir = workspace.runtime_root / "factor_detail_cache"
+    if not cache_dir.is_dir():
+        return {}
+
+    reports: dict[tuple[str, str], dict[str, Any]] = {}
+    for path in sorted(cache_dir.glob("*.json"), key=lambda item: item.stat().st_mtime, reverse=True):
+        payload = read_json(path, diagnostics=diagnostics, source_type="factor_detail_cache")
+        if not payload:
+            continue
+        library = str(payload.get("library") or _library_from_factor_id(str(payload.get("factor_id") or "")))
+        factor_name = str(payload.get("factor_name") or _factor_name_from_factor_id(str(payload.get("factor_id") or "")))
+        if not library or not factor_name:
+            continue
+        generated_at = str(payload.get("artifact_cache", {}).get("generated_at") or "")
+        reports[(library, factor_name)] = {
+            "factor_name": factor_name,
+            "proof_status": "passed",
+            "truth_status": "not_applicable",
+            "coverage_ratio": payload.get("coverage_ratio"),
+            "rank_ic_mean": payload.get("rank_ic_mean"),
+            "rank_ic_ir": payload.get("rank_ic_ir"),
+            "long_short_mean": payload.get("long_short_mean"),
+            "latest_job_id": payload.get("job_id") or f"factor_detail_cache:{library}:{factor_name}",
+            "latest_checked_at": generated_at,
+            "data_source": payload.get("data_source"),
+            "dataset": payload.get("dataset") or {},
+        }
+    return reports
+
+
+def _library_from_factor_id(factor_id: str) -> str:
+    return factor_id.split(":", 1)[0] if ":" in factor_id else ""
+
+
+def _factor_name_from_factor_id(factor_id: str) -> str:
+    return factor_id.split(":", 1)[1] if ":" in factor_id else ""
+
+
+def _report_timestamp(report: dict[str, Any]) -> str:
+    return str(report.get("latest_checked_at") or "")

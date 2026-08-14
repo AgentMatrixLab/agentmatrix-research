@@ -92,10 +92,14 @@ class SpecsPyFactorSource:
                 continue
             if callable(value) and (name == "specs" or name.endswith("_specs")):
                 result = self._call_zero_arg_specs(value, specs_path=specs_path, function_name=name)
-                if isinstance(result, list | tuple):
+                if isinstance(result, dict):
+                    items.extend(_items_from_spec_mapping(result))
+                elif isinstance(result, list | tuple):
                     items.extend(result)
                 elif result is not None:
                     self._warn(specs_path, f"{name}() returned {type(result).__name__}, expected list or tuple")
+            elif isinstance(value, dict) and ("SPEC" in name.upper() or "FACTOR" in name.upper()):
+                items.extend(_items_from_spec_mapping(value))
             elif isinstance(value, list | tuple) and ("SPEC" in name.upper() or "FACTOR" in name.upper()):
                 items.extend(value)
         return items
@@ -195,8 +199,18 @@ def _spec_from_any(item: Any, *, source_type: str, source_id: str) -> dict[str, 
     return _spec_from_mapping(mapping, source_type=source_type, source_id=source_id)
 
 
+def _items_from_spec_mapping(mapping: dict[Any, Any]) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    for key, value in mapping.items():
+        if isinstance(value, dict):
+            items.append({"factor_name": key, **value})
+        else:
+            items.append({"factor_name": key, "description": value})
+    return items
+
+
 def _spec_from_mapping(item: dict[str, Any], *, source_type: str, source_id: str) -> dict[str, Any]:
-    raw_library = str(item.get("library") or "")
+    raw_library = str(item.get("library") or _library_from_source_id(source_id) or "")
     metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
     return {
         "factor_name": str(item.get("factor_name") or item.get("name") or ""),
@@ -219,12 +233,23 @@ def _spec_from_mapping(item: dict[str, Any], *, source_type: str, source_id: str
     }
 
 
+def _library_from_source_id(source_id: str) -> str:
+    parts = Path(source_id).parts
+    if "libraries" in parts:
+        index = parts.index("libraries")
+        if index + 1 < len(parts):
+            return parts[index + 1]
+    return ""
+
+
 def _display_library(library: str) -> str:
     normalized = library.lower()
     if normalized == "alpha101":
         return "WQ101"
     if normalized in {"gtja191", "alpha191"}:
         return "GTJA191"
+    if normalized == "alpha158":
+        return "Alpha158"
     if normalized in {"quantapi33", "quantapi", "quant_api", "quant api"}:
         return "Quant API"
     if not library:

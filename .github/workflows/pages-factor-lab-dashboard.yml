@@ -6,6 +6,7 @@ on:
       - backup/factor-lab-frontend-good
     paths:
       - "frontend/factor-lab-dashboard/**"
+      - "pages/**"
       - ".github/workflows/pages-factor-lab-dashboard.yml"
   workflow_dispatch:
 
@@ -33,10 +34,10 @@ jobs:
         with:
           enablement: true
 
-      - name: Upload dashboard
+      - name: Upload Pages site
         uses: actions/upload-pages-artifact@v3
         with:
-          path: frontend/factor-lab-dashboard
+          path: pages
 
       - name: Deploy to GitHub Pages
         id: deployment

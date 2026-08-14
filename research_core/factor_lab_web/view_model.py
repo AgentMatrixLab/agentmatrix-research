@@ -248,10 +248,13 @@ def _find_metrics(
     factor_name: str,
     libraries: list[str],
 ) -> dict[str, Any]:
+    candidates: list[dict[str, Any]] = []
     for library in libraries:
         if (library, factor_name) in metrics_by_factor:
-            return metrics_by_factor[(library, factor_name)]
-    return {}
+            candidates.append(metrics_by_factor[(library, factor_name)])
+    if not candidates:
+        return {}
+    return max(candidates, key=lambda item: str(item.get("latest_checked_at") or ""))
 
 
 def _category_counts(factors: list[dict[str, Any]]) -> dict[str, int]:
