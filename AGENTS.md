@@ -70,7 +70,8 @@ What are you trying to do?
 │
 ├── "I want to find good factors"
 │     └── explore_factors(goal="...", universe="csi300", factor_set="alpha101")
-│           → returns gate_verdict (🟢/🟡/🔴), top_factors, summary, next_actions
+│           → returns gate_verdict (🟢/🟡/🔴), top_factors, summary,
+│             report_path, artifacts (with job_path), next_actions
 │
 ├── "I have factor metrics, are they good enough?"
 │     └── validate_factor(factor_name="...", ic_mean=0.035, ic_ir=0.45, oos_retention=0.75)
@@ -94,7 +95,7 @@ What are you trying to do?
 │
 ├── "Backtest finished, parse the result"
 │     └── parse_backtest_result(engine="gm", run_id="...", result_path="result.pkl")
-│           → returns metrics, equity_curve, trades
+│           → returns run_id, engine, status, metrics, source_path, artifacts, diagnostics
 │
 ├── "I want to mine new factors with Qlib"
 │     ├── mine_factor(name="reversal", expression="Ref($close, 5) / $close - 1")
@@ -108,7 +109,7 @@ What are you trying to do?
 │
 └── "I need to check if the data source is available"
       └── check_data_source()
-            → returns connected (bool), details
+            → returns connected (bool), details, next_actions
 ```
 
 ---
