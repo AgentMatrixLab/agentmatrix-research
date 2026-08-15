@@ -158,8 +158,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="Number of top factors to report",
     )
     explore_parser.add_argument(
+        "--horizon", type=int, default=5,
+        help="Forward return horizon in days (default: 5)",
+    )
+    explore_parser.add_argument(
         "--cache-dir", default=None,
         help="Cache directory for market data (default: runtime/factor_lab/cache)",
+    )
+    explore_parser.add_argument(
+        "--output-dir", default="",
+        help="Where to write the factor_lab job JSON + factor frame. "
+             "Defaults to the factor_lab runtime root (runtime/factor_lab).",
     )
     explore_parser.add_argument(
         "--output", default="",
@@ -205,6 +214,11 @@ def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
     config = FactorLabWorkspaceConfig.from_env()
+    # Only the `explore` subcommand defines --cache-dir; use getattr so
+    # other subcommands don't crash with AttributeError.
+    cache_dir = getattr(args, "cache_dir", None)
+    if cache_dir is not None:
+        config.cache_dir = cache_dir
     if args.command == "init-workspace":
         payload = {key: str(value) for key, value in config.ensure_directories().items()}
         print(json.dumps(payload, ensure_ascii=False, indent=2))
@@ -374,15 +388,17 @@ def main() -> None:
             factors=factor_list,
             start=args.start,
             end=args.end,
+            horizon=args.horizon,
             top_n=args.top_n,
             cache_dir=args.cache_dir,
+            output_dir=args.output_dir,
             workspace=config,
         )
 
         if args.format == "markdown":
-            print(explore_to_markdown(result))
+            output_text = explore_to_markdown(result)
         else:
-            print(json.dumps({
+            output_text = json.dumps({
                 "gate_verdict": result.gate_verdict,
                 "factors_tested": result.factors_tested,
                 "factors_passed": result.factors_passed,
@@ -391,8 +407,18 @@ def main() -> None:
                 "n_stocks": result.n_stocks,
                 "top_factors": result.top_factors,
                 "summary": result.summary,
+                "report_path": result.report_path,
+                "artifacts": result.artifacts,
                 "next_actions": result.next_actions,
-            }, ensure_ascii=False, indent=2))
+            }, ensure_ascii=False, indent=2, default=str)
+
+        if args.output:
+            from pathlib import Path as _Path
+            out_path = _Path(args.output).expanduser()
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            out_path.write_text(output_text, encoding="utf-8")
+        else:
+            print(output_text)
         return
 
     # ── NEW: gate command ────────────────────────────────────
