@@ -3,7 +3,7 @@
 > Read this file first if you are an AI agent working inside this repository.
 > This document is a **navigation guide only**: it lists modules that already
 > exist, CLIs that already work, and docs that already describe them. It
-> makes no claim about unified APIs, manifests, or end-to-end pipelines.
+>makes no claim about unified APIs, manifests, or pre-plugged pipeline abstractions.
 
 ## What this repository is
 
