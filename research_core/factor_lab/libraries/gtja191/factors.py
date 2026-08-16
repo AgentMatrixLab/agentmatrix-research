@@ -18,7 +18,7 @@ from research_core.factor_lab.operators import (
 )
 
 
-IMPLEMENTED_GTJA191_FACTORS = tuple(f"alpha{i}" for i in range(1, 11))
+IMPLEMENTED_GTJA191_FACTORS = tuple(f"alpha{i}" for i in range(1, 21))
 
 
 def _sma_gtja(series: pd.Series, n: int, m: int) -> pd.Series:
@@ -127,6 +127,101 @@ def _alpha10(df: pd.DataFrame) -> pd.Series:
     return _cs_rank(df, tsmax_sq, "tsmax_sq")
 
 
+def _alpha11(df: pd.DataFrame) -> pd.Series:
+    price_power = safe_div((df["close"] - df["low"]) - (df["high"] - df["close"]), (df["high"] - df["low"]).replace(0, np.nan))
+    weighted_power = price_power * df["volume"]
+    return df.assign(weighted_power=weighted_power).groupby("code")["weighted_power"].transform(lambda x: x.rolling(6, min_periods=6).sum())
+
+def _alpha12(df: pd.DataFrame) -> pd.Series:
+    vwap = compute_vwap(df)
+    df_with_vwap = df.assign(vwap=vwap)
+
+    vwap_mean_10 = ts_mean(df_with_vwap, "vwap", 10)
+
+    left = _cs_rank(df, df["open"] - vwap_mean_10, "open_minus_vwap_mean_10")
+    right = _cs_rank(df, (df["close"] - vwap).abs(), "abs_close_minus_vwap")
+
+    return -left * right
+
+
+def _alpha13(df: pd.DataFrame) -> pd.Series:
+    vwap = compute_vwap(df)
+    return np.sqrt(df["high"] * df["low"]) - vwap
+
+
+def _alpha14(df: pd.DataFrame) -> pd.Series:
+    return df["close"] - ts_delay(df, "close", 5)
+
+
+def _alpha15(df: pd.DataFrame) -> pd.Series:
+    prev_close = ts_delay(df, "close", 1)
+    return safe_div(df["open"], prev_close.replace(0, np.nan)) - 1.0
+
+
+def _alpha16(df: pd.DataFrame) -> pd.Series:
+    vwap = compute_vwap(df)
+
+    rank_volume = _cs_rank(df, df["volume"], "volume")
+    rank_vwap = _cs_rank(df, vwap, "vwap")
+
+    corr = rolling_corr(
+        df.assign(rank_volume=rank_volume, rank_vwap=rank_vwap),
+        "rank_volume",
+        "rank_vwap",
+        5,
+    )
+
+    rank_corr = _cs_rank(df, corr, "corr_rank_volume_vwap")
+
+    return -ts_max(df.assign(rank_corr=rank_corr), "rank_corr", 5)
+
+
+def _alpha17(df: pd.DataFrame) -> pd.Series:
+    vwap = compute_vwap(df)
+    df_with_vwap = df.assign(vwap=vwap)
+
+    max_vwap_15 = ts_max(df_with_vwap, "vwap", 15)
+    rank_vwap_gap = _cs_rank(
+        df,
+        vwap - max_vwap_15,
+        "vwap_minus_max_vwap_15",
+    )
+
+    delta_close_5 = ts_delta(df, "close", 5)
+
+    return pd.Series(
+        np.power(rank_vwap_gap, delta_close_5),
+        index=df.index,
+    )
+
+
+def _alpha18(df: pd.DataFrame) -> pd.Series:
+    prev_close_5 = ts_delay(df, "close", 5)
+    return safe_div(df["close"], prev_close_5.replace(0, np.nan))
+
+
+def _alpha19(df: pd.DataFrame) -> pd.Series:
+    prev_close_5 = ts_delay(df, "close", 5)
+    close_diff = df["close"] - prev_close_5
+
+    down_move = safe_div(close_diff, prev_close_5.replace(0, np.nan))
+    up_move = safe_div(close_diff, df["close"].replace(0, np.nan))
+
+    return pd.Series(
+        np.where(
+            df["close"] < prev_close_5,
+            down_move,
+            np.where(df["close"] == prev_close_5, 0.0, up_move),
+        ),
+        index=df.index,
+    )
+
+
+def _alpha20(df: pd.DataFrame) -> pd.Series:
+    delayed_close = ts_delay(df, "close", 6)
+    return safe_div(df["close"] - delayed_close, delayed_close) * 100
+
+
 _FACTOR_FUNCTIONS = {
     "alpha1": _alpha1,
     "alpha2": _alpha2,
@@ -138,6 +233,16 @@ _FACTOR_FUNCTIONS = {
     "alpha8": _alpha8,
     "alpha9": _alpha9,
     "alpha10": _alpha10,
+    "alpha11": _alpha11,
+    "alpha12": _alpha12,
+    "alpha13": _alpha13,
+    "alpha14": _alpha14,
+    "alpha15": _alpha15,
+    "alpha16": _alpha16,
+    "alpha17": _alpha17,
+    "alpha18": _alpha18,
+    "alpha19": _alpha19,
+    "alpha20": _alpha20,
 }
 
 

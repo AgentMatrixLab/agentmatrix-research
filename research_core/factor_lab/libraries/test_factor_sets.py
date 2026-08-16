@@ -49,7 +49,7 @@ class FactorSetComputeTest(unittest.TestCase):
         self.assertEqual(subset.columns.tolist(), ["date", "code", "alpha1", "alpha3", "alpha10"])
         self.assertTrue((subset[["alpha1", "alpha3", "alpha10"]].notna().sum() > 0).all())
         with self.assertRaises(ValueError):
-            compute_factor_set(self.panel, "gtja191", factor_names=["alpha11"])
+            compute_factor_set(self.panel, "gtja191", factor_names=["alpha21"])
 
 
 if __name__ == "__main__":
