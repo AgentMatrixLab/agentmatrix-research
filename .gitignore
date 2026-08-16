@@ -10,11 +10,13 @@ backend_runtime/
 data/gm_exports/
 data/qlib/
 runtime/qlib/backtests/
+runtime/custom_engine/
 runtime/qlib/evaluations/
 runtime/qlib/factors/
 runtime/qlib/mlruns/
 runtime/qlib/workflow_runs/
 data/factor_lab/
+data/custom_engine/
 runtime/factor_lab/
 runtime/strategy_engine/
 runtime/external_sim/

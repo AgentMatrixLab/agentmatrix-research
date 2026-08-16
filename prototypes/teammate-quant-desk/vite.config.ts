@@ -4,9 +4,10 @@ import tsconfigPaths from "vite-tsconfig-paths";
 
 // https://vite.dev/config/
 export default defineConfig({
+  base: '/quant-desk/',
   build: {
     sourcemap: 'hidden',
-    outDir: 'server/static',
+    outDir: '../../frontend/quant-desk-react',
     emptyOutDir: true,
   },
   plugins: [
