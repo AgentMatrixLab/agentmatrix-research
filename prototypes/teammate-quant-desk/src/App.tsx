@@ -9,7 +9,7 @@ import Risk from "@/pages/Risk";
 
 export default function App() {
   return (
-    <BrowserRouter>
+    <BrowserRouter basename="/quant-desk">
       <Routes>
         <Route element={<Layout />}>
           <Route path="/" element={<Home />} />

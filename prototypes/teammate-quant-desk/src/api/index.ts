@@ -12,7 +12,32 @@ import type {
   TradePage,
   TradeQuery,
   UploadStrategyResponse,
+  CanonicalStrategySummary,
+  CanonicalStrategyDetail,
+  BacktestCapabilities,
 } from "./types";
+
+const CANONICAL = "/api/strategy-dashboard";
+
+export function listCanonicalStrategies(): Promise<CanonicalStrategySummary[]> {
+  return request(`${CANONICAL}/strategies`);
+}
+
+export function getCanonicalStrategy(id: string): Promise<CanonicalStrategyDetail> {
+  return request(`${CANONICAL}/strategies/${encodeURIComponent(id)}`);
+}
+
+export function getBacktestCapabilities(): Promise<BacktestCapabilities> {
+  return request(`${CANONICAL}/backtest-capabilities`);
+}
+
+export function listCanonicalJobs(): Promise<any[]> {
+  return request(`${CANONICAL}/backtest-jobs`);
+}
+
+export function submitCanonicalBacktest(payload: Record<string, unknown>, token: string): Promise<{ job_id: string }> {
+  return request(`${CANONICAL}/backtest-jobs`, {method: "POST", headers: {"X-Backtest-Token": token}, body: JSON.stringify(payload)});
+}
 
 export function listStrategies(): Promise<ApiStrategySummary[]> {
   return USE_MOCK ? mock.listStrategies() : request("/api/strategies");

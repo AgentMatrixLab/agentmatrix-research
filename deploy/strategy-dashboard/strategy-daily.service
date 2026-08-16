@@ -1,0 +1,20 @@
+[Unit]
+Description=AgentMatrix daily strategy calculation
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=data
+Group=datateam
+WorkingDirectory=/home/data/agentmatrix-strategy/current
+EnvironmentFile=/home/data/agentmatrix-strategy/shared/dashboard.env
+ExecStart=/home/data/agentmatrix-strategy/shared/venv/bin/python scripts/run_daily_strategies.py --registry config/strategy_registry.json --engine-root /home/data/agentmatrix-backtest-engine/current --data-dir /home/data/agentmatrix-strategy/shared/datasets/current --published-dir /home/data/agentmatrix-strategy/shared/published --run-dir /home/data/agentmatrix-strategy/shared/quarantine --status-file /home/data/agentmatrix-strategy/shared/operations/latest.json --include-review
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=6
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

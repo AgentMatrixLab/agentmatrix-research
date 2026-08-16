@@ -2,7 +2,7 @@ import { Bell, Check, ChevronDown, Search } from "lucide-react";
 import { useState } from "react";
 import { useLocation } from "react-router-dom";
 import { cn } from "@/lib/utils";
-import { BENCHMARKS, PERIODS, dates } from "@/data/mock";
+import { BENCHMARKS, PERIODS } from "@/data/mock";
 import { useDashStore } from "@/store/useDashStore";
 import { useDashboard } from "@/hooks/useDashboard";
 
@@ -26,6 +26,7 @@ export default function Header() {
   const isHome = location.pathname === "/";
   const meta = ROUTE_META[location.pathname];
   const running = def.status === "running";
+  const { points } = useDashboard();
 
   return (
     <header className="sticky top-0 z-20 border-b border-line bg-ink-950/80 backdrop-blur-md">
@@ -56,7 +57,7 @@ export default function Header() {
               </span>
             </div>
             <p className="mt-0.5 text-[11px] text-fg-mute">
-              回测区间 {dates[0]} ~ {dates[dates.length - 1]} · 基准 {bench.name}
+              回测区间 {points[0]?.date || "--"} ~ {points.at(-1)?.date || "--"} · 基准 {bench.name}
             </p>
           </div>
         ) : (

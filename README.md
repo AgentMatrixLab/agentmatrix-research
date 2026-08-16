@@ -134,6 +134,23 @@ Start the local Flask API first, then open the dashboard served by the same back
 http://127.0.0.1:8012/factor-lab-dashboard
 ```
 
+Quant Desk is intentionally served by a separate minimal read-only process. Run:
+
+```bash
+python backend/strategy_dashboard_api.py
+```
+
+It exposes the dashboard backed by persisted AgentMatrix `BacktestResult` files:
+
+```text
+http://127.0.0.1:8013/quant-desk/
+```
+
+This process does not import or host Factor Lab. The Quant Desk view does not
+execute strategies or use mock/SQLite data. It
+shows completed results from `runtime/custom_engine/backtests/` through the
+`/api/strategy-dashboard/*` endpoints.
+
 The dashboard is a zero-build static frontend under `frontend/factor-lab-dashboard/`. When opened from the Flask URL above, it automatically reads:
 
 ```text
