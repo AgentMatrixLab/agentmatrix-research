@@ -179,8 +179,8 @@ _CAPABILITIES: list[dict[str, Any]] = [
             "engine": {"type": "str", "required": True, "options": ["gm", "ptrade", "qmt"]},
             "signal_path": {"type": "str", "required": True, "description": "Path to target weights CSV"},
             "strategy_id": {"type": "str", "default": "alpha_strategy"},
-            "start": {"type": "str", "default": "", "description": "Simulation start time"},
-            "end": {"type": "str", "default": "", "description": "Simulation end time"},
+            "start": {"type": "str", "required": True},
+            "end": {"type": "str", "required": True},
             "benchmark": {"type": "str", "default": ""},
             "initial_cash": {"type": "float", "default": 1000000.0},
             "slippage_bps": {"type": "float", "default": 0.0},
@@ -211,7 +211,7 @@ _CAPABILITIES: list[dict[str, Any]] = [
             "run_id": {"type": "str", "required": True},
             "result_path": {"type": "str", "required": True, "description": "Path to engine result file"},
         },
-        "returns": "Dict with run_id, engine, status, metrics, source_path, artifacts, diagnostics",
+        "returns": "Dict with run_id, engine, metrics, equity_curve, trades",
         "example": (
             "from research_core.agent_api import parse_backtest_result\n"
             "result = parse_backtest_result(engine='gm', run_id='abc', result_path='result.pkl')\n"
@@ -307,7 +307,7 @@ _CAPABILITIES: list[dict[str, Any]] = [
         "parameters": {
             "env_file": {"type": "str", "default": "", "description": "Optional ClickHouse env file path"},
         },
-        "returns": "Dict with connected, details, next_actions",
+        "returns": "Dict with connected, tables, error",
         "example": "from research_core.agent_api import check_data_source\nprint(check_data_source())",
     },
 ]
@@ -383,15 +383,15 @@ def get_manifest() -> dict[str, Any]:
 
 
 def get_capabilities_by_category(category: str) -> list[dict[str, Any]]:
-    """Filter capabilities by category. Returns deep copies to prevent mutation."""
-    return [copy.deepcopy(c) for c in _CAPABILITIES if c["category"] == category]
+    """Filter capabilities by category."""
+    return [c for c in _CAPABILITIES if c["category"] == category]
 
 
 def get_capability(name: str) -> dict[str, Any] | None:
-    """Look up a single capability by name. Returns a deep copy to prevent mutation."""
+    """Look up a single capability by name."""
     for c in _CAPABILITIES:
         if c["name"] == name:
-            return copy.deepcopy(c)
+            return c
     return None
 
 

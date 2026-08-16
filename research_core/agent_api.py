@@ -178,7 +178,7 @@ def _overview_impl() -> dict[str, Any]:
     from research_core.factor_lab.libraries.alpha101 import IMPLEMENTED_ALPHA101_FACTORS
     from research_core.factor_lab.libraries.gtja191 import IMPLEMENTED_GTJA191_FACTORS
 
-    config = FactorLabWorkspaceConfig.from_env()
+    config = FactorLabWorkspaceConfig()
 
     factor_families = {
         "alpha101": {"implemented": len(IMPLEMENTED_ALPHA101_FACTORS), "total": 101},
@@ -216,7 +216,7 @@ def check_data_source(env_file: str = "") -> dict[str, Any]:
         env_file: Optional path to ClickHouse env file.
 
     Returns:
-        Dict with connected, details, next_actions.
+        Dict with connected, tables, error.
     """
     return _safe_call(_check_data_source_impl, env_file)
 
@@ -663,8 +663,7 @@ def parse_backtest_result(
         result_path: Path to the engine's result file.
 
     Returns:
-        Dict with run_id, engine, status, metrics, source_path, artifacts,
-        diagnostics.
+        Dict with run_id, engine, metrics, equity_curve, trades.
     """
     return _safe_call(
         _parse_backtest_result_impl,
@@ -1105,8 +1104,8 @@ def _build_cli():
     pk.add_argument("--engine", required=True, choices=["gm", "ptrade", "qmt"])
     pk.add_argument("--signal-path", required=True)
     pk.add_argument("--strategy", default="alpha_strategy")
-    pk.add_argument("--start", default="")
-    pk.add_argument("--end", default="")
+    pk.add_argument("--start", required=True)
+    pk.add_argument("--end", required=True)
     pk.add_argument("--benchmark", default="")
     pk.add_argument("--initial-cash", type=float, default=1_000_000.0)
     pk.add_argument("--slippage-bps", type=float, default=0.0)
