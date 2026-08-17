@@ -17,7 +17,7 @@ if not TOKEN:
 
 GENERATE = "--generate" in sys.argv
 
-PROJECT_DIR = Path("C:/Users/lorenzoteng/.goldminer3/projects")
+PROJECT_DIR = Path(os.environ.get("GM_PROJECT_DIR", ""))
 BASELINE_DIR = PROJECT_DIR / "b8fe2688-60b9-11f1-a8be-001c42cd99e0"
 BASELINE_FILE = BASELINE_DIR / "vm_regression_baseline.json"
 THRESHOLD = 0.05
