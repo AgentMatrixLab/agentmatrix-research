@@ -14,8 +14,8 @@ _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, _REPO_ROOT)
 
 # GM SDK project dir (gm_factor_lib.py lives here)
-_PROJECT_DIR = os.environ.get("GM_PROJECT_DIR", r"C:\Users\lorenzoteng\.goldminer3\projects")
-if os.path.isdir(_PROJECT_DIR):
+_PROJECT_DIR = os.environ.get("GM_PROJECT_DIR", "")
+if _PROJECT_DIR and os.path.isdir(_PROJECT_DIR):
     sys.path.insert(0, _PROJECT_DIR)
 
 _GM_AVAILABLE = False
