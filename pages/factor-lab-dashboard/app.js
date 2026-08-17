@@ -540,6 +540,17 @@ function recommendationClass(value) {
   return "";
 }
 
+function reuseStatus(factor) {
+  const direct = recommendationClass(factor?.reuse_recommendation);
+  if (direct) return direct;
+
+  const proof = factor?.proof_status;
+  const truth = factor?.truth_status;
+  if (proof === "passed" && truth === "exact_match") return "reusable";
+  if (proof === "failed" || proof === "partial" || truth === "mismatch") return "rerun";
+  if (proof === "missing") return "missing";
+  return "";
+}
 function canOpenFactor(factor) {
   return Boolean(factor?.latest_job_id) && factor?.proof_status !== "missing";
 }
@@ -1373,7 +1384,7 @@ function applyFilters() {
     .filter((factor) => state.library === "全部" || factor.library === state.library)
     .filter((factor) => state.proof === "all" || factor.proof_status === state.proof)
     .filter((factor) => state.truth === "all" || factor.truth_status === state.truth)
-    .filter((factor) => state.reuse === "all" || factor.reuse_recommendation === state.reuse)
+    .filter((factor) => state.reuse === "all" || reuseStatus(factor) === state.reuse)
     .filter((factor) => {
       if (!query) return true;
       return [factor.factor_name, factor.raw_factor_name, factor.library, marketLabel(factor), marketDetail(factor), factor.subcategory, jqFactorCategory(factor)]
