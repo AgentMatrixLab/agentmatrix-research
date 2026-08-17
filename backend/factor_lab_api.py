@@ -690,6 +690,8 @@ def factor_lab_alpha101_factor_detail(factor_name: str):
 def factor_lab_factor_detail(factor_id: str):
     library_data = build_factor_library_view(_workspace())
     refresh = request.args.get("refresh", "").lower() in {"1", "true", "yes"}
+    data_source = request.args.get("data_source", "").lower()
+    use_real = data_source in {"real", "quant_api"}
     
     match = re.match(r"(\w+):(\w+)", factor_id)
     if match:
@@ -702,13 +704,24 @@ def factor_lab_factor_detail(factor_id: str):
                     if _ensure_stratification_from_group_returns(cached):
                         cached = _write_artifact_cache("factor_detail_cache", factor_id, cached)
                     return jsonify(cached)
-            payload = _build_real_factor_detail(factor_id, library_name, factor_name)
+            if use_real:
+                payload = _build_real_factor_detail(factor_id, library_name, factor_name)
+            else:
+                # Demo-safe default: only reuse precomputed job artifacts; never hit Quant API.
+                payload = _build_factor_detail_from_latest_job(factor_id, library_name, factor_name)
+                if payload is None:
+                    return jsonify({
+                        "error": "no precomputed research artifact available",
+                        "factor_id": factor_id,
+                        "data_source": "unavailable",
+                        "hint": "pass ?data_source=real to trigger live Quant API research",
+                    }), 404
             _ensure_stratification_from_group_returns(payload)
             return jsonify(_write_artifact_cache("factor_detail_cache", factor_id, payload))
         except Exception as e:
-            print(f"real factor detail failed for {factor_id}: {e}")
+            print(f"factor detail failed for {factor_id}: {e}")
         
-        if library_name == "QuantAPI":
+        if use_real and library_name == "QuantAPI":
             _load_local_env()
             client = QuantApiClient()
             symbols = get_universe_symbols("沪深300")[:50]

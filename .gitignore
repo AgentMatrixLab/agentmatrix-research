@@ -1,4 +1,4 @@
-﻿__pycache__/
+__pycache__/
 *.pyc
 .venv/
 .env
@@ -32,3 +32,4 @@ desktop/release-zoom/
 test_kline_api.py
 test_quant_api.py
 test_json_output.py
+frontend/**/*.log

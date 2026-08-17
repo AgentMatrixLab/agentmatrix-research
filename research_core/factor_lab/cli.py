@@ -96,15 +96,6 @@ def build_parser() -> argparse.ArgumentParser:
     run_factor_set_parser.add_argument("--truth-csv", default="")
     run_factor_set_parser.add_argument("--truth-tolerance", type=float, default=1e-12)
 
-    # ── PR #44: run-factor-set-real (real Quant API kline data) ──
-    real_parser = subparsers.add_parser("run-factor-set-real", help="Run WQ101/GTJA191 on real Quant API kline data")
-    real_parser.add_argument("--factor-set", choices=["wq101", "gtja191"], default="gtja191")
-    real_parser.add_argument("--factors", default="alpha1,alpha2,alpha3", help="Comma separated factor names")
-    real_parser.add_argument("--symbols", default="", help="Optional comma separated symbols, e.g. 000001.SZ,000002.SZ")
-    real_parser.add_argument("--n-symbols", type=int, default=12, help="Number of symbols to auto-discover when --symbols is empty")
-    real_parser.add_argument("--n-dates", type=int, default=80, help="Number of daily bars per symbol")
-    real_parser.add_argument("--quantile", type=float, default=0.2, help="Top/bottom quantile for long-short backtest")
-
     run_research_parser = subparsers.add_parser("run-factor-research", help="Run factor research with real or demo data")
     run_research_parser.add_argument("--factor-set", choices=["wq101", "gtja191", "alpha158", "barra"], required=True)
     run_research_parser.add_argument("--factors", default="")
@@ -197,6 +188,14 @@ def build_parser() -> argparse.ArgumentParser:
     eval_parser.add_argument("--output-json", default="", help="Optional JSON output path")
     eval_parser.add_argument("--ic-threshold", type=float, default=0.02, help="Min |IC| to pass")
     eval_parser.add_argument("--turnover-warn", type=float, default=0.7, help="Turnover rate warning threshold")
+
+    real_parser = subparsers.add_parser("run-factor-set-real", help="Run WQ101/GTJA191 on real Quant API kline data")
+    real_parser.add_argument("--factor-set", choices=["wq101", "gtja191"], default="gtja191")
+    real_parser.add_argument("--factors", default="alpha1,alpha2,alpha3", help="Comma separated factor names")
+    real_parser.add_argument("--symbols", default="", help="Optional comma separated symbols, e.g. 000001.SZ,000002.SZ")
+    real_parser.add_argument("--n-symbols", type=int, default=12, help="Number of symbols to auto-discover when --symbols is empty")
+    real_parser.add_argument("--n-dates", type=int, default=80, help="Number of daily bars per symbol")
+    real_parser.add_argument("--quantile", type=float, default=0.2, help="Top/bottom quantile for long-short backtest")
 
     return parser
 

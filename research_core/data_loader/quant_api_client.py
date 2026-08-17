@@ -140,6 +140,7 @@ def _clean_params(params: dict[str, Any] | None) -> dict[str, Any]:
 
 
 def _http_error(exc: HTTPError) -> QuantApiError:
+    url = exc.url if hasattr(exc, 'url') else ''
     raw = exc.read().decode("utf-8", errors="replace")
     payload: Any = raw
     try:
@@ -147,7 +148,7 @@ def _http_error(exc: HTTPError) -> QuantApiError:
     except json.JSONDecodeError:
         pass
 
-    message = f"Quant API request failed with HTTP {exc.code}"
+    message = f"Quant API request failed with HTTP {exc.code} (url: {url})"
     if isinstance(payload, dict):
         detail = payload.get("detail") or payload.get("error")
         if detail:
