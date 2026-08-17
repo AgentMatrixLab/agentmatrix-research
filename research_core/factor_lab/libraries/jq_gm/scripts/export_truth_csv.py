@@ -137,8 +137,12 @@ def export_from_gm_terminal(output_path: str) -> None:
     import sys, os
     from pathlib import Path
 
-    _gm_path = os.environ.get("JQ2GM_PATH",
-                              str(Path.home() / "Desktop" / "TYDQUANT" / "JQ2GM"))
+    _gm_path = os.environ.get("JQ2GM_PATH", "")
+    if not _gm_path:
+        raise RuntimeError(
+            "JQ2GM_PATH not set; set it to the directory containing "
+            "gm_factor_lib.py and hs300.csv"
+        )
     sys.path.insert(0, _gm_path)
     from gm_factor_lib import calc_factors  # type: ignore[import]
 
