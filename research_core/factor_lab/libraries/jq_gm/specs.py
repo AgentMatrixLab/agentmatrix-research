@@ -1675,6 +1675,8 @@ JQ_GM_SPEC_beta_neutralized = _build_spec(
     description="Beta经市值中性化处理后的残差",
     gm_field="custom_price",
     gm_fields="?",
+    metadata_overrides={"status": "stub", "implementation_stage": "spec_only"},
+    notes=["中性化需截面回归，gm_factor_lib 未实现"],
 )
 
 JQ_GM_SPEC_size_neutralized = _build_spec(
@@ -1686,6 +1688,8 @@ JQ_GM_SPEC_size_neutralized = _build_spec(
     description="市值经行业中性化处理后的残差",
     gm_field="custom_price",
     gm_fields="?",
+    metadata_overrides={"status": "stub", "implementation_stage": "spec_only"},
+    notes=["中性化需截面回归，gm_factor_lib 未实现"],
 )
 
 JQ_GM_SPEC_volatility_neutralized = _build_spec(
@@ -1697,6 +1701,8 @@ JQ_GM_SPEC_volatility_neutralized = _build_spec(
     description="波动率经市值中性化处理后的残差",
     gm_field="custom_price",
     gm_fields="?",
+    metadata_overrides={"status": "stub", "implementation_stage": "spec_only"},
+    notes=["中性化需截面回归，gm_factor_lib 未实现"],
 )
 
 JQ_GM_SPEC_liquidity_neutralized = _build_spec(
@@ -1708,6 +1714,8 @@ JQ_GM_SPEC_liquidity_neutralized = _build_spec(
     description="流动性经市值中性化处理后的残差",
     gm_field="custom_price",
     gm_fields="?",
+    metadata_overrides={"status": "stub", "implementation_stage": "spec_only"},
+    notes=["中性化需截面回归，gm_factor_lib 未实现"],
 )
 
 JQ_GM_SPEC_growth_neutralized = _build_spec(
@@ -1719,6 +1727,8 @@ JQ_GM_SPEC_growth_neutralized = _build_spec(
     description="成长因子经市值中性化处理后的残差",
     gm_field="custom",
     gm_fields="?",
+    metadata_overrides={"status": "stub", "implementation_stage": "spec_only"},
+    notes=["中性化需截面回归，gm_factor_lib 未实现"],
 )
 
 JQ_GM_SPEC_momentum_neutralized = _build_spec(
@@ -1730,6 +1740,8 @@ JQ_GM_SPEC_momentum_neutralized = _build_spec(
     description="动量经市值中性化处理后的残差",
     gm_field="custom_price",
     gm_fields="?",
+    metadata_overrides={"status": "stub", "implementation_stage": "spec_only"},
+    notes=["中性化需截面回归，gm_factor_lib 未实现"],
 )
 
 JQ_GM_SPEC_leverage_neutralized = _build_spec(
@@ -1741,6 +1753,8 @@ JQ_GM_SPEC_leverage_neutralized = _build_spec(
     description="杠杆经市值中性化处理后的残差",
     gm_field="custom",
     gm_fields="?",
+    metadata_overrides={"status": "stub", "implementation_stage": "spec_only"},
+    notes=["中性化需截面回归，gm_factor_lib 未实现"],
 )
 
 JQ_GM_SPEC_book_to_price_neutralized = _build_spec(
@@ -1752,6 +1766,8 @@ JQ_GM_SPEC_book_to_price_neutralized = _build_spec(
     description="BP经市值中性化处理后的残差",
     gm_field="custom",
     gm_fields="?",
+    metadata_overrides={"status": "stub", "implementation_stage": "spec_only"},
+    notes=["中性化需截面回归，gm_factor_lib 未实现"],
 )
 
 JQ_GM_SPEC_total_operating_revenue = _build_spec(

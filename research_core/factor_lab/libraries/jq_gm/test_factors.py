@@ -146,10 +146,10 @@ class TestSpecFormat:
             assert spec.metadata.get("gm_fields"), (
                 f"{spec.factor_name}: missing gm_fields in metadata"
             )
-            assert spec.metadata.get("status") == "implemented", (
+            assert spec.metadata.get("status") in ("implemented", "stub"), (
                 f"{spec.factor_name}: metadata.status={spec.metadata.get('status')}"
             )
-            assert spec.metadata.get("implementation_stage") == "code", (
+            assert spec.metadata.get("implementation_stage") in ("code", "spec_only"), (
                 f"{spec.factor_name}: metadata.implementation_stage={spec.metadata.get('implementation_stage')}"
             )
 
