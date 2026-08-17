@@ -5,20 +5,15 @@
 1. 合成数据上的公式正确性
 2. 边界情况不崩溃
 """
-import importlib.util
 import unittest
+import sys
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
-# 按完整路径加载本地 factor.py，避免 sys.path 污染导致两个 test_factor.py 互相导错
-_spec = importlib.util.spec_from_file_location(
-    "momentum_20d_factor", Path(__file__).resolve().parent / "factor.py"
-)
-_factor_module = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(_factor_module)
-compute = _factor_module.compute
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from factor import compute
 
 
 class TestMomentum20d(unittest.TestCase):
