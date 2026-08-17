@@ -51,6 +51,8 @@ _PATTERNS: list[tuple[str, ExprType, str]] = [
     (r'^Std\(\$(close),\s*(\d+)\)$',                     ExprType.VOLATILITY, "volatility"),
     (r'^Std\(.*Ref.*\$close.*,\s*(\d+)\)$',              ExprType.VOLATILITY, "vol-returns"),
     (r'^Mean\(\$(close),\s*(\d+)\)$',                     ExprType.MOVING_AVERAGE, "ma"),
+    (r'^\$(close)\s*/\s*Mean\(\$\1,\s*(\d+)\)\s*-\s*1$',  ExprType.MOVING_AVERAGE, "ma-bias"),
+    (r'^\$(close)\s*/\s*Mean\(\$\1,\s*(\d+)\)$',          ExprType.MOVING_AVERAGE, "ma-ratio"),
     (r'^\$(high)\s*/\s*\$low$',                          ExprType.PRICE_RATIO, "ratio-hl"),
     (r'^\$(open)\s*/\s*\$close$',                        ExprType.PRICE_RATIO, "ratio-oc"),
     (r'^Corr\(\$(\w+),\s*\$(\w+),\s*(\d+)\)$',           ExprType.CORRELATION, "corr"),
