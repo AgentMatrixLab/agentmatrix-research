@@ -54,10 +54,20 @@
             <span class="nav-icon">⌁</span>
             <span>因子库</span>
           </button>
-          <button class="nav-item" type="button" data-view="strategy">
-            <span class="nav-icon">▣</span>
-            <span>策略看板</span>
-          </button>
+          <div class="nav-group quant-desk-nav-group" id="quantDeskNavGroup">
+            <button class="nav-item" type="button" data-view="quant-desk">
+              <span class="nav-icon">▣</span>
+              <span>Quant Desk</span>
+            </button>
+            <div id="quantDeskTabs" class="quant-desk-subnav" aria-label="Quant Desk 模块">
+              <button class="active" type="button" data-quant-desk-path="">策略总览</button>
+              <button type="button" data-quant-desk-path="portfolio">组合策略</button>
+              <button type="button" data-quant-desk-path="positions">持仓分析</button>
+              <button type="button" data-quant-desk-path="trades">交易记录</button>
+              <button type="button" data-quant-desk-path="risk">风险监控</button>
+              <button type="button" data-quant-desk-path="backtest">回测中心</button>
+            </div>
+          </div>
           <button class="nav-item" type="button" data-view="agent_task">
             <span class="nav-icon">AI</span>
             <span>数据入口</span>
@@ -282,100 +292,14 @@
           </section>
         </section>
 
-        <section id="strategyView" class="content strategy-view hidden" aria-label="策略看板">
-          <section class="strategy-head">
-            <div>
-              <h2>策略看板</h2>
-              <p>当前仅展示策略层预留接口与研究占位结果，不触发回测、不执行交易逻辑。</p>
-            </div>
-            <details class="contract-drawer">
-              <summary>查看接口契约</summary>
-              <span>strategy_monitor_view_v1：strategy_id、factors[]、universe、rebalance、cost_model、metrics、status、updated_at。</span>
-            </details>
-          </section>
-
-          <section id="realDataResearchPanel" class="panel-card" aria-label="真实数据研究">
-            <div class="panel-header">
-              <h3>真实数据研究（Quant API）</h3>
-              <span class="panel-badge">实时计算</span>
-            </div>
-            <div class="research-form">
-              <div class="form-row">
-                <label class="form-label">因子集：</label>
-                <select id="researchFactorSet" class="form-select">
-                  <option value="quant_api">Quant API 月频因子</option>
-                  <option value="alpha101">Alpha101</option>
-                  <option value="gtja191">GTJA191</option>
-                </select>
-              </div>
-              <div class="form-row">
-                <label class="form-label">因子名称：</label>
-                <input id="researchFactors" class="form-input" type="text" placeholder="ret_1m,roe_ttm,momentum_12_1" value="ret_1m,roe_ttm,momentum_12_1" />
-              </div>
-              <div class="form-row">
-                <label class="form-label">股票代码：</label>
-                <input id="researchSymbols" class="form-input" type="text" placeholder="000001.SZ,000002.SZ" value="000001.SZ,000002.SZ,000004.SZ" />
-              </div>
-              <div class="form-row">
-                <label class="form-label">日期范围：</label>
-                <input id="researchStartDate" class="form-input" type="date" value="2023-01-01" />
-                <span class="form-separator">至</span>
-                <input id="researchEndDate" class="form-input" type="date" value="2024-01-01" />
-              </div>
-              <div class="form-actions">
-                <button id="runResearchButton" class="btn btn-primary" type="button">运行研究</button>
-                <button id="clearResearchButton" class="btn btn-secondary" type="button">清空结果</button>
-              </div>
-            </div>
-            <div id="researchLoading" class="loading-overlay hidden">
-              <div class="loading-spinner"></div>
-              <span>正在计算因子...请稍候</span>
-            </div>
-            <div id="researchResults" class="research-results hidden">
-              <div class="results-header">
-                <span>研究结果</span>
-                <span id="researchJobId" class="job-id-badge"></span>
-              </div>
-              <table class="research-table">
-                <thead>
-                  <tr>
-                    <th>因子名称</th>
-                    <th>IC均值</th>
-                    <th>IC IR</th>
-                    <th>Rank IC</th>
-                    <th>Sharpe</th>
-                    <th>最大回撤</th>
-                    <th>覆盖率</th>
-                    <th>多空收益</th>
-                  </tr>
-                </thead>
-                <tbody id="researchResultsBody"></tbody>
-              </table>
-            </div>
-          </section>
-
-          <section id="strategyStats" class="monitor-stats" aria-label="策略统计"></section>
-
-          <section class="table-card strategy-table-card" aria-label="策略列表">
-            <div class="table-scroll">
-              <table class="strategy-table">
-                <thead>
-                  <tr>
-                    <th class="strategy-sortable" data-strategy-sort="name">策略名称</th>
-                    <th class="strategy-sortable" data-strategy-sort="factors">使用因子</th>
-                    <th class="strategy-sortable" data-strategy-sort="universe">股票池</th>
-                    <th>调仓 / 成本</th>
-                    <th class="number strategy-sortable" data-strategy-sort="annualReturn">年化收益</th>
-                    <th class="number strategy-sortable" data-strategy-sort="sharpe">夏普</th>
-                    <th class="number strategy-sortable" data-strategy-sort="maxDrawdown">最大回撤</th>
-                    <th class="strategy-sortable" data-strategy-sort="status">状态</th>
-                    <th class="strategy-sortable" data-strategy-sort="updatedAt">更新时间</th>
-                  </tr>
-                </thead>
-                <tbody id="strategyTableBody"></tbody>
-              </table>
-            </div>
-          </section>
+        <section id="strategyView" class="content strategy-view quant-desk-view hidden" aria-label="策略工作台">
+          <iframe
+            id="quantDeskFrame"
+            class="quant-desk-frame"
+            title="Quant Desk strategy dashboard"
+            loading="lazy"
+            src="about:blank"
+          ></iframe>
         </section>
 
         <section id="strategyBuilderView" class="content strategy-builder-view hidden" aria-label="策略构建页"></section>

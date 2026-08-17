@@ -16,6 +16,16 @@ const configuredApiHost = (
 if (urlParams.get("api")) {
   window.localStorage.setItem("FACTOR_LAB_API_HOST", configuredApiHost);
 }
+const configuredQuantDeskHost = (
+  urlParams.get("quantDesk") ||
+  (hasWindowConfig("FACTOR_LAB_QUANT_DESK_HOST")
+    ? window.FACTOR_LAB_QUANT_DESK_HOST
+    : window.localStorage.getItem("FACTOR_LAB_QUANT_DESK_HOST")) ||
+  ""
+).replace(/\/+$/, "");
+if (urlParams.get("quantDesk")) {
+  window.localStorage.setItem("FACTOR_LAB_QUANT_DESK_HOST", configuredQuantDeskHost);
+}
 const CLOUD_DEMO_MODE =
   !configuredApiHost &&
   (window.location.hostname.endsWith("github.io") || urlParams.has("demo"));
@@ -27,6 +37,10 @@ const API_HOST = configuredApiHost
       ? window.location.origin
       : "http://127.0.0.1:8012";
 const API_BASE = CLOUD_DEMO_MODE ? "" : `${API_HOST}/api/agents/factor-lab`;
+const QUANT_DESK_HOST = configuredQuantDeskHost || "http://127.0.0.1:8013";
+const QUANT_DESK_BASE = `${QUANT_DESK_HOST}/quant-desk/`;
+const QUANT_DESK_HEALTH = `${QUANT_DESK_HOST}/healthz`;
+const QUANT_DESK_DEFAULT_PATH = "";
 const SUPABASE_URL = (
   window.FACTOR_LAB_SUPABASE_URL ||
   urlParams.get("supabaseUrl") ||
@@ -286,6 +300,11 @@ const state = {
   strategies: [],
   strategiesLoaded: false,
   strategiesLoading: false,
+  quantDeskStatus: "checking",
+  quantDeskMessage: "正在检测策略服务",
+  quantDeskCheckedAt: null,
+  quantDeskHealthLoading: false,
+  quantDeskPath: QUANT_DESK_DEFAULT_PATH,
   researchParams: {
     universe: "沪深300",
     period: "近1年",
@@ -306,6 +325,16 @@ const els = {
   libraryView: document.querySelector("#libraryView"),
   monitorView: document.querySelector("#monitorView"),
   strategyView: document.querySelector("#strategyView"),
+  quantDeskView: document.querySelector("#strategyView"),
+  quantDeskNavGroup: document.querySelector("#quantDeskNavGroup"),
+  quantDeskFrame: document.querySelector("#quantDeskFrame"),
+  quantDeskTabs: document.querySelectorAll("[data-quant-desk-path]"),
+  quantDeskStatusBadge: document.querySelector("#quantDeskStatusBadge"),
+  quantDeskHostText: document.querySelector("#quantDeskHostText"),
+  quantDeskBridgeStatus: document.querySelector("#quantDeskBridgeStatus"),
+  quantDeskOpenLink: document.querySelector("#quantDeskOpenLink"),
+  quantDeskReloadButton: document.querySelector("#quantDeskReloadButton"),
+  quantDeskRetryButton: document.querySelector("#quantDeskRetryButton"),
   strategyBuilderView: document.querySelector("#strategyBuilderView"),
   taskView: document.querySelector("#taskView"),
   strategyDetailView: document.querySelector("#strategyDetailView"),
@@ -393,6 +422,9 @@ function applyTheme(theme) {
   document.body.dataset.theme = normalized;
   window.localStorage.setItem(THEME_STORAGE_KEY, normalized);
   updateThemeButton(normalized);
+  if (typeof state !== "undefined" && isQuantDeskView()) {
+    window.requestAnimationFrame(() => setQuantDeskFrameSrc(true));
+  }
   if (state?.view === "detail" && state.activeFactorId) {
     window.requestAnimationFrame(() => mountDetailCharts(state.activeFactorId));
   }
@@ -828,6 +860,93 @@ async function fetchWithTimeout(url, options = {}) {
   }
 }
 
+function quantDeskStatusLabel() {
+  if (state.quantDeskStatus === "ok") return "策略服务：已连接";
+  if (state.quantDeskStatus === "bad") return "策略服务：离线";
+  return "策略服务：检测中";
+}
+
+function quantDeskStatusClass() {
+  if (state.quantDeskStatus === "ok") return "status-pill status-ok";
+  if (state.quantDeskStatus === "bad") return "status-pill status-bad";
+  return "status-pill status-warn";
+}
+
+function quantDeskUrl(path = state.quantDeskPath) {
+  const normalizedPath = String(path || "").replace(/^\/+/, "");
+  const url = new URL(normalizedPath ? `${QUANT_DESK_BASE}${normalizedPath}` : QUANT_DESK_BASE);
+  url.searchParams.set("embedded", "factor-lab");
+  url.searchParams.set("theme", normalizeTheme(document.body?.dataset?.theme || currentTheme()));
+  return url.toString();
+}
+
+function renderQuantDeskTabs() {
+  els.quantDeskTabs?.forEach((button) => {
+    button.classList.toggle("active", (button.dataset.quantDeskPath || "") === state.quantDeskPath);
+  });
+}
+
+function isQuantDeskView() {
+  return state.view === "quant-desk" || state.view === "strategy";
+}
+
+function setQuantDeskFrameSrc(force = false) {
+  if (!els.quantDeskFrame) return;
+  const target = quantDeskUrl();
+  const current = els.quantDeskFrame.getAttribute("src") || "";
+  const currentUrl = current && current !== "about:blank" ? new URL(current, window.location.href).toString() : "";
+  if (force || !currentUrl || currentUrl !== target) {
+    els.quantDeskFrame.setAttribute("src", target);
+  }
+}
+
+function renderQuantDesk() {
+  if (!els.quantDeskView) return;
+  renderQuantDeskTabs();
+  if (els.quantDeskHostText) els.quantDeskHostText.textContent = QUANT_DESK_HOST;
+  if (els.quantDeskOpenLink) els.quantDeskOpenLink.href = quantDeskUrl();
+  if (els.quantDeskStatusBadge) {
+    els.quantDeskStatusBadge.className = quantDeskStatusClass();
+    els.quantDeskStatusBadge.textContent = quantDeskStatusLabel();
+    els.quantDeskStatusBadge.title = state.quantDeskMessage;
+  }
+  if (els.quantDeskBridgeStatus) {
+    els.quantDeskBridgeStatus.className = `quant-desk-bridge-status ${state.quantDeskStatus}`;
+    els.quantDeskBridgeStatus.textContent = state.quantDeskMessage;
+  }
+  setQuantDeskFrameSrc(false);
+  if (!state.quantDeskCheckedAt && !state.quantDeskHealthLoading) {
+    checkQuantDeskHealth();
+  }
+}
+
+async function checkQuantDeskHealth() {
+  if (CLOUD_DEMO_MODE) {
+    state.quantDeskStatus = "bad";
+    state.quantDeskMessage = "静态演示模式无法访问本地策略服务。可用 ?quantDesk=... 指向已部署的 Quant Desk 主机。";
+    state.quantDeskCheckedAt = new Date().toISOString();
+    renderQuantDesk();
+    return;
+  }
+  state.quantDeskHealthLoading = true;
+  state.quantDeskStatus = "checking";
+  state.quantDeskMessage = `正在检测 ${QUANT_DESK_HOST}`;
+  renderQuantDesk();
+  try {
+    const response = await fetchWithTimeout(withCacheBust(QUANT_DESK_HEALTH));
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    state.quantDeskStatus = "ok";
+    state.quantDeskMessage = `已打通 ${QUANT_DESK_BASE}`;
+  } catch (error) {
+    state.quantDeskStatus = "bad";
+    state.quantDeskMessage = `请先启动 backend/strategy_dashboard_api.py，然后重载。${error.message || error}`;
+  } finally {
+    state.quantDeskHealthLoading = false;
+    state.quantDeskCheckedAt = new Date().toISOString();
+    renderQuantDesk();
+  }
+}
+
 function parseJsonObject(value) {
   if (!value) return {};
   if (typeof value === "object" && !Array.isArray(value)) return value;
@@ -1129,7 +1248,7 @@ async function loadData() {
       applyFilters();
       await syncDetailFromHash();
       if (state.view === "monitor") renderMonitor();
-      if (state.view === "strategy") renderStrategy();
+      if (isQuantDeskView()) renderQuantDesk();
       if (state.view === "strategy-detail") renderStrategyDetail();
       if (state.view === "tasks") renderTasks();
       return;
@@ -1153,7 +1272,7 @@ async function loadData() {
     loadStrategies();
     loadStrategyTemplates();
     if (state.view === "monitor") renderMonitor();
-    if (state.view === "strategy") renderStrategy();
+    if (isQuantDeskView()) renderQuantDesk();
     if (state.view === "strategy-detail") renderStrategyDetail();
     if (state.view === "tasks") renderTasks();
   } catch (error) {
@@ -1165,7 +1284,7 @@ async function loadData() {
     renderTabs({ categories: {}, libraries: {}, factors: [] });
     renderTable();
     if (state.view === "monitor") renderMonitor();
-    if (state.view === "strategy") renderStrategy();
+    if (isQuantDeskView()) renderQuantDesk();
     if (state.view === "strategy-detail") renderStrategyDetail();
     if (state.view === "tasks") renderTasks();
   } finally {
@@ -2210,7 +2329,7 @@ async function loadStrategies() {
   } finally {
     state.strategiesLoading = false;
     state.strategiesLoaded = true;
-    if (state.view === "strategy") renderStrategy();
+    if (isQuantDeskView()) renderQuantDesk();
   }
 }
 
@@ -2363,7 +2482,7 @@ async function saveStrategyBuilder() {
   }
   state.strategyDrafts.unshift(strategyRowFromRun(payload));
   saveStrategies();
-  state.view = "strategy";
+  state.view = "quant-desk";
   window.location.hash = "";
   renderView();
   showToast("策略已保存并导入策略看板");
@@ -2689,7 +2808,7 @@ function renderStrategyDeleteActions(rows) {
     actions.innerHTML = `<button type="button" class="danger-action compact" id="enterStrategyDeleteMode" ${deletableCount ? "" : "disabled"}>删除策略</button>`;
     actions.querySelector("#enterStrategyDeleteMode")?.addEventListener("click", () => {
       state.strategyDeleteMode = true;
-      renderStrategy();
+      renderQuantDesk();
     });
     return;
   }
@@ -2853,7 +2972,7 @@ async function openStrategyDetail(strategyId) {
 
 function closeStrategyDetail() {
   startAutoRefresh();
-  state.view = "strategy";
+  state.view = "quant-desk";
   state.activeStrategyId = null;
   renderView();
 }
@@ -5605,8 +5724,8 @@ function closeDetail() {
 
 function showMainView(view) {
   const enabledViews = ENABLE_AGENT_TASK_DEBUG
-    ? ["monitor", "library", "strategy", "strategy-builder", "tasks", "agent_task", "settings"]
-    : ["monitor", "library", "strategy", "strategy-builder", "tasks", "settings"];
+    ? ["monitor", "library", "quant-desk", "strategy-builder", "tasks", "agent_task", "settings"]
+    : ["monitor", "library", "quant-desk", "strategy-builder", "tasks", "settings"];
   state.view = enabledViews.includes(view) ? view : "library";
   state.activeFactorId = null;
   state.activeStrategyId = null;
@@ -5619,6 +5738,11 @@ function showMainView(view) {
 }
 
 async function syncDetailFromHash() {
+  if (window.location.hash === "#quant-desk") {
+    state.view = "quant-desk";
+    renderView();
+    return;
+  }
   if (window.location.hash === "#strategy-builder") {
     state.view = "strategy-builder";
     loadStrategyTemplates();
@@ -5636,7 +5760,7 @@ async function syncDetailFromHash() {
 function renderView() {
   const detailMode = state.view === "detail";
   const monitorMode = state.view === "monitor";
-  const strategyMode = state.view === "strategy";
+  const strategyMode = state.view === "quant-desk" || state.view === "strategy";
   const strategyBuilderMode = state.view === "strategy-builder";
   const strategyDetailMode = state.view === "strategy-detail";
   const taskMode = state.view === "tasks";
@@ -5659,6 +5783,12 @@ function renderView() {
                 : settingsMode
                   ? "设置"
                   : "因子库";
+  if (strategyMode) {
+    els.pageTitle.textContent = "策略工作台";
+  }
+  if (strategyMode) {
+    els.pageTitle.textContent = "Quant Desk";
+  }
   els.libraryView.classList.toggle(
     "hidden",
     detailMode || monitorMode || strategyMode || strategyBuilderMode || strategyDetailMode || taskMode || agentTaskMode || settingsMode,
@@ -5676,11 +5806,12 @@ function renderView() {
     detailMode || monitorMode || strategyMode || strategyBuilderMode || strategyDetailMode || taskMode || settingsMode,
   );
   els.navItems.forEach((item) => {
-    const activeView = detailMode ? "library" : strategyDetailMode || strategyBuilderMode ? "strategy" : state.view;
+    const activeView = detailMode ? "library" : strategyDetailMode || strategyBuilderMode ? "quant-desk" : state.view === "strategy" ? "quant-desk" : state.view;
     item.classList.toggle("active", item.dataset.view === activeView);
   });
+  els.quantDeskNavGroup?.classList.toggle("expanded", strategyMode);
   if (monitorMode) renderMonitor();
-  if (strategyMode) renderStrategy();
+  if (strategyMode) renderQuantDesk();
   if (strategyBuilderMode) {
     loadStrategyTemplates();
     renderStrategyBuilder();
@@ -6757,6 +6888,14 @@ function bindEvents() {
   els.navItems.forEach((button) => {
     button.addEventListener("click", () => showMainView(button.dataset.view));
   });
+  els.quantDeskTabs?.forEach((button) => {
+    button.addEventListener("click", () => {
+      state.quantDeskPath = button.dataset.quantDeskPath || "";
+      showMainView("quant-desk");
+      renderQuantDeskTabs();
+      setQuantDeskFrameSrc(true);
+    });
+  });
   els.monitorFilters.forEach((button) => {
     button.addEventListener("click", () => {
       state.monitorFilter = button.dataset.monitorFilter || "all";
@@ -6827,6 +6966,15 @@ function bindEvents() {
   });
   els.themeToggleButton?.addEventListener("click", toggleTheme);
   els.refreshButton.addEventListener("click", loadData);
+  els.quantDeskReloadButton?.addEventListener("click", () => {
+    state.quantDeskCheckedAt = null;
+    setQuantDeskFrameSrc(true);
+    checkQuantDeskHealth();
+  });
+  els.quantDeskRetryButton?.addEventListener("click", () => {
+    state.quantDeskCheckedAt = null;
+    checkQuantDeskHealth();
+  });
   els.collapseButton.addEventListener("click", () => {
     window.clearTimeout(collapseTimer);
     els.appShell.classList.add("is-collapsing");
@@ -6864,6 +7012,10 @@ function bindEvents() {
   });
   window.addEventListener("hashchange", () => {
     if (!window.location.hash && state.view === "detail") closeDetail();
+    if (window.location.hash === "#quant-desk") {
+      state.view = "quant-desk";
+      renderView();
+    }
     if (window.location.hash === "#strategy-builder") {
       state.view = "strategy-builder";
       renderView();

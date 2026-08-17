@@ -2,6 +2,10 @@
 // Flask base URL, for example "https://factor-lab-api.onrender.com".
 window.FACTOR_LAB_API_HOST = "";
 
+// Optional Quant Desk service base URL. The integrated strategy workspace
+// embeds /quant-desk/ from this host. Leave blank for local 127.0.0.1:8013.
+window.FACTOR_LAB_QUANT_DESK_HOST = "";
+
 // Supabase public read endpoint for the static dashboard. This key is safe to
 // expose only when Row Level Security allows SELECT on public dashboard tables.
 window.FACTOR_LAB_SUPABASE_URL = "https://rebyrzrvnfbwvmbjvhzj.supabase.co";
