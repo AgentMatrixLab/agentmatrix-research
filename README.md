@@ -4,15 +4,12 @@
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
-
-
 ## For AI Agents
 
-**If you are an AI agent (Claude, GPT, Trae, Cursor, WorkBuddy, …), read [`AGENTS.md`](AGENTS.md) first.**
+If you are an AI agent working inside this repository, read [AGENTS.md](AGENTS.md) first.
+It points to the existing modules, CLI entry points, bundled Skills, and documentation files you should use.
 
-`AGENTS.md` is a lightweight navigation entry that points to existing modules,
-CLI entry points, bundled Skills and relevant docs.
-
+## Pages Portal
 
 - GitHub Pages portal: [agentmatrixlab.github.io/agentmatrix-research](https://agentmatrixlab.github.io/agentmatrix-research/)
 - Use the portal for repo navigation, docs entry, workflow links, and common test commands.
@@ -120,3 +117,155 @@ python scripts/dev/make_truth_compare_samples.py
 python scripts/run_truth_compare.py --factor-family alpha101 --factor-name alpha1 \
   --values-csv data/factor_lab/samples/factor_values_alpha1_pass.csv \
   --truth-csv data/factor_lab/alpha101_truth_template_101f_60d_5c_s29.csv
+# Optional: sync results to Supabase (requires service_role key, see .env.example)
+python scripts/sync_truth_compare_to_supabase.py
+```
+
+See [docs/FACTOR_LAB_TRUTH_COMPARE.md](docs/FACTOR_LAB_TRUTH_COMPARE.md) for the full
+test walkthrough (passed / failed / not_comparable branches), the Supabase migration
+order, and which keys must be provided by the project team.
+
+### Factor Lab API
+
+```bash
+python backend/factor_lab_api.py
+```
+
+### Factor Lab Dashboard
+
+Start the local Flask API first, then open the dashboard served by the same backend:
+
+```text
+http://127.0.0.1:8012/factor-lab-dashboard
+```
+
+Quant Desk is intentionally served by a separate minimal read-only process. Run:
+
+```bash
+python backend/strategy_dashboard_api.py
+```
+
+It exposes the dashboard backed by persisted AgentMatrix `BacktestResult` files:
+
+```text
+http://127.0.0.1:8013/quant-desk/
+```
+
+This process does not import or host Factor Lab. The Quant Desk view does not
+execute strategies or use mock/SQLite data. It
+shows completed results from `runtime/custom_engine/backtests/` through the
+`/api/strategy-dashboard/*` endpoints.
+
+The dashboard is a zero-build static frontend under `frontend/factor-lab-dashboard/`. When opened from the Flask URL above, it automatically reads:
+
+```text
+http://127.0.0.1:8012/api/agents/factor-lab
+```
+
+For a static host such as GitHub Pages, set `window.FACTOR_LAB_API_HOST` in `frontend/factor-lab-dashboard/config.js` to a deployed Flask backend URL. Do not put Quant API tokens in frontend code. Keep tokens in `.env` / backend environment variables only; runtime research artifacts under `runtime/factor_lab/` and local data under `data/factor_lab/` are intentionally ignored by git.
+
+API endpoints for front-end and agent orchestration:
+
+- `GET /api/agents/factor-lab/overview`
+- `GET /api/agents/factor-lab/alpha101/factors`
+- `GET /api/agents/factor-lab/alpha101/factors/<factor_name>`
+- `GET /api/agents/factor-lab/jobs`
+- `POST /api/agents/factor-lab/jobs`
+- `GET /api/agents/factor-lab/jobs/<job_id>`
+
+### Run a Sample Strategy
+
+```python
+from research_core.strategy_engine.samples.gm_small_cap_monthly import init, algo
+
+# Or use the backtest adapter to generate an execution plan:
+from research_core.backtest_adapter.example_gm_plan import main
+main("gm_small_cap_monthly")
+```
+
+### Define a Custom Strategy
+
+```python
+from contracts.strategy import StrategyKernel, StrategyMetadata, StrategyDecision, StrategyContext
+
+class MyStrategy(StrategyKernel):
+    def metadata(self) -> StrategyMetadata:
+        return StrategyMetadata(
+            strategy_id="my-strategy-v1",
+            name="My Custom Strategy",
+            source_engine="custom",
+        )
+
+    def generate_decision(self, context: StrategyContext, market_data) -> StrategyDecision:
+        # Your logic here
+        ...
+```
+
+## Contracts
+
+The `contracts/` module defines the canonical data structures used across all components:
+
+| Contract | Purpose |
+|----------|---------|
+| `StrategyMetadata` | Strategy identity, version, tags |
+| `StrategyDecision` | Target positions + diagnostics from a strategy run |
+| `BacktestRequest` | Input specification for a backtest run |
+| `BacktestResult` | Output: metrics, equity curve, trades, holdings |
+| `AttributionReport` | Return decomposition by dimension |
+
+These contracts enable **engine-agnostic** strategy development: write once, backtest on GM or RQAlpha without changing strategy code.
+
+## Backtest Adapters
+
+| Adapter | Status | Engine |
+|---------|--------|--------|
+| `GMBacktestAdapter` | ✅ Scaffold (execution plan generation) | [掘金量化](https://www.myquant.cn/) |
+| `RQAlphaAdapter` | ✅ Scaffold (pickle result parsing) | [RQAlpha](https://github.com/ricequant/rqalpha) |
+| `QlibBacktestAdapter` | ✅ Added for factor-expression backtests | [Qlib](https://github.com/microsoft/qlib) |
+
+## Contributing
+
+We welcome contributions! Please follow these guidelines:
+
+1. **New modules** → Place under `research_core/` (not `scripts/` or `backend/`)
+2. **Contracts** → Extend `contracts/` for any new cross-component data structures
+3. **Strategy samples** → Add to `research_core/strategy_engine/samples/`
+4. **Code style** → Follow PEP 8, use type hints
+5. **Sensitive data** → Never commit API keys, tokens, or real trading parameters. Use environment variables.
+
+Templates for contributors:
+
+- `docs/templates/factor_proposal.md`
+- `docs/templates/experiment_report.md`
+- `.github/PULL_REQUEST_TEMPLATE.md`
+
+### Development Workflow
+
+```bash
+# Create a feature branch
+git checkout -b feat/my-feature
+
+# Make changes and test
+python -m py_compile research_core/my_module.py
+
+# Submit a PR to main
+```
+
+## Architecture Principles
+
+1. **Contracts first** — Define the interface before the implementation
+2. **Engine-agnostic** — Strategy code should not depend on a specific backtest engine
+3. **Separation of concerns** — Strategy logic ≠ Data fetching ≠ Execution ≠ Attribution
+4. **Reproducibility** — Every run produces a `BacktestResult` with full metadata
+
+## Migration Notes
+
+The `backend/` and `scripts/` directories are **legacy transition layers** from the original monorepo. New development should target `research_core/` and `contracts/` exclusively.
+
+## License
+
+This project is licensed under the [Apache License 2.0](LICENSE).
+
+---
+
+© 2025-2026 [AgentMatrixLab](https://agentmatrixlab.com)
