@@ -158,8 +158,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="Number of top factors to report",
     )
     explore_parser.add_argument(
-        "--cache-dir", default=None,
-        help="Cache directory for market data (default: runtime/factor_lab/cache)",
+        "--cache-dir", default="/tmp/agentmatrix_cache",
+        help="Cache directory for market data",
     )
     explore_parser.add_argument(
         "--output", default="",
@@ -204,7 +204,8 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
-    config = FactorLabWorkspaceConfig.from_env()
+    config = FactorLabWorkspaceConfig()
+
     if args.command == "init-workspace":
         payload = {key: str(value) for key, value in config.ensure_directories().items()}
         print(json.dumps(payload, ensure_ascii=False, indent=2))
