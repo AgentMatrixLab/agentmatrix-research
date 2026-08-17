@@ -6,6 +6,11 @@ Requires GM terminal. Falls back gracefully when unavailable.
 import sys, os, json
 import pandas as pd
 
+# GM SDK project dir (gm_factor_lib.py lives here), overridable via env
+_PROJECT_DIR = os.environ.get("GM_PROJECT_DIR", r"C:\Users\lorenzoteng\.goldminer3\projects")
+if os.path.isdir(_PROJECT_DIR):
+    sys.path.insert(0, _PROJECT_DIR)
+
 try:
     from gm_factor_lib import calc_factors
     _GM_AVAILABLE = True
@@ -43,8 +48,8 @@ def main():
     result = calc_factors(
         securities=securities,
         factors=FACTORS,
-        start_date="2024-01-01",
-        end_date="2024-12-31",
+        start_date="2024-01-02",
+        end_date="2024-01-10",
         use_real_price=True,
     )
     print(json.dumps({"status": "ok", "factors": len(FACTORS), "dates": len(result)}, indent=2))
