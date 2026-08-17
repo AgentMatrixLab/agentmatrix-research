@@ -9,6 +9,10 @@ import sys, os, json
 import numpy as np
 import pandas as pd
 
+# Repo root for research_core imports
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, _REPO_ROOT)
+
 # GM SDK project dir (gm_factor_lib.py lives here)
 _PROJECT_DIR = os.environ.get("GM_PROJECT_DIR", r"C:\Users\lorenzoteng\.goldminer3\projects")
 if os.path.isdir(_PROJECT_DIR):
