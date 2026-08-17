@@ -1,0 +1,122 @@
+name: PR Gate
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+jobs:
+  validate-pr:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check PR template completeness
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          echo "🔍 Checking PR template..."
+
+          # Check for unfilled placeholder sections
+          FAIL=0
+
+          # 1. Check "What problem does this PR solve?" is filled
+          if echo "$PR_BODY" | grep -qP '^\*\*What problem does this PR solve\?\*\*.*$'; then
+            echo "✅ Problem statement present"
+          else
+            echo "❌ Missing: What problem does this PR solve?"
+            FAIL=1
+          fi
+
+          # 2. Check verification output is NOT empty/placeholder
+          if echo "$PR_BODY" | grep -A5 'Verification output' | grep -qP '^\s*$|Paste your|<!-- Paste'; then
+            echo "❌ Verification output is empty or still placeholder"
+            FAIL=1
+          else
+            echo "✅ Verification output filled"
+          fi
+
+          # 3. Check no TODO/FIXME without context
+          if echo "$PR_BODY" | grep -qiP '^\s*-\s*(TODO|FIXME)\s*$'; then
+            echo "⚠️  Bare TODO/FIXME found — add context"
+          fi
+
+          # 4. Check for secrets patterns
+          if echo "$PR_BODY" | grep -qiP '(api_key|sk-|token.*=|secret.*=)'; then
+            echo "🔴 WARNING: Possible secret in PR description!"
+          fi
+
+          if [ $FAIL -eq 1 ]; then
+            echo ""
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "❌ PR REJECTED: Template not fully filled."
+            echo "   Please complete ALL required sections."
+            echo "   See .github/PULL_REQUEST_TEMPLATE.md"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            exit 1
+          fi
+
+          echo "✅ PR template validation passed"
+
+      - name: Scan for secrets and private data
+        run: |
+          echo "🔍 Scanning for secrets..."
+
+          # Check files for common secret patterns
+          PATTERNS=(
+            'sk-[a-zA-Z0-9]{20,}'
+            'api_key\s*=\s*["'"'"'][^"'"'"']{8,}'
+            'token\s*=\s*["'"'"'][^"'"'"']{8,}'
+            '/home/[a-z]+/'  # local absolute paths
+            'C:\\Users\\'    # Windows paths
+          )
+
+          FAIL=0
+          for pattern in "${PATTERNS[@]}"; do
+            FOUND=$(git diff --name-only origin/main...HEAD | xargs grep -lP "$pattern" 2>/dev/null || true)
+            if [ -n "$FOUND" ]; then
+              echo "🔴 Found sensitive pattern in: $FOUND"
+              echo "   Pattern: $pattern"
+              FAIL=1
+            fi
+          done
+
+          if [ $FAIL -eq 1 ]; then
+            echo ""
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "❌ PR REJECTED: Secrets or private paths detected."
+            echo "   Remove before resubmitting."
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            exit 1
+          fi
+
+          echo "✅ Secrets scan passed"
+
+      - name: Syntax check changed Python files
+        run: |
+          echo "🔍 Checking Python syntax..."
+          CHANGED=$(git diff --name-only origin/main...HEAD | grep '\.py$' || true)
+          if [ -z "$CHANGED" ]; then
+            echo "No Python files changed — skip"
+            exit 0
+          fi
+
+          FAIL=0
+          for f in $CHANGED; do
+            if [ -f "$f" ]; then
+              python3 -m py_compile "$f" 2>&1 && echo "  ✅ $f" || { echo "  ❌ $f"; FAIL=1; }
+            fi
+          done
+
+          if [ $FAIL -eq 1 ]; then
+            echo "❌ Syntax errors found"
+            exit 1
+          fi
+          echo "✅ Syntax check passed"
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "PR Gate complete."
+          echo "  Template check: ${{ steps.validate-pr.outcome }}"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
