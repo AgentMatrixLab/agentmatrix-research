@@ -1073,13 +1073,6 @@ function renderQuantDesk() {
 }
 
 async function checkQuantDeskHealth() {
-  if (CLOUD_DEMO_MODE) {
-    state.quantDeskStatus = "bad";
-    state.quantDeskMessage = "静态演示模式无法访问本地策略服务。可用 ?quantDesk=... 指向已部署的 Quant Desk 主机。";
-    state.quantDeskCheckedAt = new Date().toISOString();
-    renderQuantDesk();
-    return;
-  }
   state.quantDeskHealthLoading = true;
   state.quantDeskStatus = "checking";
   state.quantDeskMessage = `正在检测 ${QUANT_DESK_HOST}`;
@@ -1091,7 +1084,7 @@ async function checkQuantDeskHealth() {
     state.quantDeskMessage = `已打通 ${QUANT_DESK_BASE}`;
   } catch (error) {
     state.quantDeskStatus = "bad";
-    state.quantDeskMessage = `请先启动 backend/strategy_dashboard_api.py，然后重载。${error.message || error}`;
+    state.quantDeskMessage = `请先启动 backend/strategy_dashboard_api.py，或用 ?quantDesk=... 指向已部署主机。${error.message || error}`;
   } finally {
     state.quantDeskHealthLoading = false;
     state.quantDeskCheckedAt = new Date().toISOString();
