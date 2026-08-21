@@ -4,6 +4,11 @@
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
+## For AI Agents
+
+If you are an AI agent working inside this repository, read [AGENTS.md](AGENTS.md) first.
+It points to the existing modules, CLI entry points, bundled Skills, and documentation files you should use.
+
 ## Pages Portal
 
 - GitHub Pages portal: [agentmatrixlab.github.io/agentmatrix-research](https://agentmatrixlab.github.io/agentmatrix-research/)
