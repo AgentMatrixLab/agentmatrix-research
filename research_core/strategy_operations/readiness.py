@@ -7,11 +7,19 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
-import pyarrow.compute as pc
-import pyarrow.parquet as pq
+
+
+def _pyarrow_modules():
+    try:
+        import pyarrow.compute as pc
+        import pyarrow.parquet as pq
+    except ModuleNotFoundError as exc:
+        raise RuntimeError("pyarrow is required to inspect parquet readiness datasets") from exc
+    return pc, pq
 
 
 def _max_date(paths: list[Path], column: str) -> str | None:
+    pc, pq = _pyarrow_modules()
     maximum: pd.Timestamp | None = None
     for path in paths:
         table = pq.read_table(path, columns=[column])
@@ -23,6 +31,7 @@ def _max_date(paths: list[Path], column: str) -> str | None:
 
 
 def inspect_dataset(root: Path, spec: dict[str, Any]) -> dict[str, Any]:
+    _, pq = _pyarrow_modules()
     paths = sorted(root.glob(spec["glob"]))
     errors: list[str] = []
     rows = 0

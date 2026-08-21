@@ -27,8 +27,14 @@ desktop/build/
 desktop/dist/
 desktop/release/
 desktop/release-zoom/
+runtime/alpha158_lab/
+smartdata_cache/
 .DS_Store
 
 test_kline_api.py
 test_quant_api.py
 test_json_output.py
+data/daily_store/
+runtime/daily_automation/
+runtime/daily_mining_log.jsonl
+runtime/daily_run_log.jsonl

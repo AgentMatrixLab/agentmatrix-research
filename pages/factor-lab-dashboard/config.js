@@ -2,12 +2,19 @@
 // Flask base URL, for example "https://factor-lab-api.onrender.com".
 window.FACTOR_LAB_API_HOST = "";
 
+// Optional Quant Desk service base URL. The integrated strategy workspace
+// embeds /quant-desk/ from this host. Leave blank for local 127.0.0.1:8013.
+window.FACTOR_LAB_QUANT_DESK_HOST = "";
+
 // Supabase public read endpoint for the static dashboard. This key is safe to
 // expose only when Row Level Security allows SELECT on public dashboard tables.
 window.FACTOR_LAB_SUPABASE_URL = "https://rebyrzrvnfbwvmbjvhzj.supabase.co";
 window.FACTOR_LAB_SUPABASE_ANON_KEY = "sb_publishable_ZHAM5wQWZh_Wng4TaL-fDg_XlFBcB6j";
 window.FACTOR_LAB_SUPABASE_FACTOR_TABLE = "public_dashboard_factors";
 window.FACTOR_LAB_SUPABASE_TRUTH_SUMMARY_TABLE = "factor_truth_values_summary";
+window.FACTOR_LAB_SUPABASE_ANALYSIS_TABLE = "factor_analysis_results";
+window.FACTOR_LAB_SUPABASE_ANALYSIS_IC_TABLE = "factor_analysis_ic_series";
+window.FACTOR_LAB_SUPABASE_ANALYSIS_GROUP_TABLE = "factor_analysis_group_series";
 
 // Frontend-only access gate for the static dashboard. This is a convenience
 // login screen, not a substitute for Supabase RLS or backend authentication.
