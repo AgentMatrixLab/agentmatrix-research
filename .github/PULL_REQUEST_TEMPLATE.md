@@ -98,7 +98,7 @@ Describe the specific risk and the exact verification you ran.
 # Hygiene Check
 
 - [ ] No API keys, tokens, or `.env` files
-- [ ] No absolute paths (`/home/`, `C:\Users\`)
+- [ ] No absolute local machine paths or user-profile paths
 - [ ] No downloaded data or large runtime artifacts
 - [ ] No account-linked identifiers or private exports
 

@@ -64,7 +64,7 @@ class QlibWorkspaceConfig:
 def qlib_data_download_hint(config: QlibWorkspaceConfig) -> str:
     target_dir = config.resolved_provider_uri()
     return (
-        "Install pyqlib and download market data with the official helper, for example:\n"
+        "Install pyqlib and download market data with the official helper.\n"
         f"python scripts/get_data.py qlib_data --target_dir {target_dir} --region {config.resolved_region()}"
     )
 
