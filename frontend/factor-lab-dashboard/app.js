@@ -1,7 +1,7 @@
 // 本次修改点：
 // 1. 默认落地页切换为因子监控，配合左侧导航新顺序。
 // 2. 子库筛选暂时隐藏，保留 state.library 和渲染函数方便后续恢复。
-// 3. 分类筛选继续使用聚宽口径，并作为因子库/监控后续共用过滤基础。
+// 3. 分类筛选改为券商研报式大类/子类口径，并作为因子库/监控后续共用过滤基础。
 // 4. 新增因子库准入视觉状态、研究口径选择器、策略草稿生成，以及监控页分类/方向筛选。
 // 5. 新增独立策略构建页、成品策略模板契约、策略看板删除模式与股票池省略显示。
 const urlParams = new URLSearchParams(window.location.search);
@@ -125,7 +125,10 @@ const FACTOR_TABLE_LABELS = [
   "Factor",
   "Library",
   "Market",
-  "Category",
+  "Major",
+  "Subfactor",
+  "Direction",
+  "Compare",
   "Proof",
   "Truth",
   "Coverage",
@@ -139,12 +142,14 @@ const MONITOR_TABLE_LABELS = [
   "Status",
   "Factor",
   "Source",
+  "Category",
   "IC_IR",
   "IC Mean",
   "Coverage",
   "Recent IC",
   "IC Profile",
   "Direction",
+  "Compare",
   "Validation",
   "Market",
 ];
@@ -152,16 +157,18 @@ const ENABLE_AGENT_TASK_DEBUG = true;
 const FACTOR_INTAKE_CONTRACT_DOC = "docs/FACTOR_LAB_INTAKE_REPRODUCTION_CONTRACT.md";
 // AI 任务调试入口暂时关闭。恢复时打开 ENABLE_AGENT_TASK_DEBUG，并恢复 index.html 中对应入口。
 const JQ_FACTOR_CATEGORIES = [
-  "基础科目及衍生类因子",
-  "情绪类因子",
-  "动量类因子",
-  "质量类因子",
-  "成长类因子",
-  "风险因子-新风格因子",
-  "每股指标因子",
-  "风险类因子",
-  "风险因子-风格因子",
-  "技术指标因子",
+  "价格",
+  "成交稳定",
+  "流动性",
+  "量价拥挤度",
+  "成交笔数",
+  "反转",
+  "动量",
+  "质量",
+  "成长基本面",
+  "SUE",
+  "分析",
+  "价值",
 ];
 const MARKET_BUCKETS = [
   {
@@ -184,40 +191,81 @@ const MARKET_BUCKETS = [
   },
 ];
 const MARKET_LABEL_BY_KEY = Object.fromEntries(MARKET_BUCKETS.map((bucket) => [bucket.key, bucket.shortLabel]));
+const CJ_TAXONOMY = [
+  { category: "价格", subfactor: "残差波动率", direction: -1, keywords: ["residual_vol", "volatility", "波动", "残差波动"] },
+  { category: "价格", subfactor: "特异率", direction: -1, keywords: ["idiosyncratic", "specific", "特异"] },
+  { category: "价格", subfactor: "残差峰度", direction: -1, keywords: ["kurtosis", "峰度"] },
+  { category: "价格", subfactor: "高价振幅", direction: -1, keywords: ["high_low", "amplitude", "振幅"] },
+  { category: "成交稳定", subfactor: "换手率变异系数", direction: 1, keywords: ["turnover_cv", "换手率变异", "换手变异"] },
+  { category: "成交稳定", subfactor: "成交占比熵", direction: 1, keywords: ["volume_entropy", "amount_entropy", "成交占比熵"] },
+  { category: "成交稳定", subfactor: "重大单买入强度", direction: 1, keywords: ["large_buy", "big_order", "单买入"] },
+  { category: "成交稳定", subfactor: "涨峰", direction: 1, keywords: ["surge", "涨峰"] },
+  { category: "流动性", subfactor: "换手率", direction: -1, keywords: ["turnover", "换手率"] },
+  { category: "流动性", subfactor: "非流动性", direction: 1, keywords: ["illiquidity", "非流动"] },
+  { category: "流动性", subfactor: "一致买入占比", direction: 1, keywords: ["buy_ratio", "一致买入"] },
+  { category: "量价拥挤度", subfactor: "量价相关性", direction: -1, keywords: ["volume_price_corr", "量价相关"] },
+  { category: "量价拥挤度", subfactor: "加权偏度", direction: -1, keywords: ["weighted_skew", "skew", "偏度"] },
+  { category: "量价拥挤度", subfactor: "时量价比", direction: 1, keywords: ["time_volume_price", "时量价"] },
+  { category: "量价拥挤度", subfactor: "高量交易成本", direction: -1, keywords: ["high_volume_cost", "交易成本"] },
+  { category: "成交笔数", subfactor: "每笔成交额", direction: 1, keywords: ["avg_amount", "每笔成交"] },
+  { category: "成交笔数", subfactor: "高量每笔成交", direction: 1, keywords: ["high_volume_avg_amount", "高量每笔"] },
+  { category: "成交笔数", subfactor: "每笔流出额占比", direction: 1, keywords: ["outflow", "流出额"] },
+  { category: "反转", subfactor: "短期反转", direction: -1, keywords: ["reversal", "ret_1m", "短期反转"] },
+  { category: "反转", subfactor: "收益偏度", direction: -1, keywords: ["return_skew", "收益偏度"] },
+  { category: "反转", subfactor: "半衰残差动量", direction: 1, keywords: ["half_life", "residual_momentum", "半衰"] },
+  { category: "动量", subfactor: "长期动量", direction: 1, keywords: ["momentum", "ret_3m", "ret_6m", "ret_12m", "长期动量"] },
+  { category: "动量", subfactor: "排序动量", direction: 1, keywords: ["rank_momentum", "排序动量"] },
+  { category: "质量", subfactor: "ROE", direction: 1, keywords: ["roe"] },
+  { category: "质量", subfactor: "总资产周转率", direction: 1, keywords: ["asset_turnover", "总资产周转"] },
+  { category: "质量", subfactor: "净利率", direction: 1, keywords: ["net_margin", "净利率"] },
+  { category: "质量", subfactor: "现金总资产比率", direction: 1, keywords: ["cash_asset", "现金总资产"] },
+  { category: "质量", subfactor: "现金营业收入比率", direction: 1, keywords: ["cash_revenue", "现金营业收入"] },
+  { category: "成长基本面", subfactor: "ROE增长", direction: 1, keywords: ["roe_growth", "roe增长"] },
+  { category: "成长基本面", subfactor: "营业收入同比", direction: 1, keywords: ["revenue_yoy", "sales_yoy", "营业收入同比"] },
+  { category: "成长基本面", subfactor: "归母净利润同比", direction: 1, keywords: ["profit_yoy", "net_profit_yoy", "归母净利润"] },
+  { category: "成长基本面", subfactor: "总资产周转率同比", direction: 1, keywords: ["asset_turnover_yoy", "周转率同比"] },
+  { category: "SUE", subfactor: "ROE 2年 SUE", direction: 1, keywords: ["roe_sue", "sue_roe"] },
+  { category: "SUE", subfactor: "总资产周转率 2年 SUE", direction: 1, keywords: ["asset_turnover_sue"] },
+  { category: "SUE", subfactor: "净利率 2年 SUE", direction: 1, keywords: ["net_margin_sue"] },
+  { category: "分析", subfactor: "预期增长", direction: 1, keywords: ["eps_forecast", "analyst", "预期增长", "分析师"] },
+  { category: "价值", subfactor: "BP", direction: 1, keywords: ["bp", "book_to_price"] },
+  { category: "价值", subfactor: "SALES2EV", direction: 1, keywords: ["sales2ev", "sales_ev", "ev_sales"] },
+  { category: "价值", subfactor: "DP", direction: 1, keywords: ["dp", "dividend"] },
+  { category: "价值", subfactor: "EP", direction: 1, keywords: ["ep", "earnings_to_price"] },
+];
 const JQ_CATEGORY_BY_FACTOR = {
-  roe_ttm: "质量类因子",
-  roa_ttm: "质量类因子",
-  net_margin: "质量类因子",
-  debt_to_asset: "风险类因子",
-  revenue_yoy: "成长类因子",
-  profit_yoy: "成长类因子",
-  eps_yoy: "每股指标因子",
-  asset_turnover: "质量类因子",
-  log_price: "风险因子-风格因子",
-  ret_1m: "动量类因子",
-  ret_3m: "动量类因子",
-  ret_6m: "动量类因子",
-  ret_12m: "动量类因子",
-  reversal: "动量类因子",
-  momentum_12_1: "动量类因子",
-  ret_3m_vol_adj: "动量类因子",
-  up_ratio_1m: "动量类因子",
-  avg_amount_1m: "情绪类因子",
-  log_amount_1m: "情绪类因子",
-  turnover_proxy: "情绪类因子",
-  volume_ratio: "情绪类因子",
-  illiquidity: "情绪类因子",
-  volatility_1m: "风险类因子",
-  volatility_3m: "风险类因子",
-  volatility_6m: "风险类因子",
-  max_ret_1m: "风险类因子",
-  min_ret_1m: "风险类因子",
-  high_low_1m: "风险类因子",
-  amplitude_1m: "风险类因子",
-  ma_signal: "技术指标因子",
-  vol_convergence: "技术指标因子",
-  rsi_14: "技术指标因子",
-  bb_position: "技术指标因子",
+  roe_ttm: "质量",
+  roa_ttm: "质量",
+  net_margin: "质量",
+  revenue_yoy: "成长基本面",
+  profit_yoy: "成长基本面",
+  eps_yoy: "分析",
+  asset_turnover: "质量",
+  log_price: "价值",
+  ret_1m: "反转",
+  ret_3m: "动量",
+  ret_6m: "动量",
+  ret_12m: "动量",
+  reversal: "反转",
+  momentum_12_1: "动量",
+  ret_3m_vol_adj: "动量",
+  up_ratio_1m: "成交稳定",
+  avg_amount_1m: "成交笔数",
+  log_amount_1m: "成交笔数",
+  turnover_proxy: "流动性",
+  volume_ratio: "成交稳定",
+  illiquidity: "流动性",
+  volatility_1m: "价格",
+  volatility_3m: "价格",
+  volatility_6m: "价格",
+  max_ret_1m: "价格",
+  min_ret_1m: "价格",
+  high_low_1m: "价格",
+  amplitude_1m: "价格",
+  ma_signal: "动量",
+  vol_convergence: "量价拥挤度",
+  rsi_14: "反转",
+  bb_position: "价格",
 };
 const AGENT_TASK_TEXT = {
   title: "数据入口（待接入）",
@@ -248,6 +296,7 @@ const state = {
   proof: "all",
   truth: "all",
   reuse: "all",
+  comparison: "all",
   query: "",
   page: 1,
   sortKey: null,
@@ -261,6 +310,8 @@ const state = {
   autoRefreshTimer: null,
   monitorFilter: "all",
   monitorDirectionFilter: "all",
+  monitorComparisonFilter: "all",
+  monitorQuery: "",
   monitorSelectedCategories: new Set(JQ_FACTOR_CATEGORIES),
   monitorCardFilter: null,
   monitorSortKey: null,
@@ -349,6 +400,7 @@ const els = {
   proofFilter: document.querySelector("#proofFilter"),
   truthFilter: document.querySelector("#truthFilter"),
   reuseFilter: document.querySelector("#reuseFilter"),
+  comparisonFilter: document.querySelector("#comparisonFilter"),
   usableOnlyToggle: document.querySelector("#usableOnlyToggle"),
   researchUniverse: document.querySelector("#researchUniverse"),
   researchPeriod: document.querySelector("#researchPeriod"),
@@ -372,6 +424,8 @@ const els = {
   monitorCategoryFilters: document.querySelector("#monitorCategoryFilters"),
   monitorMarketFilters: document.querySelector("#monitorMarketFilters"),
   monitorDirectionFilters: document.querySelector("#monitorDirectionFilters"),
+  monitorComparisonFilters: document.querySelector("#monitorComparisonFilters"),
+  monitorSearchInput: document.querySelector("#monitorSearchInput"),
   strategyStats: document.querySelector("#strategyStats"),
   strategyTableBody: document.querySelector("#strategyTableBody"),
   taskStats: document.querySelector("#taskStats"),
@@ -563,6 +617,98 @@ function truthTextClass(status) {
   if (status === "exact_match") return "text-green";
   if (isTruthIssue(status)) return "text-red";
   return "";
+}
+
+function factorTaxonomy(factor) {
+  const fields = [
+    factor?.raw_factor_name,
+    factor?.factor_name,
+    factor?.subcategory,
+    factor?.category,
+    factor?.library,
+    factor?.raw_library,
+    factor?.source_document,
+    factor?.data_source,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  const name = String(factor?.raw_factor_name || factor?.factor_name || "").toLowerCase();
+  const directCategory = JQ_CATEGORY_BY_FACTOR[name];
+  const directRule = directCategory
+    ? CJ_TAXONOMY.find((rule) => rule.category === directCategory && rule.keywords.some((keyword) => fields.includes(keyword)))
+    : null;
+  const rule = directRule || CJ_TAXONOMY.find((item) => item.keywords.some((keyword) => fields.includes(keyword)));
+  if (rule) {
+    return { ...rule, matched: true };
+  }
+
+  const subcategory = String(factor?.subcategory || "").toLowerCase();
+  const category = String(factor?.category || "").toLowerCase();
+  const library = String(factor?.library || factor?.raw_library || "").toLowerCase();
+  if (directCategory) return { category: directCategory, subfactor: factor?.subcategory || directCategory, direction: 1, matched: true };
+  if (subcategory.includes("成长")) return { category: "成长基本面", subfactor: factor?.subcategory || "成长指标", direction: 1, matched: true };
+  if (subcategory.includes("盈利") || subcategory.includes("营运")) return { category: "质量", subfactor: factor?.subcategory || "质量指标", direction: 1, matched: true };
+  if (subcategory.includes("成交")) return { category: "成交稳定", subfactor: factor?.subcategory || "成交指标", direction: 1, matched: true };
+  if (subcategory.includes("流动") || subcategory.includes("换手")) return { category: "流动性", subfactor: factor?.subcategory || "流动性指标", direction: -1, matched: true };
+  if (subcategory.includes("波动") || subcategory.includes("振幅")) return { category: "价格", subfactor: factor?.subcategory || "价格波动指标", direction: -1, matched: true };
+  if (subcategory.includes("反转")) return { category: "反转", subfactor: factor?.subcategory || "反转指标", direction: -1, matched: true };
+  if (subcategory.includes("动量") || subcategory.includes("收益")) return { category: "动量", subfactor: factor?.subcategory || "动量指标", direction: 1, matched: true };
+  if (category.includes("价值") || category.includes("规模")) return { category: "价值", subfactor: factor?.subcategory || "估值指标", direction: 1, matched: true };
+  if (category.includes("财务") || library.includes("fundamental")) return { category: "质量", subfactor: factor?.subcategory || "财务质量指标", direction: 1, matched: false };
+  if (category.includes("量价") || category.includes("技术")) return { category: "量价拥挤度", subfactor: factor?.subcategory || "量价指标", direction: 1, matched: false };
+  return { category: "价格", subfactor: factor?.subcategory || "待细分", direction: monitorDirection(factor).className === "negative" ? -1 : 1, matched: false };
+}
+
+function taxonomySearchText(factor) {
+  const taxonomy = factorTaxonomy(factor);
+  const direction = taxonomy.direction < 0 ? "反向 -1" : "正向 +1";
+  const comparison = factorComparisonStatus(factor);
+  return [taxonomy.category, taxonomy.subfactor, direction, comparison.label, comparison.key].join(" ");
+}
+
+function factorComparisonStatus(factor) {
+  const truth = factor?.truth_status || "missing";
+  const proof = factor?.proof_status || "missing";
+  if (truth === "exact_match") {
+    return { key: "matched", label: "已对照", className: "matched", title: "真值校验完全匹配" };
+  }
+  if (["mismatch", "empty_compare"].includes(truth) || proof === "failed") {
+    return { key: "review", label: "需复核", className: "review", title: "真值或复现结果需要人工复核" };
+  }
+  if (truth === "not_applicable") {
+    return { key: "not_applicable", label: "无需对照", className: "not-applicable", title: "当前因子无需真值对照" };
+  }
+  if (["not_compared", "pending", "missing"].includes(truth) || ["missing", "partial"].includes(proof)) {
+    return { key: "pending", label: "待对照", className: "pending", title: "尚未完成因子真值对照" };
+  }
+  return { key: "pending", label: "待对照", className: "pending", title: `当前状态：${truth || proof}` };
+}
+
+function factorComparisonBadgeHtml(factor) {
+  const status = factorComparisonStatus(factor);
+  return `<span class="comparison-badge ${status.className}" title="${escapeHtml(status.title)}">${escapeHtml(status.label)}</span>`;
+}
+
+function taxonomyCellHtml(factor) {
+  const taxonomy = factorTaxonomy(factor);
+  return `
+    <span class="taxonomy-main">${escapeHtml(taxonomy.category)}</span>
+    ${taxonomy.matched ? "" : '<span class="taxonomy-pending">待确认</span>'}
+  `;
+}
+
+function taxonomySubfactorHtml(factor) {
+  const taxonomy = factorTaxonomy(factor);
+  return `<span class="factor-subcategory">${escapeHtml(taxonomy.subfactor)}</span>`;
+}
+
+function taxonomyDirectionHtml(factor) {
+  const taxonomy = factorTaxonomy(factor);
+  const className = taxonomy.direction < 0 ? "negative" : "positive";
+  const symbol = taxonomy.direction < 0 ? "-1" : "+1";
+  const label = taxonomy.direction < 0 ? "反向" : "正向";
+  return `<span class="direction-pill ${className}" title="按券商分类表方向字段展示">${symbol} ${label}</span>`;
 }
 
 function recommendationClass(value) {
@@ -779,6 +925,12 @@ function renderMonitorCategoryFilters() {
 function renderMonitorDirectionFilters() {
   els.monitorDirectionFilters?.querySelectorAll("[data-monitor-direction]").forEach((button) => {
     button.classList.toggle("active", button.dataset.monitorDirection === state.monitorDirectionFilter);
+  });
+}
+
+function renderMonitorComparisonFilters() {
+  els.monitorComparisonFilters?.querySelectorAll("[data-monitor-comparison]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.monitorComparison === state.monitorComparisonFilter);
   });
 }
 
@@ -1504,9 +1656,19 @@ function applyFilters() {
     .filter((factor) => state.proof === "all" || factor.proof_status === state.proof)
     .filter((factor) => state.truth === "all" || factor.truth_status === state.truth)
     .filter((factor) => state.reuse === "all" || reuseStatus(factor) === state.reuse)
+    .filter((factor) => state.comparison === "all" || factorComparisonStatus(factor).key === state.comparison)
     .filter((factor) => {
       if (!query) return true;
-      return [factor.factor_name, factor.raw_factor_name, factor.library, marketLabel(factor), marketDetail(factor), factor.subcategory, jqFactorCategory(factor)]
+      return [
+        factor.factor_name,
+        factor.raw_factor_name,
+        factor.library,
+        marketLabel(factor),
+        marketDetail(factor),
+        factor.subcategory,
+        factor.category,
+        taxonomySearchText(factor),
+      ]
         .join(" ")
         .toLowerCase()
         .includes(query);
@@ -1523,22 +1685,7 @@ function applyFilters() {
 }
 
 function jqFactorCategory(factor) {
-  const name = String(factor.raw_factor_name || factor.factor_name || "").toLowerCase();
-  if (JQ_CATEGORY_BY_FACTOR[name]) return JQ_CATEGORY_BY_FACTOR[name];
-  const subcategory = String(factor.subcategory || "").toLowerCase();
-  const category = String(factor.category || "").toLowerCase();
-  const library = String(factor.library || factor.raw_library || "").toLowerCase();
-  if (category.includes("技术")) return "技术指标因子";
-  if (subcategory.includes("成长")) return "成长类因子";
-  if (subcategory.includes("盈利") || subcategory.includes("营运")) return "质量类因子";
-  if (subcategory.includes("偿债") || subcategory.includes("波动") || subcategory.includes("振幅")) return "风险类因子";
-  if (subcategory.includes("成交") || subcategory.includes("流动") || subcategory.includes("换手")) return "情绪类因子";
-  if (subcategory.includes("动量") || subcategory.includes("收益") || subcategory.includes("反转")) return "动量类因子";
-  if (category.includes("财务")) return "基础科目及衍生类因子";
-  if (category.includes("价值") || category.includes("规模")) return "风险因子-风格因子";
-  if (library.includes("barra")) return "风险因子-新风格因子";
-  if (category.includes("量价")) return "动量类因子";
-  return "技术指标因子";
+  return factorTaxonomy(factor).category;
 }
 
 function compareFactors(left, right) {
@@ -1717,7 +1864,7 @@ function renderTable() {
     const row = document.createElement("tr");
     row.className = "empty-row";
     row.innerHTML = `
-      <td colspan="13" class="empty-cell">
+      <td colspan="16" class="empty-cell">
         <div class="empty-state">
           <strong>No factors match the current filters.</strong>
           <span>Adjust market, category, validation, or search filters. The dashboard only reads live Supabase or local API data.</span>
@@ -1737,8 +1884,6 @@ function renderTable() {
     const displayName = compactName(factor.factor_name);
     const coverageTone = coverageClass(factor.coverage_ratio);
     const coverageHelp = coverageTitle(factor.coverage_ratio);
-    const categoryText = factor.metadata?.truth_summary_source ? "真值库" : jqFactorCategory(factor);
-    const categoryDetailText = factor.metadata?.truth_summary_source ? "" : factor.subcategory || "";
     const row = document.createElement("tr");
     row.className = [
       state.selectedIds.has(factor.id) ? "selected" : "",
@@ -1759,7 +1904,10 @@ function renderTable() {
       </td>
       <td>${escapeHtml(factor.library)}</td>
       <td>${marketChipHtml(factor)}</td>
-      <td>${escapeHtml(categoryText)}${categoryDetailText ? `<span class="factor-subcategory">${escapeHtml(categoryDetailText)}</span>` : ""}</td>
+      <td>${factor.metadata?.truth_summary_source ? '<span class="taxonomy-main">真值库</span>' : taxonomyCellHtml(factor)}</td>
+      <td>${factor.metadata?.truth_summary_source ? mutedDash("真值汇总行不参与分类") : taxonomySubfactorHtml(factor)}</td>
+      <td>${factor.metadata?.truth_summary_source ? mutedDash("真值汇总行无方向") : taxonomyDirectionHtml(factor)}</td>
+      <td>${factorComparisonBadgeHtml(factor)}</td>
       <td><span class="badge ${proofClass}">${proofText}</span></td>
       <td>${truthBadgeHtml(factor)}</td>
       <td class="number ${coverageTone}" title="${escapeHtml(coverageHelp)}">${formatRatio(factor.coverage_ratio)}</td>
@@ -2094,13 +2242,16 @@ function renderMonitor() {
   renderMonitorFilters();
   renderMonitorCategoryFilters();
   renderMonitorDirectionFilters();
+  renderMonitorComparisonFilters();
+  const query = state.monitorQuery.trim().toLowerCase();
   const factors = state.rawFactors
     .map((factor) => ({ factor, bucket: monitorBucket(factor) }))
     .filter((item) => marketBucket(item.factor) === state.monitorMarket)
     .filter((item) => state.monitorSelectedCategories.has(jqFactorCategory(item.factor)))
+    .filter((item) => state.monitorComparisonFilter === "all" || factorComparisonStatus(item.factor).key === state.monitorComparisonFilter)
     .filter((item) => {
       if (state.monitorDirectionFilter === "all") return true;
-      const direction = monitorDirection(item.factor).className;
+      const direction = factorTaxonomy(item.factor).direction < 0 ? "negative" : "positive";
       return direction === state.monitorDirectionFilter;
     })
     .filter((item) => state.monitorFilter === "all" || item.bucket === state.monitorFilter)
@@ -2117,6 +2268,24 @@ function renderMonitor() {
       }
       return true;
     })
+    .filter((item) => {
+      if (!query) return true;
+      const factor = item.factor;
+      return [
+        factor.factor_name,
+        factor.raw_factor_name,
+        factor.library,
+        marketLabel(factor),
+        marketDetail(factor),
+        factor.subcategory,
+        factor.category,
+        monitorBucketLabel(item.bucket),
+        taxonomySearchText(factor),
+      ]
+        .join(" ")
+        .toLowerCase()
+        .includes(query);
+    })
     .sort((a, b) => {
       if (state.monitorSortKey && state.monitorSortDirection !== "default") {
         return compareMonitorRows(a, b);
@@ -2131,7 +2300,7 @@ function renderMonitor() {
   if (!factors.length) {
     els.monitorTableBody.innerHTML = `
       <tr class="empty-row">
-        <td colspan="11" class="empty-cell">
+        <td colspan="13" class="empty-cell">
           <div class="empty-state">
             <strong>No monitor rows in this view.</strong>
             <span>Try another market, category, direction, or IR bucket. Live data still comes from Supabase or the local API.</span>
@@ -2145,7 +2314,7 @@ function renderMonitor() {
   if (!factors.length) {
     els.monitorTableBody.innerHTML = `
       <tr>
-        <td colspan="11" class="empty-cell">当前筛选下没有可展示的因子。</td>
+        <td colspan="13" class="empty-cell">当前筛选下没有可展示的因子。</td>
       </tr>
     `;
     return;
@@ -2158,7 +2327,6 @@ function renderMonitor() {
       const name = compactName(factor.factor_name);
       const coverageTone = coverageClass(factor.coverage_ratio);
       const coverageHelp = coverageTitle(factor.coverage_ratio);
-      const direction = monitorDirection(factor);
       const sourceDisplay = factorSourceDisplay(factor);
       return `
         <tr>
@@ -2176,12 +2344,14 @@ function renderMonitor() {
             <strong>${escapeHtml(sourceDisplay.primary)}</strong>
             <span class="monitor-source-sub">${escapeHtml(sourceDisplay.secondary)}</span>
           </td>
+          <td>${taxonomyCellHtml(factor)}${taxonomySubfactorHtml(factor)}</td>
           <td class="number">${formatNumber(factor.rank_ic_ir, 3)}</td>
           <td class="number">${formatNumber(factor.rank_ic_mean, 4)}</td>
           <td class="number ${coverageTone}" title="${escapeHtml(coverageHelp)}">${formatRatio(factor.coverage_ratio)}</td>
           <td class="number">${monitorRecentIcHtml(factor)}</td>
           <td>${monitorIcBarHtml(factor, bucket)}</td>
-          <td><span class="direction-pill ${direction.className}">${direction.symbol} ${direction.label}</span></td>
+          <td>${taxonomyDirectionHtml(factor)}</td>
+          <td>${factorComparisonBadgeHtml(factor)}</td>
           <td title="${escapeHtml(proofText)} / ${escapeHtml(factor.truth_status || "-")}">${monitorValidationHtml(factor)}</td>
           <td>${monitorMarketHtml(factor)}</td>
         </tr>
@@ -2200,6 +2370,12 @@ function compareMonitorRows(left, right) {
   const direction = state.monitorSortDirection === "asc" ? 1 : -1;
   if (key === "bucket") {
     return (monitorSortValue(left.factor) - monitorSortValue(right.factor)) * direction;
+  }
+  if (key === "taxonomy") {
+    return taxonomySearchText(left.factor).localeCompare(taxonomySearchText(right.factor), "zh-CN", { numeric: true }) * direction;
+  }
+  if (key === "comparison") {
+    return factorComparisonStatus(left.factor).label.localeCompare(factorComparisonStatus(right.factor).label, "zh-CN") * direction;
   }
   const leftValue = left.factor[key];
   const rightValue = right.factor[key];
@@ -2342,7 +2518,7 @@ function seedStrategyBuilderParams(template) {
 }
 
 function factorDirectionValue(factor) {
-  return monitorDirection(factor).className === "negative" ? -1 : 1;
+  return factorTaxonomy(factor).direction < 0 ? -1 : 1;
 }
 
 function requiredFactorLabel(required) {
@@ -6908,6 +7084,16 @@ function bindEvents() {
       renderMonitor();
     });
   });
+  els.monitorComparisonFilters?.querySelectorAll("[data-monitor-comparison]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.monitorComparisonFilter = button.dataset.monitorComparison || "all";
+      renderMonitor();
+    });
+  });
+  els.monitorSearchInput?.addEventListener("input", (event) => {
+    state.monitorQuery = event.target.value;
+    renderMonitor();
+  });
   els.usableOnlyToggle?.addEventListener("change", (event) => {
     state.usableOnly = event.target.checked;
     state.page = 1;
@@ -6939,6 +7125,11 @@ function bindEvents() {
     state.page = 1;
     applyFilters();
   });
+  els.comparisonFilter?.addEventListener("change", (event) => {
+    state.comparison = event.target.value;
+    state.page = 1;
+    applyFilters();
+  });
   els.searchInput.addEventListener("input", (event) => {
     state.query = event.target.value;
     state.page = 1;
@@ -6953,16 +7144,22 @@ function bindEvents() {
     state.proof = "all";
     state.truth = "all";
     state.reuse = "all";
+    state.comparison = "all";
     state.usableOnly = false;
     state.query = "";
+    state.monitorQuery = "";
+    state.monitorComparisonFilter = "all";
     state.page = 1;
     els.proofFilter.value = "all";
     els.truthFilter.value = "all";
     els.reuseFilter.value = "all";
+    if (els.comparisonFilter) els.comparisonFilter.value = "all";
     if (els.usableOnlyToggle) els.usableOnlyToggle.checked = false;
     els.searchInput.value = "";
+    if (els.monitorSearchInput) els.monitorSearchInput.value = "";
     renderTabs({ factors: state.rawFactors, categories: countCategories(), libraries: countLibraries() });
     applyFilters();
+    if (state.view === "monitor") renderMonitor();
   });
   els.themeToggleButton?.addEventListener("click", toggleTheme);
   els.refreshButton.addEventListener("click", loadData);

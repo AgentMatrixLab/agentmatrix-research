@@ -180,12 +180,19 @@
                 <option value="rerun">复用建议：建议重跑</option>
                 <option value="missing">复用建议：未复现</option>
               </select>
+              <select id="comparisonFilter">
+                <option value="all">因子对照：全部</option>
+                <option value="matched">因子对照：已对照</option>
+                <option value="review">因子对照：需复核</option>
+                <option value="pending">因子对照：待对照</option>
+                <option value="not_applicable">因子对照：无需对照</option>
+              </select>
               <button id="resetFiltersButton" class="text-button" type="button">重置所有筛选</button>
             </div>
 
             <label class="search">
               <span>搜索</span>
-              <input id="searchInput" type="search" placeholder="搜索因子名称..." />
+              <input id="searchInput" type="search" placeholder="搜索因子 / 大类 / 子类 / 对照状态..." />
             </label>
           </section>
 
@@ -203,7 +210,10 @@
                     <th class="sortable" data-sort="factor_name">因子名称</th>
                     <th>所属库</th>
                     <th>市场/口径</th>
-                    <th>分类</th>
+                    <th>大类</th>
+                    <th>子类因子</th>
+                    <th>方向</th>
+                    <th>因子对照</th>
                     <th>复现状态</th>
                     <th>真值校验</th>
                     <th class="number sortable" data-sort="coverage_ratio">覆盖率</th>
@@ -255,6 +265,16 @@
                 <button type="button" data-monitor-direction="negative">反向</button>
               </div>
             </div>
+            <div class="monitor-filter-row compact">
+              <span class="monitor-filter-label">对照</span>
+              <div class="segmented-filter" id="monitorComparisonFilters">
+                <button class="active" type="button" data-monitor-comparison="all">全部</button>
+                <button type="button" data-monitor-comparison="matched">已对照</button>
+                <button type="button" data-monitor-comparison="review">需复核</button>
+                <button type="button" data-monitor-comparison="pending">待对照</button>
+                <button type="button" data-monitor-comparison="not_applicable">无需对照</button>
+              </div>
+            </div>
           </section>
 
           <section class="monitor-toolbar" aria-label="监控筛选">
@@ -265,6 +285,10 @@
               <button class="monitor-filter" type="button" data-monitor-filter="weak">IR&lt;0.1</button>
               <button class="monitor-filter" type="button" data-monitor-filter="missing">待数据</button>
             </div>
+            <label class="search monitor-search">
+              <span>搜索</span>
+              <input id="monitorSearchInput" type="search" placeholder="搜索因子 / 分类 / 对照状态..." />
+            </label>
             <span class="monitor-toolbar-note">绿色 IR&gt;0.3，黄色 IR 0.1-0.3，红色 IR&lt;0.1；↑ 正向，↓ 反向。</span>
           </section>
 
@@ -276,12 +300,14 @@
                     <th class="monitor-sortable" data-monitor-sort="bucket">状态</th>
                     <th class="monitor-sortable" data-monitor-sort="factor_name">因子</th>
                     <th class="monitor-sortable" data-monitor-sort="library">来源</th>
+                    <th class="monitor-sortable" data-monitor-sort="taxonomy">分类</th>
                     <th class="number monitor-sortable" data-monitor-sort="rank_ic_ir">IC_IR</th>
                     <th class="number monitor-sortable" data-monitor-sort="rank_ic_mean">IC均值</th>
                     <th class="number monitor-sortable" data-monitor-sort="coverage_ratio">覆盖率</th>
                     <th class="number monitor-sortable" data-monitor-sort="long_short_mean">近期IC</th>
                     <th>IC柱</th>
                     <th>方向</th>
+                    <th class="monitor-sortable" data-monitor-sort="comparison">因子对照</th>
                     <th class="monitor-sortable" data-monitor-sort="proof_status">验证</th>
                     <th>市场/提示</th>
                   </tr>
