@@ -61,9 +61,10 @@ def _get_llm_config(provider: str) -> tuple[str, str, str]:
 class AIFactorMiner:
     def __init__(self, factor_lab: QlibFactorLab):
         self.factor_lab = factor_lab
+        self.last_feedback: str = ""
 
-    def _build_prompt(self, theme: str, count: int) -> str:
-        return (
+    def _build_prompt(self, theme: str, count: int, feedback: str = "") -> str:
+        prompt = (
             "You are generating testable qlib factor expressions for A-share research.\n"
             "Return strict JSON as a list. Each element must include keys: "
             "name, expression, description, rationale, tags.\n"
@@ -72,6 +73,12 @@ class AIFactorMiner:
             f"Number of candidates: {count}\n"
             "Avoid duplicate factors and avoid unsupported custom functions."
         )
+        if feedback:
+            prompt += (
+                "\nFeedback from previous round (avoid repeating failed ideas "
+                "and improve on the weaknesses below):\n" + feedback
+            )
+        return prompt
 
     def _parse_candidates(self, payload: str) -> list[FactorMiningCandidate]:
         try:
@@ -104,8 +111,14 @@ class AIFactorMiner:
             )
         return candidates or DEFAULT_EXPRESSIONS
 
-    def propose_candidates(self, theme: str, count: int = 5) -> list[FactorMiningCandidate]:
-        api_key = os.getenv("OPENAI_API_KEY")
+    def propose_candidates(
+        self,
+        theme: str,
+        count: int = 5,
+        feedback: str = "",
+        provider: str = "openai",
+    ) -> list[FactorMiningCandidate]:
+        base_url, api_key, model = _get_llm_config(provider)
         if not api_key:
             return DEFAULT_EXPRESSIONS[:count]
 
@@ -114,11 +127,10 @@ class AIFactorMiner:
         except ImportError:
             return DEFAULT_EXPRESSIONS[:count]
 
-        model = os.getenv("QFACTOR_OPENAI_MODEL", "gpt-4.1-mini")
-        client = OpenAI(api_key=api_key)
+        client = OpenAI(api_key=api_key, base_url=base_url or None)
         response = client.responses.create(
             model=model,
-            input=self._build_prompt(theme, count),
+            input=self._build_prompt(theme, count, feedback),
         )
         text = getattr(response, "output_text", "") or ""
         return self._parse_candidates(text)[:count]
