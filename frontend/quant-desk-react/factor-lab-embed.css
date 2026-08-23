@@ -1,0 +1,236 @@
+html.factor-lab-embedded {
+  --fl-bg: #070b11;
+  --fl-bg-top: #0a0f17;
+  --fl-surface: rgba(16, 23, 33, 0.96);
+  --fl-surface-soft: rgba(12, 18, 26, 0.94);
+  --fl-surface-panel: rgba(19, 28, 40, 0.94);
+  --fl-line: rgba(148, 163, 184, 0.12);
+  --fl-line-strong: rgba(148, 163, 184, 0.22);
+  --fl-text: #eef5ff;
+  --fl-text-soft: #cbd7e8;
+  --fl-muted: #9aa8bc;
+  --fl-muted-quiet: #69778d;
+  --fl-accent: #22d3ee;
+  --fl-accent-soft: rgba(34, 211, 238, 0.12);
+  --fl-up: #fb7185;
+  --fl-down: #34d399;
+  --fl-shadow: 0 18px 48px rgba(0, 0, 0, 0.38);
+  color-scheme: dark;
+}
+
+html.factor-lab-embedded.factor-lab-light {
+  --fl-bg: #f3f6fb;
+  --fl-bg-top: #f8fbff;
+  --fl-surface: rgba(255, 255, 255, 0.94);
+  --fl-surface-soft: rgba(247, 250, 255, 0.96);
+  --fl-surface-panel: rgba(255, 255, 255, 0.96);
+  --fl-line: #dbe4ef;
+  --fl-line-strong: #c8d5e4;
+  --fl-text: #172033;
+  --fl-text-soft: #334155;
+  --fl-muted: #68758a;
+  --fl-muted-quiet: #8a98aa;
+  --fl-accent: #0874cf;
+  --fl-accent-soft: rgba(8, 116, 207, 0.1);
+  --fl-up: #d93645;
+  --fl-down: #16a66a;
+  --fl-shadow: 0 18px 44px rgba(15, 23, 42, 0.08);
+  color-scheme: light;
+}
+
+html.factor-lab-embedded,
+html.factor-lab-embedded body,
+html.factor-lab-embedded #root {
+  width: 100%;
+  min-height: 100%;
+  overflow: hidden;
+  background: var(--fl-bg) !important;
+  color: var(--fl-text);
+}
+
+html.factor-lab-embedded body {
+  background-color: var(--fl-bg) !important;
+  background-image:
+    radial-gradient(900px 420px at 10% -8%, color-mix(in srgb, var(--fl-accent) 8%, transparent), transparent 62%),
+    linear-gradient(180deg, var(--fl-bg-top) 0%, var(--fl-bg) 58%, var(--fl-bg) 100%) !important;
+  background-size: 100% 100%, 100% 100% !important;
+}
+
+html.factor-lab-embedded.factor-lab-dark body {
+  background-image:
+    radial-gradient(900px 420px at 10% -8%, rgba(34, 211, 238, 0.055), transparent 62%),
+    radial-gradient(760px 420px at 98% 0%, rgba(244, 63, 94, 0.032), transparent 58%),
+    linear-gradient(rgba(148, 163, 184, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148, 163, 184, 0.03) 1px, transparent 1px),
+    linear-gradient(180deg, var(--fl-bg-top) 0%, var(--fl-bg) 100%) !important;
+  background-size: 100% 100%, 100% 100%, 40px 40px, 40px 40px, 100% 100% !important;
+}
+
+html.factor-lab-embedded #root > div,
+html.factor-lab-embedded #root > div > div {
+  min-height: 100vh;
+  max-width: 100vw;
+  overflow-x: hidden;
+  background: transparent !important;
+}
+
+html.factor-lab-embedded #root aside,
+html.factor-lab-embedded .fixed.inset-y-0.left-0.w-60 {
+  display: none !important;
+}
+
+html.factor-lab-embedded #root > div > .fixed.bottom-4.right-5,
+html.factor-lab-embedded .fixed.bottom-4.right-5.z-40 {
+  display: none !important;
+}
+
+html.factor-lab-embedded .pl-60 {
+  padding-left: 0 !important;
+}
+
+html.factor-lab-embedded .min-w-\[1240px\] {
+  min-width: 0 !important;
+}
+
+html.factor-lab-embedded main {
+  width: 100% !important;
+  max-width: none !important;
+  min-height: 100vh;
+  margin: 0 !important;
+  padding: 22px 26px 36px !important;
+  overflow-x: hidden;
+  background: transparent !important;
+}
+
+html.factor-lab-embedded header > div {
+  max-width: none !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+  padding-left: 26px !important;
+  padding-right: 26px !important;
+}
+
+html.factor-lab-embedded header .ml-auto > span,
+html.factor-lab-embedded header .ml-auto > button:nth-last-of-type(-n + 3) {
+  display: none !important;
+}
+
+html.factor-lab-embedded header .min-w-0 > div:first-child {
+  align-items: baseline;
+}
+
+html.factor-lab-embedded header .min-w-0 > p {
+  margin-top: 3px !important;
+  color: var(--fl-muted) !important;
+}
+
+html.factor-lab-embedded .bg-ink-950\/80,
+html.factor-lab-embedded .bg-ink-900,
+html.factor-lab-embedded .bg-ink-900\/90 {
+  background-color: var(--fl-surface-soft) !important;
+}
+
+html.factor-lab-embedded .bg-ink-800,
+html.factor-lab-embedded .bg-ink-800\/95,
+html.factor-lab-embedded .bg-ink-700,
+html.factor-lab-embedded .bg-ink-700\/30,
+html.factor-lab-embedded .bg-ink-700\/50,
+html.factor-lab-embedded .bg-ink-700\/60,
+html.factor-lab-embedded .hover\:bg-ink-700:hover,
+html.factor-lab-embedded .hover\:bg-ink-700\/50:hover,
+html.factor-lab-embedded .hover\:bg-ink-700\/60:hover {
+  background-color: var(--fl-surface-panel) !important;
+}
+
+html.factor-lab-embedded .bg-ink-600,
+html.factor-lab-embedded .bg-line {
+  background-color: var(--fl-line) !important;
+}
+
+html.factor-lab-embedded .border-line,
+html.factor-lab-embedded .border-line\/40,
+html.factor-lab-embedded .border-line\/60,
+html.factor-lab-embedded .border-up\/25,
+html.factor-lab-embedded .border-up\/30,
+html.factor-lab-embedded .border-up\/40,
+html.factor-lab-embedded .border-down\/20,
+html.factor-lab-embedded .border-down\/25,
+html.factor-lab-embedded .border-down\/30,
+html.factor-lab-embedded .hover\:border-line:hover {
+  border-color: var(--fl-line) !important;
+}
+
+html.factor-lab-embedded .text-fg,
+html.factor-lab-embedded .group:hover .group-hover\:text-fg {
+  color: var(--fl-text) !important;
+}
+
+html.factor-lab-embedded .text-fg-soft,
+html.factor-lab-embedded .hover\:text-fg-soft:hover {
+  color: var(--fl-text-soft) !important;
+}
+
+html.factor-lab-embedded .text-fg-mute {
+  color: var(--fl-muted) !important;
+}
+
+html.factor-lab-embedded .text-accent,
+html.factor-lab-embedded .hover\:text-fg:hover,
+html.factor-lab-embedded .group:hover .group-hover\:text-accent {
+  color: var(--fl-accent) !important;
+}
+
+html.factor-lab-embedded .text-up,
+html.factor-lab-embedded .hover\:text-up:hover {
+  color: var(--fl-up) !important;
+}
+
+html.factor-lab-embedded .text-down {
+  color: var(--fl-down) !important;
+}
+
+html.factor-lab-embedded .bg-accent\/10,
+html.factor-lab-embedded .bg-accent\/15,
+html.factor-lab-embedded .bg-accent\/\[0\.06\],
+html.factor-lab-embedded .bg-accent\/\[0\.07\] {
+  background-color: var(--fl-accent-soft) !important;
+}
+
+html.factor-lab-embedded .border-accent,
+html.factor-lab-embedded .border-accent\/30,
+html.factor-lab-embedded .border-accent\/40,
+html.factor-lab-embedded .hover\:border-accent\/30:hover,
+html.factor-lab-embedded .focus\:border-accent\/50:focus {
+  border-color: color-mix(in srgb, var(--fl-accent) 34%, transparent) !important;
+}
+
+html.factor-lab-embedded .shadow-card {
+  box-shadow: var(--fl-shadow) !important;
+}
+
+html.factor-lab-embedded .card-hover:hover {
+  border-color: color-mix(in srgb, var(--fl-accent) 24%, transparent) !important;
+  box-shadow: var(--fl-shadow) !important;
+}
+
+html.factor-lab-embedded input,
+html.factor-lab-embedded select,
+html.factor-lab-embedded button {
+  color: inherit;
+}
+
+html.factor-lab-embedded input,
+html.factor-lab-embedded select {
+  background-color: var(--fl-surface-soft) !important;
+  border-color: var(--fl-line) !important;
+}
+
+html.factor-lab-embedded ::placeholder {
+  color: var(--fl-muted-quiet) !important;
+}
+
+@media (max-width: 900px) {
+  html.factor-lab-embedded main {
+    padding: 18px 16px 28px !important;
+  }
+}

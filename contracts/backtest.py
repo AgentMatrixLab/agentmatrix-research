@@ -35,6 +35,30 @@ class PerformanceMetrics:
     volatility: float
     turnover: float = 0.0
     win_rate: float = 0.0
+    sortino: float | None = None
+    calmar: float | None = None
+    downside_volatility: float | None = None
+    beta: float | None = None
+    alpha: float | None = None
+    information_ratio: float | None = None
+    tracking_error: float | None = None
+    var_95: float | None = None
+
+
+@dataclass(slots=True)
+class PositionRecord:
+    symbol: str
+    quantity: float
+    average_cost: float
+    last_price: float
+    market_value: float
+    weight: float
+    unrealized_pnl: float = 0.0
+    unrealized_pnl_pct: float | None = None
+    name: str = ""
+    industry: str = ""
+    market_cap: float | None = None
+    sub_strategy: str = ""
 
 
 @dataclass(slots=True)
@@ -55,6 +79,8 @@ class TradeRecord:
     commission: float = 0.0
     slippage: float = 0.0
     reason: str = ""
+    sub_strategy: str = ""
+    realized_pnl: float | None = None
 
 
 @dataclass(slots=True)
@@ -62,6 +88,9 @@ class HoldingSnapshot:
     as_of: str
     weights: dict[str, float] = field(default_factory=dict)
     exposures: dict[str, float] = field(default_factory=dict)
+    positions: list[PositionRecord] = field(default_factory=list)
+    cash: float | None = None
+    total_equity: float | None = None
 
 
 @dataclass(slots=True)
