@@ -4,6 +4,11 @@
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
+## For AI Agents
+
+If you are an AI agent working inside this repository, read [AGENTS.md](AGENTS.md) first.
+It points to the existing modules, CLI entry points, bundled Skills, and documentation files you should use.
+
 ## Pages Portal
 
 - GitHub Pages portal: [agentmatrixlab.github.io/agentmatrix-research](https://agentmatrixlab.github.io/agentmatrix-research/)
@@ -101,6 +106,25 @@ python -m research_core.factor_lab.cli run-factor-research --factor-set wq101 --
 python -m research_core.strategy_engine.cli build-alpha-strategy --validated-run runtime/factor_lab/jobs/<job_id>.json --rebalance-frequency daily --top-n 50
 ```
 
+### Factor Lab Truth Compare (factor values validation)
+
+Upload-style factor values are compared point-by-point against the library truth
+(local CSV or Supabase `factor_truth_values`). Fully testable offline:
+
+```bash
+python -m research_core.factor_lab.cli export-alpha101-truth-template --n-dates 60 --n-codes 5 --seed 29
+python scripts/dev/make_truth_compare_samples.py
+python scripts/run_truth_compare.py --factor-family alpha101 --factor-name alpha1 \
+  --values-csv data/factor_lab/samples/factor_values_alpha1_pass.csv \
+  --truth-csv data/factor_lab/alpha101_truth_template_101f_60d_5c_s29.csv
+# Optional: sync results to Supabase (requires service_role key, see .env.example)
+python scripts/sync_truth_compare_to_supabase.py
+```
+
+See [docs/FACTOR_LAB_TRUTH_COMPARE.md](docs/FACTOR_LAB_TRUTH_COMPARE.md) for the full
+test walkthrough (passed / failed / not_comparable branches), the Supabase migration
+order, and which keys must be provided by the project team.
+
 ### Factor Lab API
 
 ```bash
@@ -114,6 +138,23 @@ Start the local Flask API first, then open the dashboard served by the same back
 ```text
 http://127.0.0.1:8012/factor-lab-dashboard
 ```
+
+Quant Desk is intentionally served by a separate minimal read-only process. Run:
+
+```bash
+python backend/strategy_dashboard_api.py
+```
+
+It exposes the dashboard backed by persisted AgentMatrix `BacktestResult` files:
+
+```text
+http://127.0.0.1:8013/quant-desk/
+```
+
+This process does not import or host Factor Lab. The Quant Desk view does not
+execute strategies or use mock/SQLite data. It
+shows completed results from `runtime/custom_engine/backtests/` through the
+`/api/strategy-dashboard/*` endpoints.
 
 The dashboard is a zero-build static frontend under `frontend/factor-lab-dashboard/`. When opened from the Flask URL above, it automatically reads:
 
