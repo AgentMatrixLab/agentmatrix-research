@@ -1,0 +1,6 @@
+{
+  "factor_name": "research_factor_example",
+  "factor_family": "exploratory",
+  "required_fields": ["close"],
+  "description": "Compatibility spec for the CI submission validator. The intake manifest remains the canonical example contract."
+}

@@ -1,0 +1,6 @@
+{
+  "factor_name": "alpha1",
+  "factor_family": "wq101",
+  "required_fields": ["close"],
+  "description": "Compatibility spec for the CI submission validator. The truth-compare manifest remains the canonical intake example contract."
+}
