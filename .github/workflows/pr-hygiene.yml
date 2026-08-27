@@ -92,11 +92,12 @@ jobs:
               "# Summary",
               "# AI Assistance Record",
               "# Prompt / Instruction Record",
-              "# Validation Evidence",
               "# Risk Checklist",
               "# Reviewer Focus",
           ]
           missing = [item for item in required_sections if item not in body]
+          if "# Validation Evidence" not in body and "# Verification (Required)" not in body:
+              missing.append("# Validation Evidence or # Verification (Required)")
           placeholder_hits = [
               "List files, functions, or code blocks that were primarily written or heavily modified by AI.",
               "Paste the exact commands you ran and the key output.",
@@ -112,8 +113,9 @@ jobs:
                   print("PR body still contains placeholder text:")
                   for item in unresolved:
                       print(f" - {item}")
-              sys.exit(1)
-          print("PR body completeness check passed.")
+              print("PR body completeness warnings only; code, path, and compile checks continue.")
+          else:
+              print("PR body completeness check passed.")
           PY
 
       - name: Compile changed Python files

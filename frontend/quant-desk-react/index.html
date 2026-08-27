@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/quant-desk/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="AgentMatrix 晨曦引擎真实策略与回测面板" />
+    <title>QUANT DESK · 晨曦引擎策略面板</title>
+    <script>
+      const quantDeskEmbedParams = new URLSearchParams(window.location.search);
+      if (quantDeskEmbedParams.get("embedded") === "factor-lab") {
+        const quantDeskEmbedTheme = quantDeskEmbedParams.get("theme") === "light" ? "light" : "dark";
+        document.documentElement.classList.add("factor-lab-embedded");
+        document.documentElement.classList.add(`factor-lab-${quantDeskEmbedTheme}`);
+      }
+    </script>
+    <script type="module" crossorigin src="/quant-desk/assets/index-tE_vpeMB.js"></script>
+    <link rel="stylesheet" crossorigin href="/quant-desk/assets/index-CCh00NRM.css">
+    <link rel="stylesheet" crossorigin href="/quant-desk/factor-lab-embed.css?v=20260817-hide-source-pill">
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>

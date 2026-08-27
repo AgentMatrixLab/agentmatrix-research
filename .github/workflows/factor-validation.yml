@@ -38,7 +38,7 @@ jobs:
           python-version: '3.11'
 
       - name: Install dependencies
-        run: pip install numpy pandas scipy pytest -q
+        run: pip install numpy pandas scipy pytest Flask flask-cors pyarrow -q
 
       - name: Detect changed factors
         id: detect
