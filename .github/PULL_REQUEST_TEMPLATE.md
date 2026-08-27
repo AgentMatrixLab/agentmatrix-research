@@ -1,11 +1,8 @@
 # Summary
 
-<!-- REQUIRED: Delete placeholder text and write your own answers. PRs with unfilled sections may be flagged by CI. -->
-
-- **What problem does this PR solve?** (one sentence)
-- **What changed?** (file list + one-line per file)
-- **Why is this change correct?** (evidence, not opinion)
-- **Main review targets:** files/modules reviewers should inspect first
+- What does this PR change?
+- Why is this change needed?
+- Which files/modules are the main review targets?
 
 # Change Type
 
@@ -38,14 +35,21 @@ If none, write "none".
 - What I asked the agent to implement:
 - Files or functions I manually adjusted after AI output:
 
-# Verification (Required)
+# Research / Business Context
 
-- [ ] I ran the following command(s) and they passed
-- [ ] I checked for secrets, API keys, and private paths: **no issues**
-- [ ] I reviewed generated files and artifact locations
+- Hypothesis:
+- Universe / market:
+- Time range:
+- Main command(s) run:
+
+# Validation Evidence
+
+- [ ] I ran targeted validation locally
+- [ ] I checked for secrets and private data
+- [ ] I reviewed generated paths and artifact locations
 - [ ] I confirmed there are no local absolute paths / machine-specific references
 
-Verification output:
+Validation details (required):
 
 ```text
 Paste the exact commands you ran and the key output.
@@ -59,26 +63,17 @@ List anything you did not run, did not check, or are not confident about.
 If none, write "none".
 ```
 
-# Research / Business Context
+# Key Metrics
 
-- Hypothesis:
-- Universe / market:
-- Time range:
-- Main command(s) run:
-
-# Key Metrics (for research PRs)
-
-| Metric | Value |
-|--------|-------|
-| IC / Rank IC / ICIR | |
-| Backtest return / Sharpe / Max DD | |
-| Baseline comparison | |
+- IC / Rank IC / ICIR:
+- Backtest return / Sharpe / Max DD:
+- Baseline comparison:
 
 # Artifacts
 
-- Evaluation JSON path:
-- Backtest JSON path:
-- Proof artifact path:
+- Evaluation JSON:
+- Backtest JSON:
+- Workflow config:
 - Screenshot or chart links:
 
 # Risk Checklist
@@ -95,15 +90,19 @@ If any box above is checked, explain the regression risk and how you verified it
 Describe the specific risk and the exact verification you ran.
 ```
 
-# Hygiene Check
+# Reviewer Focus
+
+- Suggested reviewer focus areas:
+- Highest-risk file(s) in this PR:
+- Most uncertain behavior or assumption:
+
+# Public Repo Check
 
 - [ ] No API keys, tokens, or `.env` files
-- [ ] No absolute local machine paths or user-profile paths
-- [ ] No downloaded data or large runtime artifacts
+- [ ] No downloaded qlib data or large runtime artifacts
 - [ ] No account-linked identifiers or private exports
 
-# Self-Review
+# Notes For Reviewers
 
-- **What's the riskiest part of this change?**
-- **What did you test manually?**
-- **What should reviewers focus on?**
+- Risks:
+- Follow-up work:

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import hashlib
-import math
 import os
 import random
 import re
@@ -655,51 +654,6 @@ def factor_lab_quant_api_research():
         return jsonify(result_clean)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-
-
-@app.route("/api/agents/factor-lab/stratification", methods=["POST"])
-def factor_lab_stratification():
-    payload = request.get_json(silent=True) or {}
-    factor_name = str(payload.get("factor_name") or "alpha1")
-    factor_set = str(payload.get("factor_set") or "alpha101").lower()
-    n_groups = int(payload.get("n_groups") or 10)
-    n_dates = int(payload.get("n_dates") or 160)
-    n_codes = int(payload.get("n_codes") or payload.get("n_symbols") or 50)
-    seed = int(payload.get("seed") or 7)
-    data_source = str(payload.get("data_source") or "demo").lower()
-
-    try:
-        from research_core.factor_lab.demo_data import build_alpha101_demo_panel
-        from research_core.factor_lab.libraries.factor_sets import compute_factor_set, factor_set_library_name, factor_set_specs
-        from research_core.factor_lab.stratified import compute_stratified_analysis
-        from research_core.factor_lab.real_data import fetch_quant_kline_panel
-        from research_core.factor_lab.runtime import now_iso
-
-        available = [spec.factor_name for spec in factor_set_specs(factor_set)]
-        if factor_name not in available:
-            return jsonify({"error": f"Factor '{factor_name}' not found in factor_set '{factor_set}'."}), 400
-
-        if data_source == "real":
-            symbols = payload.get("symbols") or None
-            panel = fetch_quant_kline_panel(symbols=symbols, n_symbols=n_codes, n_dates=max(n_dates, 80))
-        else:
-            panel = build_alpha101_demo_panel(n_dates=n_dates, n_codes=n_codes, seed=seed)
-
-        factor_frame = compute_factor_set(panel, factor_set, factor_names=[factor_name])
-        result = compute_stratified_analysis(panel, factor_frame, factor_name=factor_name, n_groups=n_groups)
-        result.update(
-            {
-                "factor_set": factor_set,
-                "library": factor_set_library_name(factor_set),
-                "data_source": data_source,
-                "generated_at": now_iso(),
-            }
-        )
-        return jsonify(_convert_nan_to_null(result))
-    except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
-    except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
 
 
 @app.route("/api/agents/factor-lab/factors/<path:factor_id>/view", methods=["GET"])
