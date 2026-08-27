@@ -33,13 +33,38 @@ DEFAULT_EXPRESSIONS = [
     ),
 ]
 
+# ── Multi-LLM provider support ──
+_PROVIDER_PRESETS: dict[str, tuple[str, str, str]] = {
+    "openai":    ("https://api.openai.com/v1",       "OPENAI_API_KEY",      "gpt-4.1-mini"),
+    "deepseek":  ("https://api.deepseek.com",        "DEEPSEEK_API_KEY",    "deepseek-chat"),
+    "qwen":      ("https://dashscope.aliyuncs.com/compatible-mode/v1", "QWEN_API_KEY", "qwen-plus"),
+    "zhipu":     ("https://open.bigmodel.cn/api/paas/v4", "ZHIPU_API_KEY",  "glm-4"),
+    "moonshot":  ("https://api.moonshot.cn/v1",       "MOONSHOT_API_KEY",    "moonshot-v1-8k"),
+    "custom":    ("",                                  "QFACTOR_API_KEY",     "gpt-4.1-mini"),
+}
+
+
+def _get_llm_config(provider: str) -> tuple[str, str, str]:
+    preset = _PROVIDER_PRESETS.get(provider)
+    if preset is None:
+        base_url = provider
+        api_key_env = "QFACTOR_API_KEY"
+        default_model = "gpt-4.1-mini"
+    else:
+        base_url, api_key_env, default_model = preset
+    base_url = os.getenv("QFACTOR_BASE_URL", base_url)
+    model = os.getenv("QFACTOR_MODEL", default_model)
+    api_key = os.getenv("QFACTOR_API_KEY") or os.getenv(api_key_env) or os.getenv("OPENAI_API_KEY", "")
+    return base_url, api_key, model
+
 
 class AIFactorMiner:
     def __init__(self, factor_lab: QlibFactorLab):
         self.factor_lab = factor_lab
+        self.last_feedback: str = ""
 
-    def _build_prompt(self, theme: str, count: int) -> str:
-        return (
+    def _build_prompt(self, theme: str, count: int, feedback: str = "") -> str:
+        prompt = (
             "You are generating testable qlib factor expressions for A-share research.\n"
             "Return strict JSON as a list. Each element must include keys: "
             "name, expression, description, rationale, tags.\n"
@@ -48,6 +73,12 @@ class AIFactorMiner:
             f"Number of candidates: {count}\n"
             "Avoid duplicate factors and avoid unsupported custom functions."
         )
+        if feedback:
+            prompt += (
+                "\nFeedback from previous round (avoid repeating failed ideas "
+                "and improve on the weaknesses below):\n" + feedback
+            )
+        return prompt
 
     def _parse_candidates(self, payload: str) -> list[FactorMiningCandidate]:
         try:
@@ -80,8 +111,14 @@ class AIFactorMiner:
             )
         return candidates or DEFAULT_EXPRESSIONS
 
-    def propose_candidates(self, theme: str, count: int = 5) -> list[FactorMiningCandidate]:
-        api_key = os.getenv("OPENAI_API_KEY")
+    def propose_candidates(
+        self,
+        theme: str,
+        count: int = 5,
+        feedback: str = "",
+        provider: str = "openai",
+    ) -> list[FactorMiningCandidate]:
+        base_url, api_key, model = _get_llm_config(provider)
         if not api_key:
             return DEFAULT_EXPRESSIONS[:count]
 
@@ -90,11 +127,10 @@ class AIFactorMiner:
         except ImportError:
             return DEFAULT_EXPRESSIONS[:count]
 
-        model = os.getenv("QFACTOR_OPENAI_MODEL", "gpt-4.1-mini")
-        client = OpenAI(api_key=api_key)
+        client = OpenAI(api_key=api_key, base_url=base_url or None)
         response = client.responses.create(
             model=model,
-            input=self._build_prompt(theme, count),
+            input=self._build_prompt(theme, count, feedback),
         )
         text = getattr(response, "output_text", "") or ""
         return self._parse_candidates(text)[:count]
@@ -107,27 +143,52 @@ class AIFactorMiner:
         end_time: str,
         horizon: int = 5,
         count: int = 5,
+        rounds: int = 1,
         author: str = "ai",
+        verify_fn: Any = None,
+        feedback_fn: Any = None,
     ) -> dict[str, Any]:
-        proposals = self.propose_candidates(theme=theme, count=count)
-        results: list[dict[str, Any]] = []
-        for candidate in proposals:
-            result = self.factor_lab.mine_expression(
-                name=candidate.name,
-                expression=candidate.expression,
-                description=candidate.description or candidate.rationale,
-                start_time=start_time,
-                end_time=end_time,
-                horizon=horizon,
-                source="ai",
-                author=author,
-                tags=candidate.tags,
-            )
-            result["candidate"] = asdict(candidate)
-            results.append(result)
+        """Multi-round auto mining with feedback loop.
+
+        Args:
+            rounds: number of mining rounds (default 1 = single round)
+            verify_fn: optional verification function(proposals) -> dict
+            feedback_fn: optional feedback function(verify_results) -> str
+        """
+        all_results: list[dict[str, Any]] = []
+        feedback: str = self.last_feedback or ""
+
+        for rnd in range(rounds):
+            proposals = self.propose_candidates(theme=theme, count=count, feedback=feedback)
+            results: list[dict[str, Any]] = []
+
+            for candidate in proposals:
+                result = self.factor_lab.mine_expression(
+                    name=candidate.name,
+                    expression=candidate.expression,
+                    description=candidate.description or candidate.rationale,
+                    start_time=start_time,
+                    end_time=end_time,
+                    horizon=horizon,
+                    source="ai",
+                    author=author,
+                    tags=candidate.tags,
+                )
+                result["candidate"] = asdict(candidate)
+                result["round"] = rnd + 1
+                results.append(result)
+
+            # Run verification if available
+            if verify_fn and callable(verify_fn):
+                verify_results = verify_fn(proposals)
+                if feedback_fn and callable(feedback_fn):
+                    feedback = feedback_fn(verify_results)
+                    self.last_feedback = feedback
+
+            all_results.extend(results)
 
         ranked = sorted(
-            results,
+            all_results,
             key=lambda item: (
                 item["top_metrics"].get("ic_mean", 0.0),
                 item["top_metrics"].get("long_short_spread", 0.0),
@@ -136,6 +197,7 @@ class AIFactorMiner:
         )
         return {
             "theme": theme,
-            "generated_count": len(results),
+            "rounds": rounds,
+            "generated_count": len(all_results),
             "results": ranked,
         }
