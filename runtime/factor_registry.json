@@ -1,0 +1,16 @@
+{
+  "factors": [
+    {
+      "name": "ROC60",
+      "source": "alpha158",
+      "added": "2026-08-12T01:31:19Z",
+      "ic": 0.0953,
+      "icir": 0.376,
+      "turnover": 0.1,
+      "corr_max": 0.0,
+      "status": "pass",
+      "batch": "alpha158_first20"
+    }
+  ],
+  "updated": "2026-08-12T01:31:19Z"
+}

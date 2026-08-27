@@ -7,6 +7,7 @@ from contracts.backtest import (
     ExternalSimulationRequest,
     ExternalSimulationResult,
     HoldingSnapshot,
+    PositionRecord,
     PerformanceMetrics,
     TradeRecord,
 )

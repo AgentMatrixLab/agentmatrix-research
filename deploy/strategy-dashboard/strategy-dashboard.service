@@ -1,0 +1,18 @@
+[Unit]
+Description=AgentMatrix read-only strategy dashboard
+After=network.target
+
+[Service]
+Type=simple
+User=data
+Group=datateam
+WorkingDirectory=/home/data/agentmatrix-strategy/current
+EnvironmentFile=/home/data/agentmatrix-strategy/shared/dashboard.env
+ExecStart=/home/data/agentmatrix-strategy/shared/venv/bin/gunicorn --workers 2 --bind 127.0.0.1:8813 --access-logfile - --error-logfile - backend.strategy_dashboard_api:app
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
