@@ -425,58 +425,6 @@ def compute_forward_returns(df, periods=1, price_col="close", date_col="date", c
     return df_sorted["next_return"]
 
 
-def summarize_factor_frame(
-    factor_frame: pd.DataFrame,
-    *,
-    factor_names: list[str],
-    date_col: str = "date",
-    return_col: str = "forward_return_1d",
-) -> dict[str, Any]:
-    """Backward-compatible factor-frame summary for CI submission validation.
-
-    Older validation scripts import this helper directly. The main service path
-    now uses build_factor_evaluation_report, but keeping this small summary
-    avoids breaking existing submission examples and CI jobs.
-    """
-    metrics: dict[str, dict[str, float | int]] = {}
-    total_rows = max(int(len(factor_frame)), 1)
-    for factor_name in factor_names:
-        if factor_name not in factor_frame.columns:
-            continue
-        valid = factor_frame[[date_col, factor_name, return_col]].dropna()
-        non_null_count = int(factor_frame[factor_name].notna().sum())
-        cross_section_count = int(valid[date_col].nunique()) if not valid.empty else 0
-
-        ic_values = []
-        long_short_values = []
-        for _, group in valid.groupby(date_col):
-            if len(group) < 3:
-                continue
-            rank_ic = group[factor_name].rank().corr(group[return_col].rank())
-            if pd.notna(rank_ic):
-                ic_values.append(float(rank_ic))
-            ordered = group.sort_values(factor_name)
-            bottom = ordered.head(max(1, len(ordered) // 5))[return_col].mean()
-            top = ordered.tail(max(1, len(ordered) // 5))[return_col].mean()
-            if pd.notna(top) and pd.notna(bottom):
-                long_short_values.append(float(top - bottom))
-
-        ic_series = pd.Series(ic_values, dtype=float)
-        long_short_series = pd.Series(long_short_values, dtype=float)
-        ic_mean = float(ic_series.mean()) if not ic_series.empty else 0.0
-        ic_std = float(ic_series.std()) if len(ic_series) > 1 else 0.0
-        metrics[factor_name] = {
-            "coverage_ratio": round(non_null_count / total_rows, 4),
-            "non_null_count": non_null_count,
-            "cross_section_count": cross_section_count,
-            "rank_ic_mean": round(ic_mean, 6),
-            "rank_ic_ir": round(ic_mean / ic_std, 6) if ic_std > 0 else 0.0,
-            "long_short_mean": round(float(long_short_series.mean()), 6) if not long_short_series.empty else 0.0,
-        }
-
-    return {"metrics": metrics, "factor_count": len(metrics)}
-
-
 # Backward-compatible shims for existing service.py imports
 
 
@@ -542,5 +490,5 @@ __all__ = [
     "test_sector_neutrality", "compute_factor_correlation",
     "flag_redundant_factors", "evaluate_factor", "evaluation_summary",
     "build_factor_evaluation_report", "build_alpha101_evaluation_report",
-    "compute_forward_returns", "summarize_factor_frame",
+    "compute_forward_returns",
 ]

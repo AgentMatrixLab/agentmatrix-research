@@ -10,9 +10,9 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Factor Lab 因子库</title>
-    <link rel="stylesheet" href="./styles.css?v=20260805-pages-redeploy" />
+    <link rel="stylesheet" href="./styles.css?v=20260722-research-chart-polish" />
   </head>
   <body class="auth-locked">
     <section id="loginView" class="login-view" aria-label="登录">
@@ -54,20 +54,10 @@
             <span class="nav-icon">⌁</span>
             <span>因子库</span>
           </button>
-          <div class="nav-group quant-desk-nav-group" id="quantDeskNavGroup">
-            <button class="nav-item" type="button" data-view="quant-desk">
-              <span class="nav-icon">▣</span>
-              <span>Quant Desk</span>
-            </button>
-            <div id="quantDeskTabs" class="quant-desk-subnav" aria-label="Quant Desk 模块">
-              <button class="active" type="button" data-quant-desk-path="">策略总览</button>
-              <button type="button" data-quant-desk-path="portfolio">组合策略</button>
-              <button type="button" data-quant-desk-path="positions">持仓分析</button>
-              <button type="button" data-quant-desk-path="trades">交易记录</button>
-              <button type="button" data-quant-desk-path="risk">风险监控</button>
-              <button type="button" data-quant-desk-path="backtest">回测中心</button>
-            </div>
-          </div>
+          <button class="nav-item" type="button" data-view="strategy">
+            <span class="nav-icon">▣</span>
+            <span>策略看板</span>
+          </button>
           <button class="nav-item" type="button" data-view="agent_task">
             <span class="nav-icon">AI</span>
             <span>数据入口</span>
@@ -101,10 +91,6 @@
           </div>
 
           <div class="topbar-actions">
-            <button id="themeToggleButton" class="theme-toggle-button" type="button" aria-label="切换到白天模式" aria-pressed="true">
-              <span class="theme-toggle-icon" aria-hidden="true"></span>
-              <span class="theme-toggle-label">黑夜</span>
-            </button>
             <button id="refreshButton" class="icon-button" type="button" aria-label="刷新">刷新</button>
             <button id="logoutButton" class="icon-button" type="button" aria-label="退出登录">退出</button>
             <div class="avatar" aria-label="当前用户">JD</div>
@@ -112,13 +98,6 @@
         </header>
 
         <section id="libraryView" class="content hidden">
-          <section class="library-head">
-            <div>
-              <h2>因子库</h2>
-              <p>统一展示已接入云端信息库的因子、真值覆盖、复现状态和复用建议。这里用于快速筛选、查看和进入单因子详情。</p>
-            </div>
-          </section>
-
           <section class="category-panel" aria-label="因子分类">
             <div class="filter-row market-filter-row">
               <div class="filter-label">市场：</div>
@@ -176,23 +155,16 @@
               </select>
               <select id="reuseFilter">
                 <option value="all">复用建议：全部</option>
-                <option value="reusable">复用建议：可复用</option>
-                <option value="rerun">复用建议：建议重跑</option>
-                <option value="missing">复用建议：未复现</option>
-              </select>
-              <select id="comparisonFilter">
-                <option value="all">因子对照：全部</option>
-                <option value="matched">因子对照：已对照</option>
-                <option value="review">因子对照：需复核</option>
-                <option value="pending">因子对照：待对照</option>
-                <option value="not_applicable">因子对照：无需对照</option>
+                <option value="可复用">复用建议：可复用</option>
+                <option value="建议重跑">复用建议：建议重跑</option>
+                <option value="未复现">复用建议：未复现</option>
               </select>
               <button id="resetFiltersButton" class="text-button" type="button">重置所有筛选</button>
             </div>
 
             <label class="search">
               <span>搜索</span>
-              <input id="searchInput" type="search" placeholder="搜索因子 / 大类 / 子类 / 对照状态..." />
+              <input id="searchInput" type="search" placeholder="搜索因子名称..." />
             </label>
           </section>
 
@@ -210,10 +182,7 @@
                     <th class="sortable" data-sort="factor_name">因子名称</th>
                     <th>所属库</th>
                     <th>市场/口径</th>
-                    <th>大类</th>
-                    <th>子类因子</th>
-                    <th>方向</th>
-                    <th>因子对照</th>
+                    <th>分类</th>
                     <th>复现状态</th>
                     <th>真值校验</th>
                     <th class="number sortable" data-sort="coverage_ratio">覆盖率</th>
@@ -265,16 +234,6 @@
                 <button type="button" data-monitor-direction="negative">反向</button>
               </div>
             </div>
-            <div class="monitor-filter-row compact">
-              <span class="monitor-filter-label">对照</span>
-              <div class="segmented-filter" id="monitorComparisonFilters">
-                <button class="active" type="button" data-monitor-comparison="all">全部</button>
-                <button type="button" data-monitor-comparison="matched">已对照</button>
-                <button type="button" data-monitor-comparison="review">需复核</button>
-                <button type="button" data-monitor-comparison="pending">待对照</button>
-                <button type="button" data-monitor-comparison="not_applicable">无需对照</button>
-              </div>
-            </div>
           </section>
 
           <section class="monitor-toolbar" aria-label="监控筛选">
@@ -285,10 +244,6 @@
               <button class="monitor-filter" type="button" data-monitor-filter="weak">IR&lt;0.1</button>
               <button class="monitor-filter" type="button" data-monitor-filter="missing">待数据</button>
             </div>
-            <label class="search monitor-search">
-              <span>搜索</span>
-              <input id="monitorSearchInput" type="search" placeholder="搜索因子 / 分类 / 对照状态..." />
-            </label>
             <span class="monitor-toolbar-note">绿色 IR&gt;0.3，黄色 IR 0.1-0.3，红色 IR&lt;0.1；↑ 正向，↓ 反向。</span>
           </section>
 
@@ -300,14 +255,12 @@
                     <th class="monitor-sortable" data-monitor-sort="bucket">状态</th>
                     <th class="monitor-sortable" data-monitor-sort="factor_name">因子</th>
                     <th class="monitor-sortable" data-monitor-sort="library">来源</th>
-                    <th class="monitor-sortable" data-monitor-sort="taxonomy">分类</th>
                     <th class="number monitor-sortable" data-monitor-sort="rank_ic_ir">IC_IR</th>
                     <th class="number monitor-sortable" data-monitor-sort="rank_ic_mean">IC均值</th>
                     <th class="number monitor-sortable" data-monitor-sort="coverage_ratio">覆盖率</th>
                     <th class="number monitor-sortable" data-monitor-sort="long_short_mean">近期IC</th>
                     <th>IC柱</th>
                     <th>方向</th>
-                    <th class="monitor-sortable" data-monitor-sort="comparison">因子对照</th>
                     <th class="monitor-sortable" data-monitor-sort="proof_status">验证</th>
                     <th>市场/提示</th>
                   </tr>
@@ -318,14 +271,100 @@
           </section>
         </section>
 
-        <section id="strategyView" class="content strategy-view quant-desk-view hidden" aria-label="策略工作台">
-          <iframe
-            id="quantDeskFrame"
-            class="quant-desk-frame"
-            title="Quant Desk strategy dashboard"
-            loading="lazy"
-            src="about:blank"
-          ></iframe>
+        <section id="strategyView" class="content strategy-view hidden" aria-label="策略看板">
+          <section class="strategy-head">
+            <div>
+              <h2>策略看板</h2>
+              <p>当前仅展示策略层预留接口与研究占位结果，不触发回测、不执行交易逻辑。</p>
+            </div>
+            <details class="contract-drawer">
+              <summary>查看接口契约</summary>
+              <span>strategy_monitor_view_v1：strategy_id、factors[]、universe、rebalance、cost_model、metrics、status、updated_at。</span>
+            </details>
+          </section>
+
+          <section id="realDataResearchPanel" class="panel-card" aria-label="真实数据研究">
+            <div class="panel-header">
+              <h3>真实数据研究（Quant API）</h3>
+              <span class="panel-badge">实时计算</span>
+            </div>
+            <div class="research-form">
+              <div class="form-row">
+                <label class="form-label">因子集：</label>
+                <select id="researchFactorSet" class="form-select">
+                  <option value="quant_api">Quant API 月频因子</option>
+                  <option value="alpha101">Alpha101</option>
+                  <option value="gtja191">GTJA191</option>
+                </select>
+              </div>
+              <div class="form-row">
+                <label class="form-label">因子名称：</label>
+                <input id="researchFactors" class="form-input" type="text" placeholder="ret_1m,roe_ttm,momentum_12_1" value="ret_1m,roe_ttm,momentum_12_1" />
+              </div>
+              <div class="form-row">
+                <label class="form-label">股票代码：</label>
+                <input id="researchSymbols" class="form-input" type="text" placeholder="000001.SZ,000002.SZ" value="000001.SZ,000002.SZ,000004.SZ" />
+              </div>
+              <div class="form-row">
+                <label class="form-label">日期范围：</label>
+                <input id="researchStartDate" class="form-input" type="date" value="2023-01-01" />
+                <span class="form-separator">至</span>
+                <input id="researchEndDate" class="form-input" type="date" value="2024-01-01" />
+              </div>
+              <div class="form-actions">
+                <button id="runResearchButton" class="btn btn-primary" type="button">运行研究</button>
+                <button id="clearResearchButton" class="btn btn-secondary" type="button">清空结果</button>
+              </div>
+            </div>
+            <div id="researchLoading" class="loading-overlay hidden">
+              <div class="loading-spinner"></div>
+              <span>正在计算因子...请稍候</span>
+            </div>
+            <div id="researchResults" class="research-results hidden">
+              <div class="results-header">
+                <span>研究结果</span>
+                <span id="researchJobId" class="job-id-badge"></span>
+              </div>
+              <table class="research-table">
+                <thead>
+                  <tr>
+                    <th>因子名称</th>
+                    <th>IC均值</th>
+                    <th>IC IR</th>
+                    <th>Rank IC</th>
+                    <th>Sharpe</th>
+                    <th>最大回撤</th>
+                    <th>覆盖率</th>
+                    <th>多空收益</th>
+                  </tr>
+                </thead>
+                <tbody id="researchResultsBody"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <section id="strategyStats" class="monitor-stats" aria-label="策略统计"></section>
+
+          <section class="table-card strategy-table-card" aria-label="策略列表">
+            <div class="table-scroll">
+              <table class="strategy-table">
+                <thead>
+                  <tr>
+                    <th class="strategy-sortable" data-strategy-sort="name">策略名称</th>
+                    <th class="strategy-sortable" data-strategy-sort="factors">使用因子</th>
+                    <th class="strategy-sortable" data-strategy-sort="universe">股票池</th>
+                    <th>调仓 / 成本</th>
+                    <th class="number strategy-sortable" data-strategy-sort="annualReturn">年化收益</th>
+                    <th class="number strategy-sortable" data-strategy-sort="sharpe">夏普</th>
+                    <th class="number strategy-sortable" data-strategy-sort="maxDrawdown">最大回撤</th>
+                    <th class="strategy-sortable" data-strategy-sort="status">状态</th>
+                    <th class="strategy-sortable" data-strategy-sort="updatedAt">更新时间</th>
+                  </tr>
+                </thead>
+                <tbody id="strategyTableBody"></tbody>
+              </table>
+            </div>
+          </section>
         </section>
 
         <section id="strategyBuilderView" class="content strategy-builder-view hidden" aria-label="策略构建页"></section>
@@ -389,7 +428,6 @@
       </main>
     </div>
     <script src="./config.js?v=20260722-truth-summary-row-fix"></script>
-    <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
-    <script src="./app.js?v=20260805-pages-redeploy"></script>
+    <script src="./app.js?v=20260724-supabase-only"></script>
   </body>
 </html>
