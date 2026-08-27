@@ -64,7 +64,7 @@ class QlibWorkspaceConfig:
 def qlib_data_download_hint(config: QlibWorkspaceConfig) -> str:
     target_dir = config.resolved_provider_uri()
     return (
-        "Install pyqlib and download market data with the official helper.\n"
+        "Install pyqlib and download market data with the official helper, for example:\n"
         f"python scripts/get_data.py qlib_data --target_dir {target_dir} --region {config.resolved_region()}"
     )
 
@@ -153,12 +153,9 @@ def init_qlib_workspace(
                 provider_uri=config.resolved_provider_uri(),
                 region=region,
                 exp_manager={
-                    "class": "MLflowExpManager",
-                    "module_path": "qlib.workflow.expm",
                     "kwargs": {
                         "uri": f"file:{runtime_path('qlib', 'mlruns')}",
-                        "default_exp_name": config.experiment_name,
-                    },
+                    }
                 },
             )
             init_succeeded = True
