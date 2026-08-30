@@ -27,9 +27,44 @@ html, body {
   color: var(--text);
   font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
   font-size: 14px;
+}
+
+.app-shell {
   display: flex;
   flex-direction: column;
+  height: 100%;
 }
+
+/* ---------- 登录门禁 ---------- */
+.login-view {
+  position: fixed; inset: 0; z-index: 100;
+  display: flex; align-items: center; justify-content: center;
+  background: radial-gradient(circle at 30% 20%, #1e293b 0%, #0a0e1a 60%);
+}
+body.auth-locked .app-shell { display: none; }
+body:not(.auth-locked) .login-view { display: none; }
+.login-card {
+  background: var(--bg-panel); border: 1px solid var(--border);
+  border-radius: 16px; padding: 40px 36px; width: 360px; max-width: 90vw;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, .5);
+}
+.login-brand { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+.login-brand h2 { font-size: 20px; font-weight: 700; }
+.login-sub { color: var(--text-dim); font-size: 13px; margin-bottom: 20px; }
+.login-card input {
+  width: 100%; padding: 12px 14px; background: var(--bg); border: 1px solid var(--border);
+  border-radius: 10px; color: var(--text); font-size: 15px; font-family: inherit;
+  outline: none; margin-bottom: 12px;
+}
+.login-card input:focus { border-color: var(--accent); }
+.login-card button {
+  width: 100%; padding: 12px; background: linear-gradient(135deg, #2b6cb0, #4da3ff);
+  border: none; border-radius: 10px; color: #fff; font-size: 15px; font-weight: 600;
+  cursor: pointer; font-family: inherit; transition: opacity .15s;
+}
+.login-card button:hover { opacity: .9; }
+.login-error { color: var(--red); font-size: 12px; margin-top: 8px; min-height: 18px; }
+.login-hint { color: var(--text-dim); font-size: 11px; margin-top: 18px; text-align: center; line-height: 1.5; }
 
 /* ---------- 顶栏 ---------- */
 .topbar {
