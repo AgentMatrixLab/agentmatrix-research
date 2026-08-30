@@ -35,8 +35,6 @@
       .card .badge { display: inline-block; margin-top: 12px; font-size: 11px; padding: 2px 8px; border-radius: 4px; background: #1e3a5f; color: #60a5fa; }
       .card.live .badge { background: #14532d; color: #4ade80; }
       .card.coming .badge { background: #3f3f46; color: #a1a1aa; }
-      .hint { margin-top: 24px; font-size: 12px; color: #64748b; text-align: center; }
-      .pw-tip { font-size: 12px; color: #fbbf24; margin-top: 6px; }
     </style>
   </head>
   <body>
@@ -57,6 +55,12 @@
           <span class="badge">静态快照 · 最新跑批</span>
         </a>
         <a class="card coming" href="javascript:void(0)" onclick="alert('面板开发中：待 mock 数据与静态导出就绪后开放')">
+          <div class="tag">Strategy</div>
+          <div class="title">策略面板</div>
+          <div class="desc">目标权重生成 · 信号打包 · 组合回测 · 归因分析</div>
+          <span class="badge">开发中</span>
+        </a>
+        <a class="card coming" href="javascript:void(0)" onclick="alert('面板开发中：待 mock 数据与静态导出就绪后开放')">
           <div class="tag">Trust</div>
           <div class="title">因子信任分级总览</div>
           <div class="desc">S/A/B/C/D 信任分级，每个因子凭什么可信如实标注</div>
@@ -68,17 +72,13 @@
           <div class="desc">GTJA191 · TDXGS · JQ110 · ALPHA158/360/101 mock 验证</div>
           <span class="badge">开发中</span>
         </a>
-        <a class="card coming" href="javascript:void(0)" onclick="alert('面板开发中：待 mock 数据与静态导出就绪后开放')">
+        <a class="card live" href="./factor-db-dashboard/">
           <div class="tag">Factor DB</div>
           <div class="title">因子库目录</div>
-          <div class="desc">1040 因子检索、数据字典、因子值查询</div>
-          <span class="badge">开发中</span>
+          <div class="desc">1058 因子检索、数据字典、公式与分布 · QAPI33/Alpha101/GTJA191/TDXGS/JQ110/Alpha158/Alpha360/Barra/JQGM 九源合一</div>
+          <span class="badge">静态快照 · 1058 因子</span>
         </a>
       </div>
-      <p class="hint">
-        访问密码：<b>factorlab2026</b>（前端演示级门禁，非真正安全控制）<br>
-        GitHub Pages 仅做前端只读展示；真实数据权限由 Supabase RLS / 后端控制。
-      </p>
     </div>
   </body>
 </html>

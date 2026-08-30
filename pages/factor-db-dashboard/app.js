@@ -1,12 +1,15 @@
-/* A股因子数据库 Web 原型 — 前端逻辑 */
+/* A股因子库目录（静态快照版）— 前端逻辑
+ * 数据源：./data/factors.json（由 research_core.factor_db.snapshot 生成，与 API 同口径）
+ * 因子值实时查询 / 真实分布需本地 API：python -m research_core.factor_db.api
+ */
 "use strict";
 
-const API = "/api/factor-db";
-
 const state = {
+  snapshot: null,
   factors: [],
   filtered: [],
   stats: {},
+  byId: new Map(),
   selected: null,
   category: "",
   source: "",
@@ -17,14 +20,27 @@ const $ = (id) => document.getElementById(id);
 
 /* ---------------- 初始化 ---------------- */
 document.addEventListener("DOMContentLoaded", async () => {
-  await Promise.all([loadStats(), loadFactors()]);
+  try {
+    const res = await fetch("./data/factors.json");
+    state.snapshot = await res.json();
+  } catch (e) {
+    $("topStats").textContent = "快照加载失败";
+    return;
+  }
+  state.factors = state.snapshot.factors || [];
+  state.stats = state.snapshot.stats || {};
+  state.factors.forEach((f) => state.byId.set(f.factor_id, f));
+  state.filtered = [...state.factors];
+
+  $("modeStatus").textContent = `静态快照 · 生成于 ${formatTime(state.snapshot.generated_at)} · 因子值实时查询需本地 API`;
+  const byCat = state.stats.by_category || {};
+  $("topStats").innerHTML = `共 <b>${state.stats.total_factors}</b> 个因子 · ` +
+    Object.entries(byCat).map(([k, v]) => `${k} <b>${v}</b>`).join(" · ");
   renderChips();
   renderList();
   bindEvents();
-  checkApiStatus();
-  // 默认选中 ROE 演示详情
   if (state.filtered.length) {
-    const roe = state.filtered.find((f) => f.factor_id === "QAPI33:roe_ttm");
+    const roe = state.byId.get("QAPI33:roe_ttm");
     selectFactor((roe || state.filtered[0]).factor_id);
   }
 });
@@ -36,47 +52,17 @@ function bindEvents() {
     timer = setTimeout(() => {
       state.search = e.target.value.trim();
       applyFilter();
-    }, 200);
+    }, 150);
   });
 
-  $("apiDocLink").addEventListener("click", (e) => {
+  $("dictCsvLink").addEventListener("click", (e) => {
     e.preventDefault();
-    alert(
-      [
-        "Factor DB API 端点：",
-        "",
-        `GET ${API}/stats                          目录统计`,
-        `GET ${API}/factors?category=&search=      因子列表`,
-        `GET ${API}/factors/QAPI33:roe_ttm         因子详情`,
-        `GET ${API}/factors/QAPI33:roe_ttm/values?symbol=000001.SZ  因子值`,
-        `GET ${API}/factors/QAPI33:roe_ttm/distribution   分布统计`,
-        `GET ${API}/factors/QAPI33:roe_ttm/export?format=csv|xlsx&scope=values|meta  导出`,
-        `GET ${API}/dictionary?format=json|csv|xlsx  数据字典`,
-        `GET ${API}/quant-api/status               数据源状态`,
-      ].join("\n")
-    );
+    downloadCsv("factor_db_dictionary.csv", state.snapshot.dictionary || []);
   });
-}
-
-/* ---------------- 数据加载 ---------------- */
-async function loadStats() {
-  try {
-    const res = await fetch(`${API}/stats`);
-    state.stats = await res.json();
-    $("topStats").innerHTML = `共 <b>${state.stats.total_factors}</b> 个因子 · ` +
-      Object.entries(state.stats.by_category || {})
-        .map(([k, v]) => `${k} <b>${v}</b>`)
-        .join(" · ");
-  } catch {
-    $("topStats").textContent = "API 不可用";
-  }
-}
-
-async function loadFactors() {
-  const res = await fetch(`${API}/factors?limit=500`);
-  const payload = await res.json();
-  state.factors = payload.factors || [];
-  state.filtered = [...state.factors];
+  $("dictJsonLink").addEventListener("click", (e) => {
+    e.preventDefault();
+    downloadJson("factor_db_dictionary.json", state.snapshot.dictionary || []);
+  });
 }
 
 /* ---------------- 过滤与列表 ---------------- */
@@ -97,15 +83,25 @@ function applyFilter() {
   renderList();
 }
 
+const SOURCE_LABELS = {
+  QAPI33: "Quant API 33",
+  ALPHA101: "Alpha101",
+  GTJA191: "GTJA191",
+  TDXGS: "通达信指标",
+  JQ110: "聚宽110",
+  ALPHA158: "Alpha158",
+  ALPHA360: "Alpha360",
+  BARRA: "Barra CNE5",
+  JQGM: "掘金/聚宽换手",
+};
+
 function renderChips() {
   const catChips = $("categoryChips");
   const byCat = state.stats.by_category || {};
   catChips.innerHTML = "";
-  const all = chipEl("全部", "", state.category, () => { state.category = ""; refresh(); });
-  all.classList.add("active");
-  catChips.appendChild(all);
+  catChips.appendChild(chipEl("全部", null, !state.category, () => { state.category = ""; refresh(); }));
   Object.entries(byCat).forEach(([name, count]) => {
-    catChips.appendChild(chipEl(name, `${name} (${count})`, state.category === name, () => {
+    catChips.appendChild(chipEl(name, count, state.category === name, () => {
       state.category = state.category === name ? "" : name;
       refresh();
     }));
@@ -114,32 +110,23 @@ function renderChips() {
   const srcChips = $("sourceChips");
   srcChips.innerHTML = "";
   const bySrc = state.stats.by_source || {};
-  const allSrc = chipEl("全部", "", state.source, () => { state.source = ""; refresh(); });
-  srcChips.appendChild(allSrc);
+  srcChips.appendChild(chipEl("全部", null, !state.source, () => { state.source = ""; refresh(); }));
   Object.entries(bySrc).forEach(([key, count]) => {
-    const label = {
-      QAPI33: "Quant API 33",
-      ALPHA101: "Alpha101",
-      GTJA191: "GTJA191",
-      TDXGS: "通达信指标",
-      JQ110: "聚宽110",
-      ALPHA158: "Alpha158",
-      ALPHA360: "Alpha360",
-      BARRA: "Barra CNE5",
-      JQGM: "掘金/聚宽换手",
-    }[key] || key;
-    srcChips.appendChild(chipEl(label, `${label} (${count})`, state.source === key, () => {
+    const label = SOURCE_LABELS[key] || key;
+    srcChips.appendChild(chipEl(label, count, state.source === key, () => {
       state.source = state.source === key ? "" : key;
       refresh();
     }));
   });
 }
 
-function chipEl(name, text, active, onClick) {
+function chipEl(name, count, active, onClick) {
   const el = document.createElement("button");
   el.className = "chip" + (active ? " active" : "");
-  el.innerHTML = text ? `${name} <span class="cnt">${text.match(/\((\d+)\)/)?.[1] || ""}</span>`.trim() : name;
-  if (!text) el.textContent = name;
+  el.textContent = name;
+  if (count !== null) {
+    el.innerHTML = `${escapeHtml(name)} <span class="cnt">${count}</span>`;
+  }
   el.addEventListener("click", onClick);
   return el;
 }
@@ -164,7 +151,7 @@ function renderList() {
       <div class="f-tags">
         <span class="tag cat-${f.category}">${f.category}</span>
         <span class="tag">${f.subcategory}</span>
-        <span class="tag">${f.frequency}</span>
+        <span class="tag">${f.frequency.split("；")[0]}</span>
       </div>`;
     item.addEventListener("click", () => selectFactor(f.factor_id));
     frag.appendChild(item);
@@ -173,7 +160,7 @@ function renderList() {
 }
 
 /* ---------------- 详情 ---------------- */
-async function selectFactor(factorId) {
+function selectFactor(factorId) {
   state.selected = factorId;
   document.querySelectorAll(".factor-item").forEach((el) => {
     el.classList.toggle("active", el.dataset.id === factorId);
@@ -181,10 +168,8 @@ async function selectFactor(factorId) {
   const activeEl = document.querySelector(`.factor-item[data-id="${CSS.escape(factorId)}"]`);
   if (activeEl) activeEl.scrollIntoView({ block: "nearest" });
 
-  const res = await fetch(`${API}/factors/${encodeURIComponent(factorId)}`);
-  const factor = await res.json();
-  renderDetail(factor);
-  loadDistribution(factorId);
+  const f = state.byId.get(factorId);
+  if (f) renderDetail(f);
 }
 
 function metaCell(k, v) {
@@ -196,6 +181,7 @@ function renderDetail(f) {
   const panel = $("detailContent");
   panel.hidden = false;
 
+  const live = f.factor_id.startsWith("QAPI33:");
   panel.innerHTML = `
     <div class="detail-header">
       <div class="detail-title">
@@ -203,9 +189,8 @@ function renderDetail(f) {
         <div class="en">${escapeHtml(f.name_en)} · <code>${escapeHtml(f.factor_id)}</code></div>
       </div>
       <div class="detail-actions">
-        <a class="btn" href="${API}/factors/${encodeURIComponent(f.factor_id)}/export?scope=meta&format=csv">导出元数据 CSV</a>
-        <a class="btn primary" href="${API}/factors/${encodeURIComponent(f.factor_id)}/export?scope=values&format=csv">导出因子值 CSV</a>
-        <a class="btn" href="${API}/factors/${encodeURIComponent(f.factor_id)}/export?scope=values&format=xlsx">Excel</a>
+        <button class="btn" data-act="meta-csv">导出元数据 CSV</button>
+        ${live ? '<button class="btn primary" data-act="values-csv" title="需本地 API + Quant API token">导出因子值 CSV</button>' : ""}
       </div>
     </div>
 
@@ -232,7 +217,7 @@ function renderDetail(f) {
       <div class="section-title">因子公式</div>
       <div class="formula-block">
         <div class="formula-label">数学公式（LaTeX）</div>
-        <div id="latexFormula">$${escapeHtml(f.formula_latex || "")}$</div>
+        <div id="latexFormula"></div>
         <div class="formula-label" style="margin-top:14px">伪代码表达式</div>
         <div class="expr">${escapeHtml(f.formula_expr || "")}</div>
       </div>
@@ -253,11 +238,10 @@ function renderDetail(f) {
       <div class="section-body notice">${escapeHtml(f.cautions || "—")}</div>
     </div>
 
-    <div class="section" id="distSection">
+    <div class="section">
       <div class="section-title">因子分布</div>
       <div class="dist-controls">
-        <button class="btn" id="distReload">重新计算分布</button>
-        <label class="dist-note"><input type="checkbox" id="demoToggle" style="vertical-align:-2px;margin-right:4px" />演示模式（无需 token）</label>
+        <span class="dist-note demo">演示模式：正态代理样本（非真实因子值）· 真实数据需本地 API + Quant API token</span>
         <span class="dist-note" id="distNote"></span>
       </div>
       <div class="chart-card">
@@ -267,49 +251,99 @@ function renderDetail(f) {
     </div>
   `;
 
-  renderLatex();
-  $("distReload").addEventListener("click", () => loadDistribution(f.factor_id));
-  $("demoToggle").addEventListener("change", () => loadDistribution(f.factor_id));
-}
-
-function renderLatex() {
-  const el = $("latexFormula");
-  if (!el || !window.katex) return;
-  const raw = el.textContent.replace(/^\$/, "").replace(/\$$/, "");
-  try {
-    katex.render(raw, el, { displayMode: true, throwOnError: false });
-  } catch {
-    el.textContent = raw;
+  renderLatex(f.formula_latex || "");
+  const metaBtn = panel.querySelector('[data-act="meta-csv"]');
+  metaBtn.addEventListener("click", () => downloadCsv(`factor_${f.factor_id.replace(":", "_")}_meta.csv`, [f]));
+  const valuesBtn = panel.querySelector('[data-act="values-csv"]');
+  if (valuesBtn) {
+    valuesBtn.addEventListener("click", () => {
+      alert("因子值导出需要本地数据服务：\n\n1. 启动 API：python -m research_core.factor_db.api\n2. 配置 token：环境变量 FACTOR_LAB_QUANT_API_TOKEN\n3. 访问 /factor-db/ 使用完整数据面板");
+    });
   }
+  drawDemoDistribution(f.factor_id);
 }
 
-/* ---------------- 分布图 ---------------- */
-async function loadDistribution(factorId) {
+function renderLatex(raw) {
+  const el = $("latexFormula");
+  if (!el) return;
+  if (window.katex && raw) {
+    try {
+      katex.render(raw, el, { displayMode: true, throwOnError: false });
+      return;
+    } catch { /* fallthrough */ }
+  }
+  el.textContent = raw || "—";
+  el.style.color = "var(--text-dim)";
+}
+
+/* ---------------- 演示分布（客户端正态代理，与 API demo 模式同口径并明确标注） ---------------- */
+function hashSeed(str) {
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 16777619) >>> 0;
+  }
+  return h >>> 0;
+}
+
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return function () {
+    a |= 0; a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function demoDistribution(factorId, bins = 36, n = 4000) {
+  const rng = mulberry32(hashSeed(factorId));
+  const u = () => {
+    let s = 0;
+    for (let i = 0; i < 12; i++) s += rng();
+    return s - 6; // 近似标准正态（均值 0，方差 1）
+  };
+  const values = [];
+  for (let i = 0; i < n; i++) values.push(u());
+
+  const lo = Math.min(...values);
+  const hi = Math.max(...values);
+  const width = (hi - lo) / bins;
+  const counts = new Array(bins).fill(0);
+  values.forEach((v) => counts[Math.min(Math.floor((v - lo) / width), bins - 1)]++);
+  const histogram = counts.map((c, i) => ({ bin_left: lo + i * width, bin_right: lo + (i + 1) * width, count: c }));
+
+  const mean = values.reduce((a, b) => a + b, 0) / n;
+  const variance = values.reduce((a, b) => a + (b - mean) ** 2, 0) / (n - 1);
+  const std = Math.sqrt(variance);
+  const sorted = [...values].sort((a, b) => a - b);
+  const pct = (q) => {
+    const idx = (sorted.length - 1) * q / 100;
+    const low = Math.floor(idx), high = Math.ceil(idx);
+    return sorted[low] * (1 - idx + low) + sorted[high] * (idx - low);
+  };
+  const skew = std > 0 ? values.reduce((a, b) => a + ((b - mean) / std) ** 3, 0) / n : 0;
+  const kurt = std > 0 ? values.reduce((a, b) => a + ((b - mean) / std) ** 4, 0) / n - 3 : 0;
+  const p25 = pct(25), p75 = pct(75);
+  const stats = {
+    count: n, mean, std, min: sorted[0], max: sorted[n - 1],
+    p25, p50: pct(50), p75,
+    skewness: skew, kurtosis: kurt,
+    iqr: p75 - p25,
+    outlier_ratio_p1_p99: values.filter((v) => v < pct(1) || v > pct(99)).length / n,
+  };
+  return { stats, histogram };
+}
+
+function drawDemoDistribution(factorId) {
   const note = $("distNote");
   const canvas = $("distCanvas");
   if (!canvas) return;
-  note.textContent = "加载中…";
-  note.className = "dist-note";
-
-  const demo = $("demoToggle") && $("demoToggle").checked ? "&demo=1" : "";
-  try {
-    const res = await fetch(`${API}/factors/${encodeURIComponent(factorId)}/distribution?bins=36${demo}`);
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      note.textContent = `暂无真实数据（${err.error || res.status}）— 可勾选"演示模式"查看形态`;
-      note.className = "dist-note demo";
-      drawEmpty(canvas);
-      $("statsGrid").innerHTML = "";
-      return;
-    }
-    const dist = await res.json();
-    note.textContent = `${dist.note} · 截面日期 ${dist.trade_date} · 样本 ${dist.sample_count}`;
-    note.className = "dist-note" + (dist.demo ? " demo" : "");
-    drawHistogram(canvas, dist.histogram, dist.stats);
-    renderStatsGrid(dist.stats);
-  } catch (e) {
-    note.textContent = "分布加载失败: " + e.message;
-  }
+  note.textContent = "计算中…";
+  const { stats, histogram } = demoDistribution(factorId);
+  note.textContent = `演示样本 ${stats.count} · 均值 ${fmtNum(stats.mean)} · 标准差 ${fmtNum(stats.std)}`;
+  drawHistogram(canvas, histogram, stats);
+  renderStatsGrid(stats);
 }
 
 function drawHistogram(canvas, bins, stats) {
@@ -332,7 +366,6 @@ function drawHistogram(canvas, bins, stats) {
   const x = (v) => pad.l + ((v - lo) / (hi - lo || 1)) * plotW;
   const y = (c) => pad.t + plotH - (c / maxCount) * plotH;
 
-  // 网格线
   ctx.strokeStyle = "#2a3644";
   ctx.fillStyle = "#8a9bb0";
   ctx.font = "10px sans-serif";
@@ -343,11 +376,9 @@ function drawHistogram(canvas, bins, stats) {
     ctx.moveTo(pad.l, yy);
     ctx.lineTo(pad.l + plotW, yy);
     ctx.stroke();
-    const val = Math.round(maxCount * (1 - i / 4));
-    ctx.fillText(String(val), 8, yy + 3);
+    ctx.fillText(String(Math.round(maxCount * (1 - i / 4))), 8, yy + 3);
   }
 
-  // 直方柱
   const barW = plotW / bins.length;
   bins.forEach((b, i) => {
     const bx = pad.l + i * barW;
@@ -359,8 +390,8 @@ function drawHistogram(canvas, bins, stats) {
     ctx.fillRect(bx + 0.6, y(b.count), barW - 1.2, bh);
   });
 
-  // 中位数/分位线
   const qline = (v, color, label) => {
+    if (!Number.isFinite(v)) return;
     ctx.strokeStyle = color;
     ctx.setLineDash([4, 3]);
     ctx.beginPath();
@@ -371,33 +402,15 @@ function drawHistogram(canvas, bins, stats) {
     ctx.fillStyle = color;
     ctx.fillText(label, x(v) + 3, pad.t + 10);
   };
-  if (stats) {
-    qline(stats.p25, "rgba(52,211,153,0.7)", "P25");
-    qline(stats.p50, "rgba(251,191,36,0.9)", "P50");
-    qline(stats.p75, "rgba(52,211,153,0.7)", "P75");
-  }
+  qline(stats.p25, "rgba(52,211,153,0.7)", "P25");
+  qline(stats.p50, "rgba(251,191,36,0.9)", "P50");
+  qline(stats.p75, "rgba(52,211,153,0.7)", "P75");
 
-  // X 轴刻度
   ctx.fillStyle = "#8a9bb0";
   for (let i = 0; i <= 6; i++) {
     const v = lo + ((hi - lo) / 6) * i;
     ctx.fillText(fmtNum(v), x(v) - 14, height - 10);
   }
-}
-
-function drawEmpty(canvas) {
-  const dpr = window.devicePixelRatio || 1;
-  const width = canvas.clientWidth || 800;
-  canvas.width = width * dpr;
-  canvas.height = 260 * dpr;
-  const ctx = canvas.getContext("2d");
-  ctx.scale(dpr, dpr);
-  ctx.clearRect(0, 0, width, 260);
-  ctx.fillStyle = "#8a9bb0";
-  ctx.font = "13px sans-serif";
-  ctx.textAlign = "center";
-  ctx.fillText("暂无分布数据", width / 2, 130);
-  ctx.textAlign = "left";
 }
 
 function renderStatsGrid(stats) {
@@ -420,20 +433,32 @@ function renderStatsGrid(stats) {
     .join("");
 }
 
-/* ---------------- API 状态 ---------------- */
-async function checkApiStatus() {
-  try {
-    const res = await fetch(`${API}/quant-api/status`);
-    const s = await res.json();
-    $("apiStatus").textContent = s.token_configured
-      ? `Quant API: 已连接（${s.base_url}）`
-      : "Quant API: token 未配置（因子值查询不可用，可勾选演示模式）";
-  } catch {
-    $("apiStatus").textContent = "Quant API: 状态未知";
-  }
+/* ---------------- 导出与工具 ---------------- */
+function downloadCsv(filename, rows) {
+  if (!rows || !rows.length) return;
+  const keys = Object.keys(rows[0]);
+  const esc = (v) => {
+    const s = String(v ?? "");
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const csv = "\ufeff" + keys.join(",") + "\n" + rows.map((r) => keys.map((k) => esc(r[k])).join(",")).join("\n");
+  triggerDownload(new Blob([csv], { type: "text/csv;charset=utf-8" }), filename);
 }
 
-/* ---------------- 工具 ---------------- */
+function downloadJson(filename, data) {
+  const json = JSON.stringify(data, null, 2);
+  triggerDownload(new Blob([json], { type: "application/json;charset=utf-8" }), filename);
+}
+
+function triggerDownload(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 function escapeHtml(s) {
   return String(s ?? "")
     .replace(/&/g, "&amp;")
@@ -442,10 +467,16 @@ function escapeHtml(s) {
     .replace(/"/g, "&quot;");
 }
 
+function formatTime(iso) {
+  if (!iso) return "—";
+  return iso.replace("T", " ").replace(/:\d\d$/, " UTC");
+}
+
 function fmtNum(v) {
   if (v === null || v === undefined) return "—";
+  if (typeof v !== "number") return String(v);
   if (Math.abs(v) >= 1000) return v.toLocaleString("zh-CN", { maximumFractionDigits: 1 });
-  if (Math.abs(v) >= 1) return Number(v).toFixed(2);
+  if (Math.abs(v) >= 1) return v.toFixed(2);
   if (v === 0) return "0";
-  return Number(v).toPrecision(3);
+  return v.toPrecision(3);
 }
