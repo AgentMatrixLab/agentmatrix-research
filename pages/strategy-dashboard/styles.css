@@ -184,21 +184,6 @@ code {
 .ic-table td.num { text-align: right; font-family: "SF Mono", Consolas, monospace; font-weight: 600; }
 .ic-table td.num.pos { color: var(--ok); }
 .ic-table td.num.neg { color: var(--bad); }
-
-/* ── 回测区块 ── */
-.ic-row.bt-row { margin-top: 6px; background: rgba(88,166,255,.04); }
-.bt-table { min-width: 480px; }
-.bt-table th {
-  text-align: left; font-size: 11px; font-weight: 600; color: var(--muted);
-  padding: 6px 12px; border-bottom: 2px solid var(--border); letter-spacing: .3px;
-}
-.bt-table th:nth-child(n+2) { text-align: right; }
-.bt-table td:not(:first-child) { text-align: right; }
-.table-wrap { overflow-x: auto; }
-.nav-chart { width: 100%; height: auto; display: block; margin-top: 4px; }
-.nav-chart .axis-label { font-size: 10px; fill: var(--muted); }
-.bt-table td.num.pos, .nav-chart b.pos { color: var(--ok); font-weight: 600; }
-.bt-table td.num.neg, .nav-chart b.neg { color: var(--bad); font-weight: 600; }
 .ci-chart { width: 100%; max-width: 720px; height: auto; display: block; margin: 4px 0 10px; }
 .ci-chart .axis-label { fill: var(--muted); font-size: 11px; font-family: "SF Mono", Consolas, monospace; }
 .ci-chart .pt-label { fill: var(--text); font-size: 11px; font-weight: 600; font-family: "SF Mono", Consolas, monospace; }

@@ -30,10 +30,24 @@ _DEFAULT_OUT = Path("pages/factor-db-dashboard/data")
 
 
 def build_snapshot() -> dict:
-    """构建因子目录快照（与 API /stats、/factors、/dictionary 同口径）。"""
+    """构建因子目录快照（与 API /stats、/factors、/dictionary 同口径）。
+
+    2026-08 起并入信任分级维度（research_core.factor_db.trust，S/A/B/C/D），
+    原"五库因子验证面板"内容收编为本快照的一个维度，不再单独立面板。
+    """
     from research_core.factor_db.metadata import dictionary_rows
+    from research_core.factor_db.trust import build_trust_registry
 
     stats = get_stats()
+    registry = build_trust_registry()
+    tier_by_id = {f["factor_id"]: f for f in registry["factors"]}
+    factors = []
+    for row in _all_factors():
+        t = tier_by_id.get(row["factor_id"])
+        row = dict(row)
+        row["trust_tier"] = t["tier"] if t else "C"
+        row["trust_evidence"] = t["evidence"] if t else []
+        factors.append(row)
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "mode": "static-snapshot",
@@ -43,7 +57,14 @@ def build_snapshot() -> dict:
             "演示分布为正态代理样本，仅展示产品形态，不冒充真实数据。"
         ),
         "stats": stats,
-        "factors": list(_all_factors()),
+        "trust": {
+            "tier_definitions": registry["tier_definitions"],
+            "tier_order": registry["tier_order"],
+            "tier_counts": registry["tier_counts"],
+            "by_source": registry["by_source"],
+            "note": registry.get("verification_gates", {}).get("note", ""),
+        },
+        "factors": factors,
         "dictionary": dictionary_rows(),
     }
 
