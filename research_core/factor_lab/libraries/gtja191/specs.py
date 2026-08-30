@@ -74,12 +74,72 @@ GTJA191_IMPLEMENTED_DETAILS: dict[int, dict[str, object]] = {
         "required_fields": ["close"],
         "parameters": {"std_window": 20, "max_window": 5},
     },
+    11: {
+        "formula": "SUM((((CLOSE - LOW) - (HIGH - CLOSE)) / (HIGH - LOW)) * VOLUME, 6)",
+        "description": "收盘价在日内振幅中的相对位置乘以成交量，并做 6 日滚动求和。",
+        "required_fields": ["high", "low", "close", "volume"],
+        "parameters": {"sum_window": 6},
+    },
+    12: {
+        "formula": "RANK(OPEN - SUM(VWAP,10) / 10) * (-1 * RANK(ABS(CLOSE - VWAP)))",
+        "description": "开盘价相对 10 日 VWAP 均值偏离排序，并乘以收盘价偏离 VWAP 绝对值排序的负值。",
+        "required_fields": ["open", "close", "volume", "amount"],
+        "parameters": {"sum_window": 10},
+    },
+    13: {
+        "formula": "((HIGH * LOW)^0.5 - VWAP)",
+        "description": "最高价与最低价几何均值相对 VWAP 的偏离因子。",
+        "required_fields": ["high", "low", "volume", "amount"],
+        "parameters": {},
+    },
+    14: {
+        "formula": "CLOSE - DELAY(CLOSE,5)",
+        "description": "收盘价相对 5 日前收盘价的变化因子。",
+        "required_fields": ["close"],
+        "parameters": {"delay_window": 5},
+    },
+    15: {
+        "formula": "OPEN / DELAY(CLOSE,1) - 1",
+        "description": "开盘价相对前一日收盘价的隔夜收益因子。",
+        "required_fields": ["open", "close"],
+        "parameters": {"delay_window": 1},
+    },
+    16: {
+        "formula": "(-1 * TSMAX(RANK(CORR(RANK(VOLUME), RANK(VWAP), 5)), 5))",
+        "description": "成交量排序与 VWAP 排序相关性的短窗最大值反向因子。",
+        "required_fields": ["volume", "amount"],
+        "parameters": {"corr_window": 5, "max_window": 5},
+    },
+    17: {
+        "formula": "RANK((VWAP - TSMAX(VWAP,15))^DELTA(CLOSE,5))",
+        "description": "VWAP 相对 15 日最高 VWAP 的偏离与收盘价 5 日变化构造的排序因子。",
+        "required_fields": ["close", "volume", "amount"],
+        "parameters": {"max_window": 15, "delta_window": 5},
+    },
+    18: {
+        "formula": "CLOSE / DELAY(CLOSE,5)",
+        "description": "收盘价相对 5 日前收盘价的价格比值因子。",
+        "required_fields": ["close"],
+        "parameters": {"delay_window": 5},
+    },
+    19: {
+        "formula": "IF(CLOSE < DELAY(CLOSE,5), (CLOSE - DELAY(CLOSE,5)) / DELAY(CLOSE,5), IF(CLOSE = DELAY(CLOSE,5), 0, (CLOSE - DELAY(CLOSE,5)) / CLOSE))",
+        "description": "按收盘价相对 5 日前收盘价涨跌方向构造的条件收益因子。",
+        "required_fields": ["close"],
+        "parameters": {"delay_window": 5},
+    },
+    20: {
+        "formula": "(CLOSE - DELAY(CLOSE,6)) / DELAY(CLOSE,6) * 100",
+        "description": "收盘价相对 6 日前收盘价的百分比变化因子。",
+        "required_fields": ["close"],
+        "parameters": {"delay_window": 6},
+    },
 }
 
 
 def gtja191_specs() -> list[FactorResearchSpec]:
     specs: list[FactorResearchSpec] = []
-    for idx in range(1, 11):
+    for idx in range(1, 21):
         details = GTJA191_IMPLEMENTED_DETAILS[idx]
         specs.append(
             FactorResearchSpec(
