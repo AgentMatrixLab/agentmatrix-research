@@ -31,7 +31,7 @@
       .card:hover { border-color: #3b82f6; transform: translateY(-2px); }
       .card .tag { font-size: 11px; color: #60a5fa; font-weight: 600; letter-spacing: .5px; text-transform: uppercase; margin-bottom: 8px; }
       .card .title { font-size: 18px; font-weight: 600; margin-bottom: 6px; }
-      .card .desc { font-size: 13px; color: #94a3b8; line-height: 1.5; }
+      .card .desc { font-size: 13px; color: #94a3b8; line-height: 1.5; overflow-wrap: anywhere; }
       .card .badge { display: inline-block; margin-top: 12px; font-size: 11px; padding: 2px 8px; border-radius: 4px; background: #1e3a5f; color: #60a5fa; }
       .card.live .badge { background: #14532d; color: #4ade80; }
       .card.coming .badge { background: #3f3f46; color: #a1a1aa; }
@@ -49,9 +49,9 @@
           <span class="badge">Supabase 数据 · 实时</span>
         </a>
         <a class="card live" href="./lifecycle-dashboard/">
-          <div class="tag">Lifecycle</div>
+          <div class="tag">Lifecycle · Trust</div>
           <div class="title">因子生命周期监控</div>
-          <div class="desc">从出生到死亡全流程 · 九道验真闸门 · 证据链 · OOS 封存</div>
+          <div class="desc">从出生到死亡全流程 · 九道验真闸门 · 证据链 · OOS 封存 · 信任分级总览（S/A/B/C/D）</div>
           <span class="badge">静态快照 · 最新跑批</span>
         </a>
         <a class="card live" href="./strategy-dashboard/">
@@ -60,22 +60,10 @@
           <div class="desc">单因子策略配置 · 因子验证证据 · 闸门状态（5 策略起步）</div>
           <span class="badge">静态快照 · 5 策略</span>
         </a>
-        <a class="card coming" href="javascript:void(0)" onclick="alert('面板开发中：待 mock 数据与静态导出就绪后开放')">
-          <div class="tag">Trust</div>
-          <div class="title">因子信任分级总览</div>
-          <div class="desc">S/A/B/C/D 信任分级，每个因子凭什么可信如实标注</div>
-          <span class="badge">开发中</span>
-        </a>
-        <a class="card coming" href="javascript:void(0)" onclick="alert('面板开发中：待 mock 数据与静态导出就绪后开放')">
-          <div class="tag">Zoo</div>
-          <div class="title">五库因子验证面板</div>
-          <div class="desc">GTJA191 · TDXGS · JQ110 · ALPHA158/360/101 mock 验证</div>
-          <span class="badge">开发中</span>
-        </a>
         <a class="card live" href="./factor-db-dashboard/">
-          <div class="tag">Factor DB</div>
+          <div class="tag">Factor DB · Trust</div>
           <div class="title">因子库目录</div>
-          <div class="desc">1058 因子检索、数据字典、公式与分布 · QAPI33/Alpha101/GTJA191/TDXGS/JQ110/Alpha158/Alpha360/Barra/JQGM 九源合一</div>
+          <div class="desc">1058 因子检索 · 公式与分布 · 信任分级维度（S/A/B/C/D）· 九源合一</div>
           <span class="badge">静态快照 · 1058 因子</span>
         </a>
       </div>

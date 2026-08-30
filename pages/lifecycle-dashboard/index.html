@@ -53,6 +53,15 @@
     <div class="pipeline" id="pipeline"></div>
   </section>
 
+  <section class="panel">
+    <div class="panel-head">
+      <h2>信任分级总览（S/A/B/C/D）</h2>
+      <span class="hint">口径与 factor_db/trust.py 对齐 · 点击分级过滤总表</span>
+    </div>
+    <div class="trust-grid" id="trust-grid"></div>
+    <p class="hint" id="trust-rule-hint"></p>
+  </section>
+
   <div class="two-col">
     <section class="panel">
       <div class="panel-head">
@@ -92,6 +101,7 @@
           <tr>
             <th>因子</th>
             <th>状态</th>
+            <th>信任</th>
             <th>闸门</th>
             <th>死因</th>
             <th>OOS 剩余</th>

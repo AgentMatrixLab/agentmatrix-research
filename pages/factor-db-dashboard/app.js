@@ -9,10 +9,12 @@ const state = {
   factors: [],
   filtered: [],
   stats: {},
+  trust: null,
   byId: new Map(),
   selected: null,
   category: "",
   source: "",
+  tier: "",
   search: "",
 };
 
@@ -66,13 +68,15 @@ async function loadData() {
   }
   state.factors = state.snapshot.factors || [];
   state.stats = state.snapshot.stats || {};
+  state.trust = state.snapshot.trust || null;
   state.factors.forEach((f) => state.byId.set(f.factor_id, f));
   state.filtered = [...state.factors];
 
   $("modeStatus").textContent = `静态快照 · 生成于 ${formatTime(state.snapshot.generated_at)} · 因子值实时查询需本地 API`;
   const byCat = state.stats.by_category || {};
   $("topStats").innerHTML = `共 <b>${state.stats.total_factors}</b> 个因子 · ` +
-    Object.entries(byCat).map(([k, v]) => `${k} <b>${v}</b>`).join(" · ");
+    Object.entries(byCat).map(([k, v]) => `${k} <b>${v}</b>`).join(" · ") +
+    (state.trust ? ` · 信任分级 B <b>${state.trust.tier_counts.B || 0}</b> / C <b>${state.trust.tier_counts.C || 0}</b>` : "");
   renderChips();
   renderList();
   bindEvents();
@@ -104,11 +108,12 @@ function bindEvents() {
 
 /* ---------------- 过滤与列表 ---------------- */
 function applyFilter() {
-  const { category, source, search } = state;
+  const { category, source, tier, search } = state;
   const needle = search.toLowerCase();
   state.filtered = state.factors.filter((f) => {
     if (category && f.category !== category) return false;
     if (source && !f.factor_id.startsWith(source + ":")) return false;
+    if (tier && f.trust_tier !== tier) return false;
     if (needle) {
       const hay = [f.name_cn, f.name_en, f.factor_id, f.definition || "", f.formula_expr || ""]
         .join(" ")
@@ -155,6 +160,25 @@ function renderChips() {
       refresh();
     }));
   });
+
+  /* 信任分级筛选（S/A/B/C/D，口径来自 research_core.factor_db.trust） */
+  const tierChips = $("tierChips");
+  if (tierChips) {
+    tierChips.innerHTML = "";
+    const trust = state.trust;
+    tierChips.appendChild(chipEl("全部", null, !state.tier, () => { state.tier = ""; refresh(); }));
+    if (trust) {
+      (trust.tier_order || ["S", "A", "B", "C", "D"]).forEach((t) => {
+        const def = (trust.tier_definitions || {})[t] || {};
+        const n = trust.tier_counts?.[t] ?? 0;
+        const label = `${t} · ${def.label || ""}`;
+        tierChips.appendChild(chipEl(label, n, state.tier === t, () => {
+          state.tier = state.tier === t ? "" : t;
+          refresh();
+        }));
+      });
+    }
+  }
 }
 
 function chipEl(name, count, active, onClick) {
@@ -189,6 +213,7 @@ function renderList() {
         <span class="tag cat-${f.category}">${f.category}</span>
         <span class="tag">${f.subcategory}</span>
         <span class="tag">${f.frequency.split("；")[0]}</span>
+        <span class="tag tier tier-${f.trust_tier}" title="信任分级 ${f.trust_tier}">${f.trust_tier || "—"}</span>
       </div>`;
     item.addEventListener("click", () => selectFactor(f.factor_id));
     frag.appendChild(item);
@@ -211,6 +236,26 @@ function selectFactor(factorId) {
 
 function metaCell(k, v) {
   return `<div class="meta-cell"><div class="k">${escapeHtml(k)}</div><div class="v">${escapeHtml(v || "—")}</div></div>`;
+}
+
+/* 信任分级区块：这个因子凭什么可信（口径 research_core.factor_db.trust） */
+function trustSection(f) {
+  const t = f.trust_tier || "—";
+  const def = state.trust?.tier_definitions?.[t];
+  const ev = (f.trust_evidence || []).map((e) => `<li>${escapeHtml(e)}</li>`).join("");
+  return `
+    <div class="section">
+      <div class="section-title">信任分级 · 这个因子凭什么可信</div>
+      <div class="section-body trust-body">
+        <span class="trust-big tier-${t}">${t}</span>
+        <div class="trust-desc">
+          <b>${escapeHtml(def?.label || "未分级")}</b>
+          <p>${escapeHtml(def?.desc || "快照缺少信任分级数据，请重新生成：python -X utf8 -m research_core.factor_db.snapshot")}</p>
+          ${ev ? `<ul class="trust-evidence">${ev}</ul>` : ""}
+          ${state.trust?.note ? `<p class="trust-note">${escapeHtml(state.trust.note)}</p>` : ""}
+        </div>
+      </div>
+    </div>`;
 }
 
 function renderDetail(f) {
@@ -239,6 +284,8 @@ function renderDetail(f) {
       ${metaCell("覆盖范围", f.coverage)}
       ${metaCell("历史起始", f.history_start)}
     </div>
+
+    ${trustSection(f)}
 
     <div class="section">
       <div class="section-title">因子定义</div>

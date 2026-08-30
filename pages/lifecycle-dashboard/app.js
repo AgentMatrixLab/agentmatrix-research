@@ -18,15 +18,36 @@ const GATE_ORDER = [
   "g11_market_segments", "g12_redundancy",
 ];
 
-const state = { overview: null, factors: [], monitor: null, stateFilter: "", search: "" };
+const state = { overview: null, factors: [], monitor: null, stateFilter: "", search: "", trustFilter: "" };
 const els = {};
 ["pipeline", "pipeline-hint", "funnel-hint", "gate-funnel", "oos-list", "oos-max",
  "state-select", "factor-search", "factor-tbody", "factor-count", "evidence-feed",
- "sla-feed", "sla-hint",
+ "sla-feed", "sla-hint", "trust-grid", "trust-rule-hint",
  "drawer", "drawer-mask", "drawer-title", "drawer-sub", "drawer-body", "drawer-close",
  "reload-btn", "sub-title"].forEach(id => {
   els[id.replace(/-(\w)/g, (_, c) => c.toUpperCase())] = document.getElementById(id);
 });
+
+/* ── 信任分级：口径与 research_core/factor_db/trust.py 对齐（S/A/B/C/D）──
+ * S：真值对照通过（官方真值 CSV，max_abs_diff≈0）—— 需显式 truth_proofed 证据，不由状态推导
+ * A：九道验真全过（成年及以后：2_validated / 3_strategy_candidate / 4_live_ready / 6_published）
+ * B：真实数据已接入、排队待验真
+ * C：仅 mock 验证（1_implemented）或仅登记设想（0_conceived）/ 暂停（5_suspended）
+ * D：源库缺陷 / 验证失败 / 降级（7_deprecated）/ 退休（8_retired）/ 死亡（9_rejected）  */
+const TRUST_DEFS = [
+  { grade: "S", color: "#8b5cf6", label: "真值对照通过", rule: "官方真值 CSV 比对通过（max_abs_diff≈0）" },
+  { grade: "A", color: "#10b981", label: "九道验真通过", rule: "成年及以后（闸门4—12 全过）" },
+  { grade: "B", color: "#3b82f6", label: "真实数据已接入", rule: "真值可查，排队待九道验真" },
+  { grade: "C", color: "#f59e0b", label: "仅 mock 验证", rule: "出生（mock 通过）/ 设想 / 暂停" },
+  { grade: "D", color: "#ef4444", label: "缺陷/淘汰", rule: "源库缺陷 / 验证失败 / 降级 / 退休 / 死亡" },
+];
+function trustGrade(f) {
+  if (f.truth_proofed === true) return "S";
+  if (["7_deprecated", "8_retired", "9_rejected"].includes(f.state)) return "D";
+  if (["2_validated", "3_strategy_candidate", "4_live_ready", "6_published"].includes(f.state)) return "A";
+  if (f.real_data_connected === true) return "B";
+  return "C";
+}
 
 function esc(s) {
   return String(s ?? "").replace(/[&<>"']/g, c => ({
@@ -102,7 +123,7 @@ function renderTrustGrid() {
   }).join("");
   if (els.trustRuleHint) {
     els.trustRuleHint.innerHTML =
-      `推导规则：S=上架/待上岗 · A=成年/准上岗（九道全过） · B=出生（mock 通过） · C=设想/暂停 · D=降级/退休/死亡` +
+      `推导规则：S=真值对照通过 · A=九道验真全过（成年及以后） · B=真实数据接入待验真 · C=仅mock/设想/暂停 · D=缺陷/验证失败/降级/退休/死亡` +
       (state.trustFilter ? ` · 当前过滤：<b>${esc(state.trustFilter)} 级</b>，再点击同一卡片可取消` : "");
   }
   [...els.trustGrid.querySelectorAll(".trust-card")].forEach(el => {
