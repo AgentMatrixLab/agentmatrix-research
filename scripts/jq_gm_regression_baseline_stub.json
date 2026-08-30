@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "date_range": {
+    "start": "2023-01-01",
+    "end": "2023-03-29"
+  },
+  "universe": "20 synthetic stocks",
+  "expressions": [
+    "Ref($close,20)/$close-1",
+    "$close/Mean($close,20)-1",
+    "Std($close,20)",
+    "$high/$low-1",
+    "Corr($close,$volume,20)",
+    "Mean($volume,20)/$volume-1",
+    "($close-Ref($close,5))/Ref($close,5)",
+    "($high-$low)/$close",
+    "($close-Ref($close,60))/Ref($close,60)",
+    "($volume-Mean($volume,20))/Std($volume,20)",
+    "Rank($close)",
+    "Sum(Log($close),20)",
+    "Max($high,20)/$close-1",
+    "Min($low,20)/$close-1",
+    "($close-$open)/$open",
+    "($vwap-$close)/$close",
+    "($close-Ref($close,10))/Std($close,10)",
+    "Delta(Log($volume),20)",
+    "Sum($volume,20)/Sum($volume,60)-1",
+    "Corr($close,Ref($close,20),20)",
+    "$close/Mean($close,60)",
+    "Std($volume,20)/Mean($volume,20)",
+    "($high+$low)/2/$close",
+    "($open-Ref($close,1))/Ref($close,1)"
+  ],
+  "note": "Path A stub baseline for CI regression check. Regenerate with --generate when expression set changes."
+}
