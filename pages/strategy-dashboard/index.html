@@ -54,6 +54,8 @@
           <option value="absic_asc">|IC| 升序</option>
           <option value="icir_desc">ICIR 降序</option>
           <option value="icir_asc">ICIR 升序</option>
+          <option value="annual_desc">年化收益 降序</option>
+          <option value="sharpe_desc">夏普 降序</option>
         </select>
         <button class="filter-clear" id="filter-clear" type="button" title="清空筛选">✕ 清空</button>
         <span class="filter-count" id="filter-count"></span>
@@ -70,10 +72,10 @@
         <h2>数据口径说明</h2>
       </div>
       <ul class="notes">
-        <li>策略面板当前为<b>静态快照</b>：展示策略配置与基础因子的验证证据，尚未接入策略回测引擎。</li>
-        <li>卡片上的 <b>IC / ICIR</b> 为基础因子在 96 个月窗口上的真实横截面验证值（来源：生命周期闸门 G6），非策略回测指标。</li>
-        <li>策略状态由因子生命周期推导：<b>回测就绪</b>=因子通过全部闸门；<b>研究验证</b>=因子在 G6 IC 稳定性未达标；<b>验证待启动</b>=因子值数据尚未生成。</li>
-        <li>后续接入 <code>strategy_engine</code> 回测后，年化 / 夏普 / 回撤 / 换手将由 <code>strategy_monitor_view_v1</code> 契约填充。</li>
+        <li>回测口径：<b>等权 Top50 · 月频调仓 · 含交易成本（买 0.13% / 卖 0.18%）</b>，全 A 股票池剔除月均成交额 &lt; 2000 万；未剔除 ST / 涨跌停（简化口径）。</li>
+        <li>卡片上的 <b>IC / ICIR</b> 为基础因子横截面验证值（来源：因子月度截面与次月收益的 Rank IC），<b>年化 / 夏普 / 回撤</b> 为策略回测真实计算值。</li>
+        <li>策略状态：<b>回测就绪</b>=组合 IC 显著（Bootstrap 95% CI 不含 0）；<b>研究验证</b>=IC 不显著；<b>验证待启动</b>=因子值数据尚未生成。</li>
+        <li>基准为<b>全 A 等权组合</b>（同窗口）；生产级回测（流水价 / 涨跌停约束 / 行业中性）待接入 <code>strategy_engine</code>。</li>
       </ul>
     </section>
   </div>
@@ -124,8 +126,12 @@
     </section>
 
     <section class="panel">
-      <div class="panel-head"><h2>回测指标（待接入）</h2></div>
+      <div class="panel-head">
+        <h2>回测表现</h2>
+        <span class="hint" id="detail-bt-summary"></span>
+      </div>
       <div id="detail-metrics"></div>
+      <div id="detail-nav-chart"></div>
     </section>
 
     <section class="panel">
