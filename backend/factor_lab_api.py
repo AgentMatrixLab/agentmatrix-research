@@ -561,6 +561,226 @@ def factor_lab_factor_library():
     return jsonify(build_factor_library_view(_workspace()))
 
 
+# ---------------------------------------------------------------------------
+# Zoo 五库 mock 验证面板（数据源：runtime/zoo_mock/out/*.parquet + report.json）
+# ---------------------------------------------------------------------------
+
+ZOO_OUT_DIR = project_root / "runtime" / "zoo_mock" / "out"
+zoo_dashboard_root = project_root / "frontend" / "zoo-dashboard"
+
+_ZOO_DF_CACHE: dict[str, pd.DataFrame] = {}
+_ZOO_EXPR_CACHE: dict[str, dict[str, str]] = {}
+
+
+def _zoo_libraries() -> list[str]:
+    if not ZOO_OUT_DIR.is_dir():
+        return []
+    return sorted(p.stem for p in ZOO_OUT_DIR.glob("*.parquet"))
+
+
+def _zoo_load_lib(lib: str) -> pd.DataFrame | None:
+    if lib not in _ZOO_DF_CACHE:
+        path = ZOO_OUT_DIR / f"{lib}.parquet"
+        if not path.is_file():
+            return None
+        _ZOO_DF_CACHE[lib] = pd.read_parquet(path)
+    return _ZOO_DF_CACHE[lib]
+
+
+def _zoo_expressions() -> dict[str, dict[str, str]]:
+    """{lib: {factor_name: comments}}，来自 factor_db_zoo_extract.json。
+
+    表达式已归档至 Supabase `zoo_factor_dictionary`，面板只下发解释（comments）。
+    """
+    if not _ZOO_EXPR_CACHE:
+        extract = project_root / "runtime" / "factor_db_zoo_extract.json"
+        if extract.is_file():
+            data = json.loads(extract.read_text(encoding="utf-8"))
+            for lib, records in data.items():
+                _ZOO_EXPR_CACHE[lib] = {
+                    r["name"]: "\n".join(
+                        str(c) for c in (r.get("comments") or []) if str(c).strip()
+                    )
+                    for r in records
+                }
+    return _ZOO_EXPR_CACHE
+
+
+def _zoo_report() -> dict:
+    path = ZOO_OUT_DIR / "report.json"
+    if not path.is_file():
+        return {}
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+# ---------------------------------------------------------------------------
+# 因子信任分级总面板（数据源：research_core.factor_db.trust）
+# ---------------------------------------------------------------------------
+
+factor_trust_root = project_root / "frontend" / "factor-trust"
+_TRUST_REGISTRY_CACHE: dict[str, Any] = {"ts": 0.0, "data": None}
+
+
+def _trust_registry() -> dict:
+    """缓存 60s 的信任分级注册表。"""
+    import time as _time
+
+    from research_core.factor_db.trust import build_trust_registry
+
+    now = _time.time()
+    if _TRUST_REGISTRY_CACHE["data"] is None or now - _TRUST_REGISTRY_CACHE["ts"] > 60:
+        _TRUST_REGISTRY_CACHE["data"] = build_trust_registry()
+        _TRUST_REGISTRY_CACHE["ts"] = now
+    return _TRUST_REGISTRY_CACHE["data"]
+
+
+@app.route("/factor-trust/", methods=["GET"])
+def factor_trust_dashboard():
+    return send_from_directory(factor_trust_root, "index.html")
+
+
+@app.route("/factor-trust/<path:filename>", methods=["GET"])
+def factor_trust_asset(filename: str):
+    target = factor_trust_root / filename
+    if target.is_file():
+        return send_from_directory(factor_trust_root, filename)
+    return send_from_directory(factor_trust_root, "index.html")
+
+
+@app.route("/api/agents/factor-lab/trust/registry", methods=["GET"])
+def trust_registry():
+    return jsonify(_trust_registry())
+
+
+@app.route("/zoo-dashboard/", methods=["GET"])
+def zoo_dashboard():
+    return send_from_directory(zoo_dashboard_root, "index.html")
+
+
+@app.route("/zoo-dashboard/<path:filename>", methods=["GET"])
+def zoo_dashboard_asset(filename: str):
+    target = zoo_dashboard_root / filename
+    if target.is_file():
+        return send_from_directory(zoo_dashboard_root, filename)
+    return send_from_directory(zoo_dashboard_root, "index.html")
+
+
+@app.route("/api/agents/factor-lab/zoo/overview", methods=["GET"])
+def zoo_overview():
+    report = _zoo_report()
+    libraries = []
+    for lib in _zoo_libraries():
+        df = _zoo_load_lib(lib)
+        factors = sorted({c[0] for c in df.columns})
+        per_lib = report.get("per_lib", {}).get(lib, {})
+        libraries.append(
+            {
+                "name": lib,
+                "n_factors": len(factors),
+                "n_days": int(df.shape[0]),
+                "n_instruments": int(df.shape[1] // max(len(factors), 1)),
+                "n_fail": per_lib.get("n_fail", 0),
+                "n_constant": per_lib.get("n_constant", 0),
+                "n_all_nan": per_lib.get("n_all_nan", 0),
+                "constant_examples": per_lib.get("constant_examples", []),
+                "failures": per_lib.get("failures", []),
+            }
+        )
+    payload = {
+        "available": bool(libraries),
+        "meta": report.get("meta", {}),
+        "determinism": report.get("determinism"),
+        "nan_robustness": report.get("nan_robustness"),
+        "eq_fixed": report.get("eq_fixed", []),
+        "zoo_defects": report.get("zoo_defects", []),
+        "ground_truth": report.get("ground_truth", []),
+        "libraries": libraries,
+    }
+    return jsonify(payload)
+
+
+@app.route("/api/agents/factor-lab/zoo/libraries/<lib>/factors", methods=["GET"])
+def zoo_lib_factors(lib: str):
+    df = _zoo_load_lib(lib)
+    if df is None:
+        return jsonify({"error": f"library {lib} not found"}), 404
+    comments_map = _zoo_expressions().get(lib, {})
+    factors = []
+    for name in sorted({c[0] for c in df.columns}):
+        sub = df[name]
+        arr = sub.to_numpy(dtype=float)
+        valid = ~np.isnan(arr)
+        n_valid = int(valid.sum())
+        row = {
+            "name": name,
+            "comments": comments_map.get(name, ""),
+            "nan_ratio": None if not arr.size else round(float(1 - n_valid / arr.size), 4),
+            "n_inf": int(np.isinf(arr).sum()),
+        }
+        if n_valid:
+            row["min"] = float(np.nanmin(arr))
+            row["max"] = float(np.nanmax(arr))
+            row["mean"] = float(np.nanmean(arr))
+            row["std"] = float(np.nanstd(arr))
+            row["constant"] = bool(len(np.unique(arr[valid])) == 1)
+        else:
+            row["constant"] = False
+        factors.append(row)
+    return jsonify({"library": lib, "n_days": int(df.shape[0]), "factors": factors})
+
+
+@app.route("/api/agents/factor-lab/zoo/libraries/<lib>/series", methods=["GET"])
+def zoo_lib_series(lib: str):
+    factor = request.args.get("factor", "")
+    df = _zoo_load_lib(lib)
+    if df is None:
+        return jsonify({"error": f"library {lib} not found"}), 404
+    sub = df[factor] if factor in df.columns.get_level_values(0) else None
+    if sub is None:
+        return jsonify({"error": f"factor {factor} not found"}), 404
+    instrument = request.args.get("instrument")
+    if instrument and instrument in sub.columns:
+        sub = sub[[instrument]]
+    payload = {
+        "library": lib,
+        "factor": factor,
+        "instruments": list(map(str, sub.columns)),
+        "dates": [d.strftime("%Y-%m-%d") for d in df.index],
+        "series": {
+            str(inst): [None if pd.isna(v) else float(v) for v in sub[inst]]
+            for inst in sub.columns
+        },
+    }
+    return jsonify(payload)
+
+
+@app.route("/api/agents/factor-lab/zoo/libraries/<lib>/heatmap", methods=["GET"])
+def zoo_lib_heatmap(lib: str):
+    factor = request.args.get("factor", "")
+    df = _zoo_load_lib(lib)
+    if df is None:
+        return jsonify({"error": f"library {lib} not found"}), 404
+    sub = df[factor] if factor in df.columns.get_level_values(0) else None
+    if sub is None:
+        return jsonify({"error": f"factor {factor} not found"}), 404
+    arr = sub.to_numpy(dtype=float)
+    finite = arr[np.isfinite(arr)]
+    vmin = float(np.nanmin(finite)) if finite.size else 0.0
+    vmax = float(np.nanmax(finite)) if finite.size else 1.0
+    payload = {
+        "library": lib,
+        "factor": factor,
+        "dates": [d.strftime("%Y-%m-%d") for d in df.index],
+        "instruments": list(map(str, sub.columns)),
+        "matrix": [
+            [None if not np.isfinite(v) else float(v) for v in row] for row in arr
+        ],
+        "vmin": vmin,
+        "vmax": vmax,
+    }
+    return jsonify(payload)
+
+
 @app.route("/api/agents/factor-lab/health", methods=["GET"])
 def factor_lab_health():
     return jsonify({"status": "ok", "service": "factor_lab", "local_flask": True})
