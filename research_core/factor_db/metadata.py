@@ -6,11 +6,11 @@
 - Alpha101 101 因子：从 research_core.factor_lab.libraries.alpha101.specs
   动态加载（单一事实源），公式与描述随仓库规格自动更新。
 - qlib-factor-zoo 906 因子（zoo_meta.json，自动生成）：GTJA191（191）、
-  TDXGS 通达信技术指标（88）、JQ110 聚宽技术因子（109）、Alpha158（158）、
+  TDXGS 通达信技术指标（88）、JQ110 技术因子（109）、Alpha158（158）、
   Alpha360 原始量价回溯（360）；因子值需 Qlib 数据环境计算。
   zoo 内 Alpha101 与本地库重复，故未重复收录。
 - Barra CNE5 风格因子 11 个（BARRA）：从 factor_lab barra.py 实现动态生成。
-- 掘金/聚宽 JQGM 换手率因子 7 个（JQGM）：从 factor_lab jq_gm specs 提取
+- JQGM 换手率因子 7 个（JQGM）：从 factor_lab jq_gm specs 提取
   换手率家族（单日/5/20/60/120 日均值及短长窗之比）。
 
 因子唯一标识符（factor_id）规则：
@@ -18,11 +18,11 @@
 - ``ALPHA101:alpha<N>`` WorldQuant Alpha101 因子（N 为 1..101）
 - ``GTJA191:<name>``    国泰君安 191 短线交易因子（如 GTJA191:GTJA001）
 - ``TDXGS:<name>``      通达信技术指标（如 TDXGS:TDXGS_EMA_05）
-- ``JQ110:<name>``      聚宽 110 技术因子（如 JQ110:JQ110_ROC_006）
+- ``JQ110:<name>``      JQ110 技术因子（如 JQ110:JQ110_ROC_006）
 - ``ALPHA158:<name>``   Qlib Alpha158 特征（如 ALPHA158:KMID）
 - ``ALPHA360:<name>``   Qlib Alpha360 原始特征（如 ALPHA360:CLOSE59）
 - ``BARRA:<name>``      Barra CNE5 风格因子（如 BARRA:size）
-- ``JQGM:<name>``       掘金/聚宽换手率家族因子（如 JQGM:turnover_ratio_20d）
+- ``JQGM:<name>``       换手率家族因子（如 JQGM:turnover_ratio_20d）
 """
 
 from __future__ import annotations
@@ -324,10 +324,10 @@ def _build_barra_meta() -> list[dict[str, Any]]:
 
 
 # ---------------------------------------------------------------------------
-# 掘金/聚宽 JQGM 换手率因子（7 个）：情绪类换手率家族，specs 为唯一事实源。
+# JQGM 换手率因子（7 个）：情绪类换手率家族，specs 为唯一事实源。
 # ---------------------------------------------------------------------------
 
-JQGM_DATA_SOURCE = "聚宽 JQ 风格因子体系（掘金 GM 数据接口字段口径）+ 本仓库 factor_lab 实现（research_core/factor_lab/libraries/jq_gm）"
+JQGM_DATA_SOURCE = "JQ/GM 风格因子体系换手率家族 + 本仓库 factor_lab 实现（research_core/factor_lab/libraries/jq_gm）"
 JQGM_FREQUENCY = "日频（计算）；月频取月末截面值"
 JQGM_COVERAGE = "全A 标准股票池（剔除 ST/退市/上市不满窗口期）"
 
