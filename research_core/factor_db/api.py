@@ -29,6 +29,7 @@ from research_core.factor_db.lifecycle_service import (
     evidence_feed,
     factor_detail,
     factor_rows,
+    monitor_report,
     overview,
 )
 from research_core.factor_db.service import (
@@ -101,6 +102,22 @@ def lifecycle_evidence_endpoint():
     return jsonify(
         {"count_limit": int(limit_raw) if limit_raw else 50, "events": evidence_feed(int(limit_raw) if limit_raw else 50)}
     )
+
+
+@factor_db_bp.get("/lifecycle/monitor")
+def lifecycle_monitor_endpoint():
+    """衰减监控 + SLA 通知（先跑 python -m research_core.factor_db.lifecycle_monitor）。"""
+    report = monitor_report()
+    if report is None:
+        return jsonify(
+            {
+                "available": False,
+                "hint": "runtime/lifecycle/monitor_report.json 不存在——先运行 "
+                "python -X utf8 -m research_core.factor_db.lifecycle_monitor",
+                "notifications": [],
+            }
+        )
+    return jsonify({"available": True, **report})
 
 
 @factor_db_bp.get("/stats")

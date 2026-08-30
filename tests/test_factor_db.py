@@ -26,6 +26,8 @@ EXPECTED_SOURCES = {
     "JQ110": 109,
     "ALPHA158": 158,
     "ALPHA360": 360,
+    "BARRA": 11,
+    "JQGM": 7,
 }
 
 

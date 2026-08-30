@@ -47,6 +47,38 @@ python -X utf8 -m research_core.backtest_adapter.cli --help
 python -X utf8 -m research_core.qlib_lab.cli --help
 ```
 
+### Automated factor mining
+
+```bash
+# Closed-loop mining: candidates → compile → real IC evaluation → dedup → CSV
+python -X utf8 -m research_core.factor_lab.cli auto-mine --source auto --mode gp
+
+# Modes: gp (genetic programming search) | llm | builtin | auto (llm→builtin)
+# Panel sources: auto (cache→API→synthetic) | cache | api | parquet | synthetic
+```
+
+External agents (openclaw / hermes / codex / cloudecode / Trae / WorkBuddy,
+anything that speaks HTTP) can call the synchronous Agent Gateway instead of
+shelling out:
+
+```bash
+# Start from the repository root
+PYTHONPATH=. uvicorn research_core.factor_lab.agent_gateway:app --port 8710
+
+# Submit candidate expressions and get IC / ICIR / dedup verdicts in one call
+curl -X POST localhost:8710/mine/evaluate -H 'Content-Type: application/json' \
+  -d '{"expressions": [{"name": "mom_20", "expression": "Ref($close, 20) / $close - 1"}]}'
+
+# Other endpoints: GET /health, GET /mine/panel,
+# POST /mine/feedback (structured text for next LLM round), POST /mine/loop
+```
+
+Expressions use Qlib-style syntax (`Ref/Mean/Std/Corr/Log` on
+`$open/$high/$low/$close/$volume`); they are bridged to the GTJA191 compiler
+internally. When the panel falls back to synthetic data (no API token and no
+cache), responses carry `synthetic_warning` — treat IC numbers as pipeline
+self-check only.
+
 ## Prerequisites and environment
 
 - Python 3.10+ (64-bit recommended; 32-bit Windows cannot load some

@@ -1,0 +1,27 @@
+{
+  "generated_at": "2026-08-30T15:19:01Z",
+  "scanned_states": [
+    "6_published",
+    "5_suspended",
+    "7_deprecated"
+  ],
+  "counts": {
+    "monitored": 0,
+    "watch": 0,
+    "suspended": 0,
+    "retired_this_run": 0,
+    "notifications": 0
+  },
+  "notifications": [],
+  "factors": [],
+  "auto_transitions": [],
+  "dry_run": false,
+  "sla_policy": {
+    "suspend_notice_hours": 24,
+    "revalidate_deadline_days": 30,
+    "migration_days": 90,
+    "retire_notice_days": 30,
+    "refund_trigger_ratio": 0.2
+  },
+  "certificates": {}
+}

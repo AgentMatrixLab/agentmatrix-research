@@ -148,7 +148,7 @@
   ],
   "timeline": [
     {
-      "timestamp": "2026-08-30T09:05:07Z",
+      "timestamp": "2026-08-30T15:18:46Z",
       "factor_id": "MOCK:planted_good",
       "transition": "1_implemented->2_validated",
       "gate": "G2-4..12",
