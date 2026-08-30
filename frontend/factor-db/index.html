@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>A股因子数据库 | Factor DB</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" />
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+  <link rel="stylesheet" href="./styles.css?v=1" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark">Σ</span>
+      <div>
+        <div class="brand-title">A股因子数据库</div>
+        <div class="brand-sub">Factor DB · AgentMatrixLab</div>
+      </div>
+    </div>
+    <div class="topbar-stats" id="topStats">加载中…</div>
+  </header>
+
+  <main class="layout">
+    <!-- 左侧：检索面板 -->
+    <aside class="side-panel">
+      <div class="search-box">
+        <input id="searchInput" type="search" placeholder="搜索因子：名称 / 定义 / 公式…" autocomplete="off" />
+      </div>
+      <div class="filter-group">
+        <div class="filter-label">大类</div>
+        <div class="chips" id="categoryChips"></div>
+      </div>
+      <div class="filter-group">
+        <div class="filter-label">来源</div>
+        <div class="chips" id="sourceChips"></div>
+      </div>
+      <div class="result-meta" id="resultMeta"></div>
+      <div class="factor-list" id="factorList"></div>
+    </aside>
+
+    <!-- 右侧：详情面板 -->
+    <section class="detail-panel" id="detailPanel">
+      <div class="detail-empty" id="detailEmpty">
+        <div class="empty-icon">ƒ</div>
+        <p>从左侧选择一个因子，查看定义、公式、应用场景与分布</p>
+      </div>
+      <div class="detail-content" id="detailContent" hidden></div>
+    </section>
+  </main>
+
+  <footer class="statusbar">
+    <span id="apiStatus">API: 检测中…</span>
+    <span class="spacer"></span>
+    <a href="/api/factor-db/dictionary?format=csv" class="footer-link">下载数据字典 (CSV)</a>
+    <a href="/api/factor-db/dictionary?format=xlsx" class="footer-link">下载数据字典 (Excel)</a>
+    <a href="/docs-api" class="footer-link" onclick="return false" id="apiDocLink">API 说明</a>
+  </footer>
+
+  <script src="./app.js?v=1"></script>
+</body>
+</html>

@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>因子信任分级总面板</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="logo">Trust</span>
+    <div>
+      <h1>因子信任分级总面板</h1>
+      <p class="sub" id="sub-title">1040 因子 · 每个因子凭什么可信，如实标注</p>
+    </div>
+  </div>
+  <nav class="topnav">
+    <a href="/zoo-dashboard/">Mock 验证面板</a>
+    <a href="http://127.0.0.1:8013/factor-db/" target="_blank">因子库目录</a>
+    <a href="#" id="reload-btn">刷新</a>
+  </nav>
+</header>
+
+<main>
+  <!-- 1. 信任分级卡片 -->
+  <section class="panel">
+    <div class="panel-head">
+      <h2>信任分级总览</h2>
+      <span class="hint" id="gen-hint"></span>
+    </div>
+    <div class="cards" id="tier-cards"></div>
+    <div class="tier-legend" id="tier-legend"></div>
+  </section>
+
+  <!-- 2. 验真现状提示 -->
+  <section class="panel" id="gates-panel">
+    <div class="panel-head"><h2>验真现状</h2></div>
+    <div class="gate-note">
+      <strong>S / A 级当前为 0 —— 如实反映，不是缺数据。</strong>
+      <p id="gate-note-text">七道验真闸门（IC 稳定性 bootstrap、OOS 留存 ≥70%、成本韧性 30bp、市值/行业中性、市场分段 ≥3 周期、换手合理、策略复验）尚未实施。落地后本面板将自动出现 A 级因子；在此之前，任何 C 级因子不得直接进入策略投产。</p>
+    </div>
+  </section>
+
+  <!-- 3. 因子分级表 -->
+  <section class="panel">
+    <div class="panel-head">
+      <h2>因子分级表</h2>
+      <div class="controls">
+        <div class="tier-filter" id="tier-filter"></div>
+        <select id="source-select"></select>
+        <input type="text" id="factor-search" placeholder="搜索因子名 / factor_id…">
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table id="trust-table">
+        <thead>
+          <tr>
+            <th data-sort="factor_id">factor_id</th>
+            <th data-sort="name_cn">中文名</th>
+            <th data-sort="source">来源</th>
+            <th data-sort="tier">等级</th>
+            <th>证据</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div class="pager">
+      <button id="prev-page">上一页</button>
+      <span id="page-info"></span>
+      <button id="next-page">下一页</button>
+    </div>
+    <p class="hint" id="factor-count"></p>
+  </section>
+</main>
+
+<script src="app.js"></script>
+</body>
+</html>
