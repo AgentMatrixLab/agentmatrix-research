@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>策略监控面板</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="logo">Stg</span>
+    <div>
+      <h1>策略监控面板</h1>
+      <p class="sub" id="sub-title">单因子策略 · 从因子到组合 · 静态快照</p>
+    </div>
+  </div>
+  <nav class="topnav">
+    <a href="../factor-db-dashboard/">因子库目录</a>
+    <a href="../lifecycle-dashboard/">生命周期</a>
+    <a href="../" class="portal">◀ 面板门户</a>
+    <a href="#" id="reload-btn">刷新</a>
+  </nav>
+</header>
+
+<main id="main">
+
+  <section class="stats" id="stats"></section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2>策略列表</h2>
+      <span class="hint">基于因子库已有因子构建 · 点击卡片查看策略详情与因子验证证据</span>
+    </div>
+    <div class="strategy-grid" id="strategy-grid"></div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2>数据口径说明</h2>
+    </div>
+    <ul class="notes">
+      <li>策略面板当前为<b>静态快照</b>：展示策略配置与基础因子的验证证据，尚未接入策略回测引擎。</li>
+      <li>卡片上的 <b>IC / ICIR</b> 为基础因子在 96 个月窗口上的真实横截面验证值（来源：生命周期闸门 G6），非策略回测指标。</li>
+      <li>策略状态由因子生命周期推导：<b>回测就绪</b>=因子通过全部闸门；<b>研究验证</b>=因子在 G6 IC 稳定性未达标；<b>验证待启动</b>=因子值数据尚未生成。</li>
+      <li>后续接入 <code>strategy_engine</code> 回测后，年化 / 夏普 / 回撤 / 换手将由 <code>strategy_monitor_view_v1</code> 契约填充。</li>
+    </ul>
+  </section>
+</main>
+
+<div class="drawer-mask" id="drawer-mask"></div>
+<aside class="drawer" id="drawer">
+  <div class="drawer-head">
+    <div>
+      <h2 id="drawer-title"></h2>
+      <p class="sub" id="drawer-sub"></p>
+    </div>
+    <button class="close-btn" id="drawer-close">✕</button>
+  </div>
+  <div class="drawer-body" id="drawer-body"></div>
+</aside>
+
+<script>window.STRATEGY_STATIC = true;</script>
+<script src="app.js"></script>
+</body>
+</html>
