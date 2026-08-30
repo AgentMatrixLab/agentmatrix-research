@@ -26,40 +26,120 @@
 
 <main id="main">
 
-  <section class="stats" id="stats"></section>
+  <!-- ═══ 列表视图 ═══ -->
+  <div id="list-view">
 
-  <section class="panel">
-    <div class="panel-head">
-      <h2>策略列表</h2>
-      <span class="hint">基于因子库已有因子构建 · 点击卡片查看策略详情与因子验证证据</span>
-    </div>
-    <div class="strategy-grid" id="strategy-grid"></div>
-  </section>
+    <section class="stats" id="stats"></section>
 
-  <section class="panel">
-    <div class="panel-head">
-      <h2>数据口径说明</h2>
-    </div>
-    <ul class="notes">
-      <li>策略面板当前为<b>静态快照</b>：展示策略配置与基础因子的验证证据，尚未接入策略回测引擎。</li>
-      <li>卡片上的 <b>IC / ICIR</b> 为基础因子在 96 个月窗口上的真实横截面验证值（来源：生命周期闸门 G6），非策略回测指标。</li>
-      <li>策略状态由因子生命周期推导：<b>回测就绪</b>=因子通过全部闸门；<b>研究验证</b>=因子在 G6 IC 稳定性未达标；<b>验证待启动</b>=因子值数据尚未生成。</li>
-      <li>后续接入 <code>strategy_engine</code> 回测后，年化 / 夏普 / 回撤 / 换手将由 <code>strategy_monitor_view_v1</code> 契约填充。</li>
-    </ul>
-  </section>
-</main>
+    <section class="panel">
+      <div class="panel-head">
+        <h2>策略列表</h2>
+        <span class="hint">基于因子库已有因子构建 · 点击卡片进入策略详情</span>
+      </div>
 
-<div class="drawer-mask" id="drawer-mask"></div>
-<aside class="drawer" id="drawer">
-  <div class="drawer-head">
-    <div>
-      <h2 id="drawer-title"></h2>
-      <p class="sub" id="drawer-sub"></p>
-    </div>
-    <button class="close-btn" id="drawer-close">✕</button>
+      <div class="filter-bar">
+        <input type="text" id="filter-search" placeholder="搜索策略名 / 因子 ID / 因子中文名…">
+        <select id="filter-status">
+          <option value="">全部状态</option>
+        </select>
+        <select id="filter-category">
+          <option value="">全部因子类别</option>
+        </select>
+        <select id="filter-rebalance">
+          <option value="">全部调仓频率</option>
+        </select>
+        <select id="filter-sort">
+          <option value="default">默认排序</option>
+          <option value="absic_desc">|IC| 降序</option>
+          <option value="absic_asc">|IC| 升序</option>
+          <option value="icir_desc">ICIR 降序</option>
+          <option value="icir_asc">ICIR 升序</option>
+        </select>
+        <button class="filter-clear" id="filter-clear" type="button" title="清空筛选">✕ 清空</button>
+        <span class="filter-count" id="filter-count"></span>
+      </div>
+
+      <div class="strategy-grid" id="strategy-grid"></div>
+      <p class="hint" id="empty-hint" style="display:none; text-align:center; padding:30px 0;">
+        没有匹配的策略 · 试试调整筛选条件
+      </p>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>数据口径说明</h2>
+      </div>
+      <ul class="notes">
+        <li>策略面板当前为<b>静态快照</b>：展示策略配置与基础因子的验证证据，尚未接入策略回测引擎。</li>
+        <li>卡片上的 <b>IC / ICIR</b> 为基础因子在 96 个月窗口上的真实横截面验证值（来源：生命周期闸门 G6），非策略回测指标。</li>
+        <li>策略状态由因子生命周期推导：<b>回测就绪</b>=因子通过全部闸门；<b>研究验证</b>=因子在 G6 IC 稳定性未达标；<b>验证待启动</b>=因子值数据尚未生成。</li>
+        <li>后续接入 <code>strategy_engine</code> 回测后，年化 / 夏普 / 回撤 / 换手将由 <code>strategy_monitor_view_v1</code> 契约填充。</li>
+      </ul>
+    </section>
   </div>
-  <div class="drawer-body" id="drawer-body"></div>
-</aside>
+
+  <!-- ═══ 详情视图 ═══ -->
+  <div id="detail-view" style="display:none;">
+    <nav class="breadcrumb">
+      <a href="./">策略列表</a>
+      <span>/</span>
+      <b id="detail-crumb"></b>
+    </nav>
+
+    <section class="panel detail-header">
+      <div class="dh-left">
+        <button class="back-btn" id="back-btn" type="button">◀ 返回列表</button>
+        <div>
+          <h2 id="detail-title"></h2>
+          <p class="sub" id="detail-sub"></p>
+        </div>
+      </div>
+      <span class="badge" id="detail-badge"></span>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head"><h2>策略配置</h2></div>
+      <div id="detail-config"></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head"><h2>因子公式</h2></div>
+      <div id="detail-formula"></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>因子 IC 验证证据</h2>
+        <span class="hint">来源：生命周期闸门 G5 / G6 · 真实计算值</span>
+      </div>
+      <div id="detail-ic-chart"></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>因子验证闸门</h2>
+        <span class="hint" id="detail-gate-summary"></span>
+      </div>
+      <div id="detail-gates"></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head"><h2>回测指标（待接入）</h2></div>
+      <div id="detail-metrics"></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head"><h2>相关链接</h2></div>
+      <div class="cross-links">
+        <a href="../factor-db-dashboard/" target="_blank">在因子库目录中查看基础因子 →</a>
+        <a href="../lifecycle-dashboard/" target="_blank">在生命周期面板查看验证流程 →</a>
+      </div>
+    </section>
+
+    <section class="panel" id="not-found" style="display:none;"></section>
+  </div>
+
+</main>
 
 <script>window.STRATEGY_STATIC = true;</script>
 <script src="app.js"></script>

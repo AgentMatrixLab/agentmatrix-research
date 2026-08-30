@@ -86,6 +86,7 @@
         ],
         "n_months": 96
       },
+      "factor_yearly_ic": null,
       "metrics": {
         "annual_return": null,
         "sharpe": null,
@@ -179,6 +180,7 @@
         ],
         "n_months": 96
       },
+      "factor_yearly_ic": null,
       "metrics": {
         "annual_return": null,
         "sharpe": null,
@@ -272,6 +274,7 @@
         ],
         "n_months": 96
       },
+      "factor_yearly_ic": null,
       "metrics": {
         "annual_return": null,
         "sharpe": null,
@@ -365,6 +368,7 @@
         ],
         "n_months": 96
       },
+      "factor_yearly_ic": null,
       "metrics": {
         "annual_return": null,
         "sharpe": null,
@@ -402,6 +406,7 @@
       "rationale": "WorldQuant Alpha#1：负收益日的波动率放大信号，经典量价横截面因子。",
       "factor_evidence": null,
       "ic_summary": null,
+      "factor_yearly_ic": null,
       "metrics": {
         "annual_return": null,
         "sharpe": null,

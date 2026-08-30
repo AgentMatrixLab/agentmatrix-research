@@ -120,35 +120,54 @@ code {
 .notes li { margin-bottom: 6px; }
 .notes b { color: var(--text); }
 
-/* ── Drawer ── */
-.drawer-mask {
-  position: fixed; inset: 0; background: rgba(0,0,0,.55);
-  opacity: 0; pointer-events: none; transition: opacity .2s; z-index: 50;
+/* ── 筛选栏 ── */
+.filter-bar {
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+  margin-bottom: 16px;
 }
-.drawer-mask.open { opacity: 1; pointer-events: auto; }
-.drawer {
-  position: fixed; top: 0; right: -520px; width: 520px; max-width: 92vw; height: 100vh;
-  background: var(--panel); border-left: 1px solid var(--border);
-  transition: right .25s; z-index: 51; display: flex; flex-direction: column;
+.filter-bar input[type="text"] {
+  flex: 1; min-width: 200px;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+  color: var(--text); padding: 7px 10px; font-size: 13px;
+  outline: none;
 }
-.drawer.open { right: 0; }
-.drawer-head {
-  display: flex; justify-content: space-between; align-items: center;
-  padding: 16px 20px; border-bottom: 1px solid var(--border);
+.filter-bar input[type="text"]:focus { border-color: var(--accent); }
+.filter-bar select {
+  background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+  color: var(--text); padding: 7px 8px; font-size: 12px; outline: none;
+  cursor: pointer;
 }
-.drawer-head h2 { font-size: 16px; }
-.close-btn {
+.filter-bar select:hover { border-color: var(--accent); }
+.filter-clear {
   background: none; border: 1px solid var(--border); color: var(--muted);
-  border-radius: 6px; width: 28px; height: 28px; cursor: pointer; font-size: 13px;
+  border-radius: 6px; padding: 7px 10px; font-size: 12px; cursor: pointer;
 }
-.close-btn:hover { color: var(--text); border-color: var(--accent); }
-.drawer-body { overflow-y: auto; padding: 18px 20px 40px; }
+.filter-clear:hover { color: var(--bad); border-color: var(--bad); }
+.filter-count { font-size: 12px; color: var(--muted); margin-left: auto; white-space: nowrap; }
 
-.d-section { margin-bottom: 22px; }
-.d-section h3 {
-  font-size: 13px; color: var(--accent); margin-bottom: 10px;
-  text-transform: uppercase; letter-spacing: .5px;
+/* ── 卡片 CTA ── */
+.card-cta {
+  font-size: 12px; color: var(--accent); margin-top: auto;
+  opacity: 0; transition: opacity .15s;
 }
+.strategy-card:hover .card-cta { opacity: 1; }
+
+/* ── 详情视图 ── */
+.breadcrumb { display: flex; gap: 8px; align-items: center; margin-bottom: 16px; font-size: 13px; color: var(--muted); }
+.breadcrumb a { color: var(--muted); }
+.breadcrumb a:hover { color: var(--accent); }
+.breadcrumb b { color: var(--text); font-weight: 600; }
+.detail-header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }
+.dh-left { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.detail-header h2 { font-size: 20px; font-weight: 700; }
+.back-btn {
+  background: var(--bg); border: 1px solid var(--border); color: var(--muted);
+  border-radius: 8px; padding: 8px 14px; font-size: 13px; cursor: pointer;
+  white-space: nowrap;
+}
+.back-btn:hover { color: var(--text); border-color: var(--accent); }
+.cross-links { display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
+
 .kv { display: grid; grid-template-columns: 110px 1fr; gap: 6px 12px; font-size: 13px; }
 .kv dt { color: var(--muted); }
 .kv dd { color: var(--text); word-break: break-all; }
@@ -157,6 +176,22 @@ code {
   padding: 10px 12px; font-family: "SF Mono", Consolas, monospace;
   font-size: 12px; color: #a5d6ff; word-break: break-all;
 }
+
+/* ── IC 证据表 + SVG 图表 ── */
+.ic-table { border-collapse: collapse; font-size: 13px; margin-bottom: 14px; min-width: 320px; }
+.ic-table td { padding: 5px 12px; border-bottom: 1px solid var(--border); }
+.ic-table td:first-child { color: var(--muted); }
+.ic-table td.num { text-align: right; font-family: "SF Mono", Consolas, monospace; font-weight: 600; }
+.ic-table td.num.pos { color: var(--ok); }
+.ic-table td.num.neg { color: var(--bad); }
+.ci-chart { width: 100%; max-width: 720px; height: auto; display: block; margin: 4px 0 10px; }
+.ci-chart .axis-label { fill: var(--muted); font-size: 11px; font-family: "SF Mono", Consolas, monospace; }
+.ci-chart .pt-label { fill: var(--text); font-size: 11px; font-weight: 600; font-family: "SF Mono", Consolas, monospace; }
+.ci-chart .verdict { font-size: 13px; font-weight: 600; }
+.ci-chart .verdict.pos { fill: var(--ok); }
+.ci-chart .verdict.neg { fill: var(--bad); }
+
+/* ── 闸门证据 ── */
 .gate-item {
   background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
   padding: 10px 14px; margin-bottom: 8px;
