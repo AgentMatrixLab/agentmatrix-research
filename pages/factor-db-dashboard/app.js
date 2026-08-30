@@ -88,11 +88,11 @@ const SOURCE_LABELS = {
   ALPHA101: "Alpha101",
   GTJA191: "GTJA191",
   TDXGS: "通达信指标",
-  JQ110: "聚宽110",
+  JQ110: "JQ110 技术因子",
   ALPHA158: "Alpha158",
   ALPHA360: "Alpha360",
   BARRA: "Barra CNE5",
-  JQGM: "掘金/聚宽换手",
+  JQGM: "换手率家族",
 };
 
 function renderChips() {
