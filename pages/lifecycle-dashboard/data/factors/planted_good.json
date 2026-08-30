@@ -1,0 +1,223 @@
+{
+  "factor_id": "planted_good",
+  "state": "2_validated",
+  "state_label": "成年",
+  "passed_all": true,
+  "first_failure": null,
+  "executed_order": [
+    "g4_data_quality",
+    "g5_executability",
+    "g6_ic_stability",
+    "g7_multiple_testing",
+    "g8_oos_retention",
+    "g9_cost_resilience",
+    "g10_style_neutrality",
+    "g11_market_segments",
+    "g12_redundancy"
+  ],
+  "oos_access_used": 1,
+  "oos_access_remaining": 2,
+  "n_gates_passed": 9,
+  "n_gates_run": 9,
+  "gates": [
+    {
+      "gate": "g4_data_quality",
+      "label": "4 数据质量",
+      "desc": "缺失率<5%、覆盖≥90%、无前视",
+      "passed": true,
+      "evidence": {
+        "missing_rate": 0.0,
+        "coverage": 1.0,
+        "n_rows": 2880
+      },
+      "reason": ""
+    },
+    {
+      "gate": "g5_executability",
+      "label": "5 可执行性",
+      "desc": "涨跌停/停牌/ST/流动性过滤，衰减≤50%",
+      "passed": true,
+      "evidence": {
+        "raw_ic": 0.5987,
+        "filtered_ic": 0.5887,
+        "alpha_decay": 0.0167,
+        "kept_rows": 2445,
+        "dropped_rows": 435
+      },
+      "reason": ""
+    },
+    {
+      "gate": "g6_ic_stability",
+      "label": "6 IC稳定性",
+      "desc": "ICIR>0.3 + bootstrap CI 不含 0",
+      "passed": true,
+      "evidence": {
+        "mean_rank_ic": 0.5887,
+        "icir": 4.041,
+        "bootstrap_ci95": [
+          0.5597,
+          0.6175
+        ],
+        "n_months": 96
+      },
+      "reason": ""
+    },
+    {
+      "gate": "g7_multiple_testing",
+      "label": "7 多重检验",
+      "desc": "BH-FDR 校正后 p≤0.05",
+      "passed": true,
+      "evidence": {
+        "n_trials": 38,
+        "self_p": 0.0,
+        "bh_adjusted_p": 0.0,
+        "fdr_q": 0.05
+      },
+      "reason": ""
+    },
+    {
+      "gate": "g8_oos_retention",
+      "label": "8 OOS留存",
+      "desc": "封存 holdout 留存≥70%（上限3次）",
+      "passed": true,
+      "evidence": {
+        "is_ic": 0.5948,
+        "oos_ic": 0.5826,
+        "retention": 0.98,
+        "split": "2022-01-01"
+      },
+      "reason": ""
+    },
+    {
+      "gate": "g9_cost_resilience",
+      "label": "9 成本韧性",
+      "desc": "breakeven ≥ 2× 实际成本",
+      "passed": true,
+      "evidence": {
+        "breakeven_cost_bp": 258.9,
+        "actual_cost_bp": 10.0,
+        "annual_double_turnover": 21.6,
+        "monthly_alpha": 0.04661,
+        "cost_per_month": 0.0018
+      },
+      "reason": ""
+    },
+    {
+      "gate": "g10_style_neutrality",
+      "label": "10 风格中性",
+      "desc": "市值/行业/动量正交化后残差 IC",
+      "passed": true,
+      "evidence": {
+        "resid_mean_ic": 0.5398,
+        "resid_icir": 3.558,
+        "n_months": 96
+      },
+      "reason": ""
+    },
+    {
+      "gate": "g11_market_segments",
+      "label": "11 市场分段",
+      "desc": "≥3 年方向一致，最差年≥30%",
+      "passed": true,
+      "evidence": {
+        "yearly_ic": {
+          "2018": 0.6034,
+          "2019": 0.5848,
+          "2020": 0.5708,
+          "2021": 0.6201,
+          "2022": 0.5241,
+          "2023": 0.6443,
+          "2024": 0.5638,
+          "2025": 0.5983
+        },
+        "years_aligned": 8,
+        "worst_year_ratio": 0.89
+      },
+      "reason": ""
+    },
+    {
+      "gate": "g12_redundancy",
+      "label": "12 冗余去重",
+      "desc": "相关性<0.7 + 增量 IC≥70%",
+      "passed": true,
+      "evidence": {
+        "library": 0
+      },
+      "reason": ""
+    }
+  ],
+  "timeline": [
+    {
+      "timestamp": "2026-08-30T09:05:07Z",
+      "factor_id": "MOCK:planted_good",
+      "transition": "1_implemented->2_validated",
+      "gate": "G2-4..12",
+      "evidence": {
+        "g4_data_quality": {
+          "missing_rate": 0.0,
+          "coverage": 1.0,
+          "n_rows": 2880
+        },
+        "g5_executability": {
+          "raw_ic": 0.5987,
+          "filtered_ic": 0.5887,
+          "alpha_decay": 0.0167,
+          "kept_rows": 2445,
+          "dropped_rows": 435
+        },
+        "g6_ic_stability": {
+          "mean_rank_ic": 0.5887,
+          "icir": 4.041,
+          "bootstrap_ci95": [
+            0.5597,
+            0.6175
+          ],
+          "n_months": 96
+        },
+        "g7_multiple_testing": {
+          "n_trials": 38,
+          "self_p": 0.0,
+          "bh_adjusted_p": 0.0,
+          "fdr_q": 0.05
+        },
+        "g8_oos_retention": {
+          "is_ic": 0.5948,
+          "oos_ic": 0.5826,
+          "retention": 0.98,
+          "split": "2022-01-01"
+        },
+        "g9_cost_resilience": {
+          "breakeven_cost_bp": 258.9,
+          "actual_cost_bp": 10.0,
+          "annual_double_turnover": 21.6,
+          "monthly_alpha": 0.04661,
+          "cost_per_month": 0.0018
+        },
+        "g10_style_neutrality": {
+          "resid_mean_ic": 0.5398,
+          "resid_icir": 3.558,
+          "n_months": 96
+        },
+        "g11_market_segments": {
+          "yearly_ic": {
+            "2018": 0.6034,
+            "2019": 0.5848,
+            "2020": 0.5708,
+            "2021": 0.6201,
+            "2022": 0.5241,
+            "2023": 0.6443,
+            "2024": 0.5638,
+            "2025": 0.5983
+          },
+          "years_aligned": 8,
+          "worst_year_ratio": 0.89
+        },
+        "g12_redundancy": {
+          "library": 0
+        }
+      },
+      "approved_by": "auto:agent",
+      "oos_access_remaining": 2
+    }
+  ]
+}
