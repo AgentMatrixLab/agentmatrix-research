@@ -177,22 +177,21 @@ def _alpha16(df: pd.DataFrame) -> pd.Series:
 
 
 def _alpha17(df: pd.DataFrame) -> pd.Series:
+    """Spec: RANK((VWAP - TSMAX(VWAP,15)) ^ DELTA(CLOSE,5))。
+
+    注意运算顺序：先对 (vwap - max_vwap_15) ^ delta_close_5 求幂，
+    再对结果做横截面 RANK；先 RANK 再幂是与公式不符的语义错误。
+    """
     vwap = compute_vwap(df)
     df_with_vwap = df.assign(vwap=vwap)
 
     max_vwap_15 = ts_max(df_with_vwap, "vwap", 15)
-    rank_vwap_gap = _cs_rank(
-        df,
-        vwap - max_vwap_15,
-        "vwap_minus_max_vwap_15",
-    )
+    vwap_gap = vwap - max_vwap_15
 
     delta_close_5 = ts_delta(df, "close", 5)
+    powered_gap = np.power(vwap_gap, delta_close_5)
 
-    return pd.Series(
-        np.power(rank_vwap_gap, delta_close_5),
-        index=df.index,
-    )
+    return _cs_rank(df, powered_gap, "vwap_gap_pow_delta_close_5")
 
 
 def _alpha18(df: pd.DataFrame) -> pd.Series:
