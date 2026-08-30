@@ -1,0 +1,61 @@
+{
+  "factor_id": "bb_position",
+  "state": "9_rejected",
+  "state_label": "死亡",
+  "passed_all": false,
+  "first_failure": "g6_ic_stability",
+  "executed_order": [
+    "g4_data_quality",
+    "g5_executability",
+    "g6_ic_stability"
+  ],
+  "oos_access_used": 0,
+  "oos_access_remaining": 3,
+  "n_gates_passed": 2,
+  "n_gates_run": 3,
+  "gates": [
+    {
+      "gate": "g4_data_quality",
+      "label": "4 数据质量",
+      "desc": "缺失率<5%、覆盖≥90%、无前视",
+      "passed": true,
+      "evidence": {
+        "missing_rate": 0.0,
+        "coverage": 1.0,
+        "n_rows": 2880
+      },
+      "reason": ""
+    },
+    {
+      "gate": "g5_executability",
+      "label": "5 可执行性",
+      "desc": "涨跌停/停牌/ST/流动性过滤，衰减≤50%",
+      "passed": true,
+      "evidence": {
+        "raw_ic": 0.0147,
+        "filtered_ic": 0.0164,
+        "alpha_decay": -0.1171,
+        "kept_rows": 2445,
+        "dropped_rows": 435
+      },
+      "reason": ""
+    },
+    {
+      "gate": "g6_ic_stability",
+      "label": "6 IC稳定性",
+      "desc": "ICIR>0.3 + bootstrap CI 不含 0",
+      "passed": false,
+      "evidence": {
+        "mean_rank_ic": 0.0164,
+        "icir": 0.074,
+        "bootstrap_ci95": [
+          -0.0288,
+          0.0601
+        ],
+        "n_months": 96
+      },
+      "reason": "ICIR 0.07 ≤ 0.30 或 bootstrap CI 含 0"
+    }
+  ],
+  "timeline": []
+}

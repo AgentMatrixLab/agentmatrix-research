@@ -1,0 +1,207 @@
+{
+  "total": 38,
+  "validated": 1,
+  "rejected": 37,
+  "state_counts": {
+    "0_conceived": 0,
+    "1_implemented": 0,
+    "2_validated": 1,
+    "3_strategy_candidate": 0,
+    "4_live_ready": 0,
+    "5_suspended": 0,
+    "6_published": 0,
+    "7_deprecated": 0,
+    "8_retired": 0,
+    "9_rejected": 37
+  },
+  "state_view": {
+    "0_conceived": {
+      "label": "设想",
+      "color": "#a78bfa",
+      "desc": "假设已登记（含 source_class）"
+    },
+    "1_implemented": {
+      "label": "出生",
+      "color": "#60a5fa",
+      "desc": "代码可算、mock 通过"
+    },
+    "2_validated": {
+      "label": "成年",
+      "color": "#10b981",
+      "desc": "九道验真全过"
+    },
+    "3_strategy_candidate": {
+      "label": "准上岗",
+      "color": "#34d399",
+      "desc": "组合验证+仿真+容量"
+    },
+    "4_live_ready": {
+      "label": "待上岗",
+      "color": "#fbbf24",
+      "desc": "人工批准通过"
+    },
+    "5_suspended": {
+      "label": "暂停",
+      "color": "#f59e0b",
+      "desc": "衰减/证书到期/数据中断"
+    },
+    "6_published": {
+      "label": "上架",
+      "color": "#22c55e",
+      "desc": "客户可见可订阅"
+    },
+    "7_deprecated": {
+      "label": "降级",
+      "color": "#fb923c",
+      "desc": "有更优替代，迁移期"
+    },
+    "8_retired": {
+      "label": "退休",
+      "color": "#94a3b8",
+      "desc": "摘牌，证据链保留"
+    },
+    "9_rejected": {
+      "label": "死亡",
+      "color": "#ef4444",
+      "desc": "闸门淘汰，死因回注"
+    }
+  },
+  "gate_funnel": [
+    {
+      "gate": "g4_data_quality",
+      "label": "4 数据质量",
+      "desc": "缺失率<5%、覆盖≥90%、无前视",
+      "deaths": 0
+    },
+    {
+      "gate": "g5_executability",
+      "label": "5 可执行性",
+      "desc": "涨跌停/停牌/ST/流动性过滤，衰减≤50%",
+      "deaths": 5
+    },
+    {
+      "gate": "g6_ic_stability",
+      "label": "6 IC稳定性",
+      "desc": "ICIR>0.3 + bootstrap CI 不含 0",
+      "deaths": 28
+    },
+    {
+      "gate": "g7_multiple_testing",
+      "label": "7 多重检验",
+      "desc": "BH-FDR 校正后 p≤0.05",
+      "deaths": 0
+    },
+    {
+      "gate": "g8_oos_retention",
+      "label": "8 OOS留存",
+      "desc": "封存 holdout 留存≥70%（上限3次）",
+      "deaths": 2
+    },
+    {
+      "gate": "g9_cost_resilience",
+      "label": "9 成本韧性",
+      "desc": "breakeven ≥ 2× 实际成本",
+      "deaths": 0
+    },
+    {
+      "gate": "g10_style_neutrality",
+      "label": "10 风格中性",
+      "desc": "市值/行业/动量正交化后残差 IC",
+      "deaths": 0
+    },
+    {
+      "gate": "g11_market_segments",
+      "label": "11 市场分段",
+      "desc": "≥3 年方向一致，最差年≥30%",
+      "deaths": 1
+    },
+    {
+      "gate": "g12_redundancy",
+      "label": "12 冗余去重",
+      "desc": "相关性<0.7 + 增量 IC≥70%",
+      "deaths": 1
+    }
+  ],
+  "transitions": [
+    {
+      "from": "inspiration_pool",
+      "to": "0_conceived",
+      "gate": "G0-1",
+      "approver": "auto"
+    },
+    {
+      "from": "inspiration_pool",
+      "to": "9_rejected",
+      "gate": "G0-1-fail",
+      "approver": "auto"
+    },
+    {
+      "from": "0_conceived",
+      "to": "1_implemented",
+      "gate": "G1-2,3",
+      "approver": "auto"
+    },
+    {
+      "from": "1_implemented",
+      "to": "2_validated",
+      "gate": "G2-4..12",
+      "approver": "auto"
+    },
+    {
+      "from": "2_validated",
+      "to": "3_strategy_candidate",
+      "gate": "G3-13,14,14b",
+      "approver": "auto"
+    },
+    {
+      "from": "3_strategy_candidate",
+      "to": "4_live_ready",
+      "gate": "G4-15",
+      "approver": "human"
+    },
+    {
+      "from": "4_live_ready",
+      "to": "6_published",
+      "gate": "G5-16",
+      "approver": "auto"
+    },
+    {
+      "from": "6_published",
+      "to": "5_suspended",
+      "gate": "decay/expiry/outage",
+      "approver": "auto"
+    },
+    {
+      "from": "5_suspended",
+      "to": "6_published",
+      "gate": "revalidate",
+      "approver": "human"
+    },
+    {
+      "from": "5_suspended",
+      "to": "8_retired",
+      "gate": "revalidate-fail/30d",
+      "approver": "auto"
+    },
+    {
+      "from": "6_published",
+      "to": "7_deprecated",
+      "gate": "superseded",
+      "approver": "human"
+    },
+    {
+      "from": "7_deprecated",
+      "to": "8_retired",
+      "gate": "migration-90d",
+      "approver": "auto"
+    },
+    {
+      "from": "*",
+      "to": "9_rejected",
+      "gate": "any-gate-fail",
+      "approver": "auto"
+    }
+  ],
+  "prereg_split": "2022-01-01",
+  "max_oos_access": 3
+}
