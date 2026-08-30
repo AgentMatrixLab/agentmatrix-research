@@ -116,6 +116,7 @@ for sd in STRATEGY_DEFS:
         status, status_label = STATUS_MAP[(ev["passed_all"], True)]
 
     ic = None
+    yearly_ic = None
     if ev:
         for g in ev["gates"]:
             if g["gate"] == "g6_ic_stability":
@@ -130,6 +131,8 @@ for sd in STRATEGY_DEFS:
                 ic = ic or {}
                 ic["raw_ic"] = g["evidence"].get("raw_ic")
                 ic["alpha_decay"] = g["evidence"].get("alpha_decay")
+            if g["gate"] == "g11_market_segments":
+                yearly_ic = g["evidence"].get("yearly_ic")
 
     s = {
         "strategy_id": sd["strategy_id"],
@@ -156,6 +159,7 @@ for sd in STRATEGY_DEFS:
         "rationale": sd["rationale"],
         "factor_evidence": ev,
         "ic_summary": ic,
+        "factor_yearly_ic": yearly_ic,
         "metrics": {"annual_return": None, "sharpe": None, "max_drawdown": None, "turnover": None},
         "artifacts": [],
         "updated_at": "2026-08-30T00:00:00+08:00",
