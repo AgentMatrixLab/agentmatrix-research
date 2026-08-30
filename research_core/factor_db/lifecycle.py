@@ -304,11 +304,75 @@ def validate_certificate(certificate: dict[str, Any]) -> list[str]:
 
 
 def issue_certificate(certificate: dict[str, Any]) -> dict[str, Any]:
-    """签发证书；缺任一字段抛 :class:`CertificateIncomplete`，不得上架。"""
+    """签发证书；缺任一字段抛 :class:`CertificateIncomplete`，不得上架。
+
+    有效期 6 个月（宪法 v2.0 证书字段 10）：到期未重验自动转 ``5_suspended``。
+    """
     missing = validate_certificate(certificate)
     if missing:
         raise CertificateIncomplete(f"证书缺 {len(missing)} 个必填字段：{missing}")
-    return {"issued_at": _now_iso(), **certificate}
+    issued = {"issued_at": _now_iso(), **certificate}
+    if not issued.get("valid_until"):
+        issued["valid_until"] = _add_months(issued["issued_at"], CERT_VALID_MONTHS)
+    return issued
+
+
+CERT_VALID_MONTHS = 6  # 证书有效期（月），到期自动转 5_suspended
+CERTIFICATES_PATH = runtime_path("lifecycle", "certificates.json")
+
+
+def _add_months(iso: str, months: int) -> str:
+    dt = datetime.strptime(iso, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    month = dt.month - 1 + months
+    year = dt.year + month // 12
+    month = month % 12 + 1
+    day = min(dt.day, [31, 29 if year % 4 == 0 and (year % 100 != 0 or year % 400 == 0) else 28,
+                       31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1])
+    return dt.replace(year=year, month=month, day=day).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+class CertificateLedger:
+    """已签发证书账本（runtime/lifecycle/certificates.json）。
+
+    供衰减监控扫描证书到期：``days_remaining()`` 返回剩余天数，
+    负数即已过期（触发 5_suspended）。
+    """
+
+    def __init__(self, path: Path = CERTIFICATES_PATH) -> None:
+        self.path = path
+
+    def issue(self, certificate: dict[str, Any]) -> dict[str, Any]:
+        issued = issue_certificate(certificate)
+        certs = self._load()
+        certs[issued["factor_identity"]] = issued
+        self._save(certs)
+        return issued
+
+    def get(self, factor_id: str) -> dict[str, Any] | None:
+        return self._load().get(factor_id)
+
+    def all(self) -> dict[str, dict[str, Any]]:
+        return self._load()
+
+    def days_remaining(self, factor_id: str) -> int | None:
+        cert = self.get(factor_id)
+        if cert is None or not cert.get("valid_until"):
+            return None
+        until = datetime.strptime(cert["valid_until"], "%Y-%m-%dT%H:%M:%SZ").replace(
+            tzinfo=timezone.utc
+        )
+        return (until - datetime.now(timezone.utc)).days
+
+    def _load(self) -> dict[str, dict[str, Any]]:
+        if self.path.exists():
+            return json.loads(self.path.read_text(encoding="utf-8"))
+        return {}
+
+    def _save(self, data: dict[str, dict[str, Any]]) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.path.write_text(
+            json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
 
 
 def _now_iso() -> str:
@@ -335,4 +399,7 @@ __all__ = [
     "CERTIFICATE_REQUIRED_FIELDS",
     "validate_certificate",
     "issue_certificate",
+    "CERT_VALID_MONTHS",
+    "CERTIFICATES_PATH",
+    "CertificateLedger",
 ]

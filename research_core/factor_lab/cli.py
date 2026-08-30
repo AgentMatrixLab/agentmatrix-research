@@ -205,6 +205,27 @@ def build_parser() -> argparse.ArgumentParser:
     eval_parser.add_argument("--ic-threshold", type=float, default=0.02, help="Min |IC| to pass")
     eval_parser.add_argument("--turnover-warn", type=float, default=0.7, help="Turnover rate warning threshold")
 
+    # ── auto-mine command ──
+    auto_mine_parser = subparsers.add_parser(
+        "auto-mine",
+        help="⛏️  Automatic factor mining loop (compile → real IC evaluation → dedup → feedback)",
+    )
+    auto_mine_parser.add_argument("--source", default="auto",
+                                  choices=["auto", "cache", "api", "parquet", "synthetic"],
+                                  help="Panel data source (auto: cache → API → synthetic)")
+    auto_mine_parser.add_argument("--parquet-path", default="", help="Panel parquet path (source=parquet)")
+    auto_mine_parser.add_argument("--mode", default="auto", choices=["auto", "llm", "gp", "builtin"],
+                                  help="Candidate generator (auto: LLM → builtin fallback)")
+    auto_mine_parser.add_argument("--theme", default="量价因子", help="Mining theme for LLM prompts")
+    auto_mine_parser.add_argument("--rounds", type=int, default=2, help="Feedback loop rounds")
+    auto_mine_parser.add_argument("--count", type=int, default=8, help="Candidates per round")
+    auto_mine_parser.add_argument("--population", type=int, default=24, help="GP population size (mode=gp)")
+    auto_mine_parser.add_argument("--generations", type=int, default=5, help="GP generations (mode=gp)")
+    auto_mine_parser.add_argument("--horizon", type=int, default=5, help="Forward-return horizon (days)")
+    auto_mine_parser.add_argument("--n-symbols", type=int, default=30, help="Panel symbols (API/synthetic)")
+    auto_mine_parser.add_argument("--n-dates", type=int, default=250, help="Panel dates (API/synthetic)")
+    auto_mine_parser.add_argument("--refresh-cache", action="store_true", help="Force panel cache re-download")
+
     return parser
 
 
@@ -596,6 +617,49 @@ def main() -> None:
             }
             with open(args.output_json, "w") as f:
                 json.dump(out, f, indent=2, ensure_ascii=False)
+        return
+
+    # ── auto-mine command handler ──
+    if args.command == "auto-mine":
+        from research_core.factor_lab.auto_mining import (
+            load_panel,
+            run_mining_loop,
+            save_results,
+        )
+
+        panel, actual_source = load_panel(
+            source=args.source,
+            parquet_path=args.parquet_path or None,
+            n_symbols=args.n_symbols,
+            n_dates=args.n_dates,
+            refresh_cache=args.refresh_cache,
+        )
+        print(f"Panel: {panel['date'].nunique()}d x {panel['code'].nunique()}c "
+              f"({actual_source}, source={args.source})")
+
+        if args.mode == "gp":
+            from research_core.factor_lab.gp_search import GPFactorMiner
+
+            miner = GPFactorMiner(panel, horizon=args.horizon)
+            gp_out = miner.evolve(generations=args.generations, population=args.population)
+            winners = gp_out["winners"]
+            run_output = {"rounds": [{"round": 1, "results": list(miner.cache.values()),
+                                      "feedback": "gp"}],
+                         "winners": winners,
+                         "all_results": list(miner.cache.values())}
+        else:
+            run_output = run_mining_loop(
+                panel,
+                theme=args.theme,
+                rounds=args.rounds,
+                count_per_round=args.count,
+                mode="auto" if args.mode == "auto" else args.mode,
+                horizon=args.horizon,
+            )
+
+        csv_path = save_results(run_output, panel_source=actual_source)
+        print(f"\nResults saved: {csv_path}")
+        print(f"Winners: {[r.name for r in run_output['winners']]}")
         return
 
 

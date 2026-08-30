@@ -33,7 +33,10 @@ PREREG_SPLIT = "2022-01-01"  # 预注册切分点（novel 类入队时锁定）
 def make_panel(seed: int = SEED) -> pd.DataFrame:
     """生成月频 mock 面板（date/code/next_return + 闸门5/10 输入字段）。"""
     rng = np.random.default_rng(seed)
-    dates = pd.date_range("2018-01-31", periods=N_MONTHS, freq="ME")
+    try:  # pandas>=2.2 用 ME，旧版用 M
+        dates = pd.date_range("2018-01-31", periods=N_MONTHS, freq="ME")
+    except ValueError:
+        dates = pd.date_range("2018-01-31", periods=N_MONTHS, freq="M")
     codes = [f"MOCK{i:02d}" for i in range(N_STOCKS)]
 
     # 股票截面属性（固定，PIT 简化）

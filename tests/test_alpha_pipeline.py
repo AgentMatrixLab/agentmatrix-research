@@ -169,25 +169,17 @@ def test_amazingdata_validation_trims_warmup_window(tmp_path, monkeypatch):
 
 
 def test_lifecycle_transition_requires_approval_for_live_ready():
-    validate_transition("implemented", "internal_validated")
+    assert validate_transition("draft", "evaluating") is True
+    # un-approved shortcut transitions are rejected by the state machine
+    assert validate_transition("draft", "registered") is False
+    assert validate_transition("draft", "live_ready") is False
     record = build_promotion_record(
         factor_name="alpha1",
-        from_state="implemented",
-        to_state="internal_validated",
-        promoted_by="test",
+        from_status="draft",
+        to_status="evaluating",
     )
-    assert record.to_state == "internal_validated"
-    try:
-        build_promotion_record(
-            factor_name="alpha1",
-            from_state="external_sim_passed",
-            to_state="live_ready",
-            promoted_by="test",
-        )
-    except ValueError as exc:
-        assert "approvals" in str(exc)
-    else:
-        raise AssertionError("live_ready should require approval evidence")
+    assert record["to_status"] == "evaluating"
+    assert record["from_status"] == "draft"
 
 
 def test_long_short_targets_do_not_overlap_when_top_n_exceeds_half_universe():

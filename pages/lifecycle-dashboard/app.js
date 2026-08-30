@@ -18,10 +18,11 @@ const GATE_ORDER = [
   "g11_market_segments", "g12_redundancy",
 ];
 
-const state = { overview: null, factors: [], stateFilter: "", search: "" };
+const state = { overview: null, factors: [], monitor: null, stateFilter: "", search: "" };
 const els = {};
 ["pipeline", "pipeline-hint", "funnel-hint", "gate-funnel", "oos-list", "oos-max",
  "state-select", "factor-search", "factor-tbody", "factor-count", "evidence-feed",
+ "sla-feed", "sla-hint",
  "drawer", "drawer-mask", "drawer-title", "drawer-sub", "drawer-body", "drawer-close",
  "reload-btn", "sub-title"].forEach(id => {
   els[id.replace(/-(\w)/g, (_, c) => c.toUpperCase())] = document.getElementById(id);
@@ -36,18 +37,21 @@ function esc(s) {
 async function load() {
   try {
     if (STATIC) {
-      const [ov, fac, ev] = await Promise.all([
+      const [ov, fac, ev, mon] = await Promise.all([
         (await fetch(`./data/overview.json`)).json(),
         (await fetch(`./data/factors.json`)).json(),
         (await fetch(`./data/evidence.json`)).json(),
+        fetch(`./data/monitor.json`).then(r => r.ok ? r.json() : null).catch(() => null),
       ]);
       state.overview = ov;
       state.factors = fac.factors;
+      state.monitor = mon;
       render(ev.events || []);
       return;
     }
-    const [ovRes, facRes, evRes] = await Promise.all([
+    const [ovRes, facRes, evRes, monRes] = await Promise.all([
       fetch(`${API}/overview`), fetch(`${API}/factors`), fetch(`${API}/evidence?limit=50`),
+      fetch(`${API}/monitor`).catch(() => null),
     ]);
     if (!ovRes.ok) {
       const err = await ovRes.json().catch(() => ({}));
@@ -56,6 +60,7 @@ async function load() {
     state.overview = await ovRes.json();
     state.factors = (await facRes.json()).factors;
     const ev = await evRes.json();
+    state.monitor = monRes && monRes.ok ? await monRes.json() : null;
     render(ev.events || []);
   } catch (err) {
     document.getElementById("main").innerHTML =
@@ -66,13 +71,85 @@ async function load() {
 
 function render(evidence) {
   renderPipeline();
+  renderTrustGrid();
   renderFunnel();
   renderOos();
+  renderSla();
   renderStateSelect();
   renderTable();
   renderEvidenceFeed(evidence);
   els.subTitle.textContent =
     `${state.overview.total} 因子 · ${state.overview.validated} 成年 · ${state.overview.rejected} 死亡 · 预注册切分 ${state.overview.prereg_split || "—"}`;
+}
+
+/* ── 信任分级总览（S/A/B/C/D，由 state + 闸门推导）── */
+function renderTrustGrid() {
+  if (!els.trustGrid) return;
+  const counts = {};
+  TRUST_DEFS.forEach(t => { counts[t.grade] = 0; });
+  state.factors.forEach(f => { counts[trustGrade(f)]++; });
+  els.trustGrid.innerHTML = TRUST_DEFS.map(t => {
+    const n = counts[t.grade] || 0;
+    const active = state.trustFilter === t.grade ? "active" : "";
+    const zero = n === 0 ? "zero" : "";
+    return `
+      <div class="trust-card ${active} ${zero}" data-grade="${t.grade}" style="--tc:${t.color}" title="${esc(t.rule)}">
+        <div class="t-grade">${t.grade}</div>
+        <div class="t-label">${esc(t.label)}</div>
+        <div class="t-count">${n}</div>
+        <div class="t-rule">${esc(t.rule)}</div>
+      </div>`;
+  }).join("");
+  if (els.trustRuleHint) {
+    els.trustRuleHint.innerHTML =
+      `推导规则：S=上架/待上岗 · A=成年/准上岗（九道全过） · B=出生（mock 通过） · C=设想/暂停 · D=降级/退休/死亡` +
+      (state.trustFilter ? ` · 当前过滤：<b>${esc(state.trustFilter)} 级</b>，再点击同一卡片可取消` : "");
+  }
+  [...els.trustGrid.querySelectorAll(".trust-card")].forEach(el => {
+    el.onclick = () => {
+      state.trustFilter = state.trustFilter === el.dataset.grade ? "" : el.dataset.grade;
+      renderTrustGrid();
+      renderTable();
+    };
+  });
+}
+
+/* ── 衰减监控 · SLA 通知 ── */
+function renderSla() {
+  const box = els.slaFeed;
+  if (!box) return;
+  const mon = state.monitor;
+  if (!mon || mon.available === false) {
+    box.innerHTML = `<p class="oos-none">监控未运行——先执行 <code>python -X utf8 -m research_core.factor_db.lifecycle_monitor</code>${mon && mon.hint ? "" : ""}</p>`;
+    return;
+  }
+  const KIND_LABEL = {
+    watch: "衰减预警", suspend: "自动暂停", retire: "自动退休", deprecate: "降级迁移", refund: "退费条款",
+  };
+  const notis = mon.notifications || [];
+  const counts = mon.counts || {};
+  const policy = mon.sla_policy || {};
+  els.slaHint.textContent =
+    `监控 ${counts.monitored ?? 0} 因子 · 预警 ${counts.watch ?? 0} · 通知 ${counts.notifications ?? 0}` +
+    ` · 重验期限 ${policy.revalidate_deadline_days ?? 30} 天 · 迁移期 ${policy.migration_days ?? 90} 天`;
+  if (!notis.length) {
+    box.innerHTML = `<p class="oos-none">运营态因子（上架/暂停/降级）当前无 SLA 事件——衰减监控按月扫描滚动 12 个月 IC 与证书有效期</p>`;
+    return;
+  }
+  const rows = notis.map(n => `
+    <div class="sla-row ${esc(n.level)}">
+      <span class="sla-kind">${esc(KIND_LABEL[n.kind] || n.kind)}</span>
+      <span class="sla-factor">${esc(n.factor_id)}</span>
+      <span class="sla-msg">${esc(n.message)}</span>
+      ${n.sla_due_hours != null ? `<span class="sla-due">SLA ${n.sla_due_hours}h</span>` : ""}
+    </div>`).join("");
+  const transitions = (mon.auto_transitions || []).map(t => `
+    <div class="sla-row info">
+      <span class="sla-kind">自动跃迁</span>
+      <span class="sla-factor">${esc(t.factor_id)}</span>
+      <span class="sla-msg">${esc(t.transition)} @ ${esc(t.timestamp)}</span>
+    </div>`).join("");
+  box.innerHTML = rows + transitions;
 }
 
 /* ── 流水线 ── */
@@ -162,10 +239,12 @@ function renderTable() {
   const sv = state.overview.state_view;
   let rows = state.factors;
   if (state.stateFilter) rows = rows.filter(f => f.state === state.stateFilter);
+  if (state.trustFilter) rows = rows.filter(f => trustGrade(f) === state.trustFilter);
   if (state.search) {
     const q = state.search.toLowerCase();
     rows = rows.filter(f => f.factor_id.toLowerCase().includes(q));
   }
+  const trustColor = Object.fromEntries(TRUST_DEFS.map(t => [t.grade, t.color]));
   els.factorTbody.innerHTML = rows.map(f => {
     const v = sv[f.state] || { label: f.state, color: "#8b949e" };
     // 闸门格子：按固定顺序 pass/fail/skipped
@@ -181,10 +260,12 @@ function renderTable() {
       : `<span class="reason na">—</span>`;
     const oos = f.oos_access_remaining;
     const oosCls = oos === 0 ? "zero" : (oos === 3 ? "full" : "");
+    const tg = trustGrade(f);
     return `
       <tr data-fid="${esc(f.factor_id)}">
         <td>${esc(f.factor_id)}</td>
         <td><span class="state-badge" style="background:${v.color}">${esc(v.label)}</span></td>
+        <td><span class="trust-badge" style="--tc:${trustColor[tg]}">${tg}</span></td>
         <td><span class="gate-progress">${cells}</span></td>
         <td>${reason}</td>
         <td><span class="oos-remain ${oosCls}">${oos}/${state.overview.max_oos_access}</span></td>

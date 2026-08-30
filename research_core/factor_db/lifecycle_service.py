@@ -33,6 +33,7 @@ from research_core.factor_db.lifecycle import (
 LIFECYCLE_DIR = runtime_path("lifecycle")
 SKELETON_DIR = LIFECYCLE_DIR / "skeleton"
 REPORT_PATH = LIFECYCLE_DIR / "g2_skeleton_report.json"
+MONITOR_REPORT_PATH = LIFECYCLE_DIR / "monitor_report.json"
 
 # 状态 → 展示配置（颜色对齐 trust.py 的分级色系）
 STATE_VIEW: dict[str, dict[str, str]] = {
@@ -198,6 +199,35 @@ def factor_detail(factor_id: str) -> dict[str, Any]:
         ],
         "timeline": timeline,
     }
+
+
+def monitor_report() -> dict[str, Any] | None:
+    """衰减监控报告（先跑 lifecycle_monitor 生成；缺失返回 None）。"""
+    report = _read_json(MONITOR_REPORT_PATH)
+    if report is None:
+        return None
+    # 补充证书账本快照（到期倒计时，面板 SLA 区块渲染用）
+    certs_path = LIFECYCLE_DIR / "certificates.json"
+    certs = _read_json(certs_path) or {}
+    report["certificates"] = {
+        fid: {
+            "issued_at": c.get("issued_at"),
+            "valid_until": c.get("valid_until"),
+            "owner": c.get("owner"),
+        }
+        for fid, c in certs.items()
+    }
+    return report
+
+
+def sla_notifications() -> list[dict[str, Any]]:
+    """SLA 通知事件流（监控报告的通知区，最近优先）。"""
+    report = monitor_report()
+    if report is None:
+        return []
+    notifications = list(report.get("notifications", []))
+    notifications.sort(key=lambda n: n.get("generated_at", ""), reverse=True)
+    return notifications
 
 
 def evidence_feed(limit: int = 50) -> list[dict[str, Any]]:

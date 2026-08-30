@@ -285,10 +285,10 @@ v1.0 的「人工批准」同时出现在正文闸门和总览图两处，已拆
 | 2 validated | 成年（九道验真通过） | miner.py gates | ❌ 完整实施 0 道，部分 2 道；A 级 = 0 |
 | 3 strategy_candidate | 准上岗（组合验证+外部仿真+容量） | strategy_engine / backtest_adapter | ⚠️ 管线在，v2.0 数字门槛待落码 |
 | 4 live_ready | 通过人工批准 | Supabase + human approval | ⚠️ 待建白名单/证书导出 |
-| 5 suspended | 暂停（衰减/到期/数据中断） | 衰减监控（待建） | ❌ 待建 |
+| 5 suspended | 暂停（衰减/到期/数据中断） | lifecycle_monitor.py 自动暂停 | ✅ 四类量化触发已落码（衰减/ICIR/证书到期/数据中断） |
 | 6 published | 上架（客户可见可订阅） | factor-db 客户面板 | ⚠️ 待从研究面板分离 |
-| 7 deprecated | 降级（有更优替代，迁移期中） | — | ❌ 待建 |
-| 8 retired | 退休（摘牌，证据保留） | 衰减监控（待建） | ❌ 待建 |
+| 7 deprecated | 降级（有更优替代，迁移期中） | lifecycle_monitor.py 迁移期倒计时 | ⚠️ 90 天倒计时+期满自动退休已建；降级跃迁由人工触发 |
+| 8 retired | 退休（摘牌，证据保留） | lifecycle_monitor.py 自动退休 | ✅ 挂起>30 天 / 迁移期满 90 天自动摘牌，证据链保留 |
 | 9 rejected | 死亡（闸门淘汰，死因回注） | Tier D + mining_bridge 反馈 | ✅ 已验证闭环（G1 确定性校验口径，非有效性证据） |
 
 **旧编号 → 新编号映射**（供代码迁移，旧引用一律作废）：

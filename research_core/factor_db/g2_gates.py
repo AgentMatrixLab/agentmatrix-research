@@ -75,7 +75,10 @@ def _monthly_rank_ic(df: pd.DataFrame, factor_col: str) -> pd.Series:
             return np.nan
         return d[factor_col].corr(d["next_return"], method="spearman")
 
-    return df.groupby("date").apply(_one, include_groups=False).dropna()
+    try:  # pandas>=2.2 需要 include_groups=False；旧版不认该参数（行为一致）
+        return df.groupby("date").apply(_one, include_groups=False).dropna()
+    except TypeError:
+        return df.groupby("date").apply(_one).dropna()
 
 
 def _block_bootstrap_ci(ic: pd.Series, n_boot: int = G6_BOOTSTRAP_N, block: int = G6_BOOTSTRAP_BLOCK, seed: int = 7) -> tuple[float, float]:
