@@ -39,26 +39,32 @@ def _write_json(path: Path, payload: Any) -> None:
 
 
 def _patch_index(html: str) -> str:
-    """注入静态模式开关 + 把本地后端导航换成 Pages 相对链接。"""
+    """注入静态模式开关 + 调整导航链接指向 Pages 内路径。"""
     # 1) 静态模式开关（必须在 app.js 之前）
     html = html.replace(
         '<script src="app.js"></script>',
         "<script>window.LIFECYCLE_STATIC = true;</script>\n  "
         '<script src="app.js"></script>',
     )
-    # 2) 顶部导航：去掉 127.0.0.1 后端链接，指向已部署的 Pages 站点
-    html = re.sub(
-        r'<nav class="topnav">.*?</nav>',
-        '<nav class="topnav">\n'
-        '    <a href="../factor-lab-dashboard/">Factor Lab 看板</a>\n'
-        '    <span class="hint">静态快照 · 数据冻结于导出时刻</span>\n  </nav>',
-        html,
-        flags=re.S,
+    # 2) 顶部导航：127.0.0.1 后端链接换成 Pages 门户入口
+    html = html.replace(
+        'href="/factor-db/"', 'href="../" title="面板门户"'
     )
+    html = re.sub(
+        r'<a href="http://127\.0\.0\.1:8012/factor-trust/"[^>]*>.*?</a>\s*',
+        "",
+        html,
+    )
+    html = re.sub(
+        r'<a href="http://127\.0\.0\.1:8012/zoo-dashboard/"[^>]*>.*?</a>\s*',
+        "",
+        html,
+    )
+    # 把"刷新"按钮保留，"退出"按钮保留
     # 3) 副标题标注快照性质
     html = html.replace(
-        'id="sub-title">从出生到死亡 · 全流程闸门 · 证据链 · OOS 封存<',
-        'id="sub-title">从出生到死亡 · 全流程闸门 · 证据链 · OOS 封存（静态快照）<',
+        "id=\"sub-title\">从出生到死亡 · 全流程闸门 · 证据链 · OOS 封存<",
+        "id=\"sub-title\">从出生到死亡 · 全流程闸门 · 证据链 · OOS 封存（静态快照）<",
     )
     return html
 
