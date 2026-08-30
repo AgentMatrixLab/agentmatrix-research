@@ -1,0 +1,76 @@
+{
+  "events": [
+    {
+      "timestamp": "2026-08-30T09:05:07Z",
+      "factor_id": "MOCK:planted_good",
+      "transition": "1_implemented->2_validated",
+      "gate": "G2-4..12",
+      "evidence": {
+        "g4_data_quality": {
+          "missing_rate": 0.0,
+          "coverage": 1.0,
+          "n_rows": 2880
+        },
+        "g5_executability": {
+          "raw_ic": 0.5987,
+          "filtered_ic": 0.5887,
+          "alpha_decay": 0.0167,
+          "kept_rows": 2445,
+          "dropped_rows": 435
+        },
+        "g6_ic_stability": {
+          "mean_rank_ic": 0.5887,
+          "icir": 4.041,
+          "bootstrap_ci95": [
+            0.5597,
+            0.6175
+          ],
+          "n_months": 96
+        },
+        "g7_multiple_testing": {
+          "n_trials": 38,
+          "self_p": 0.0,
+          "bh_adjusted_p": 0.0,
+          "fdr_q": 0.05
+        },
+        "g8_oos_retention": {
+          "is_ic": 0.5948,
+          "oos_ic": 0.5826,
+          "retention": 0.98,
+          "split": "2022-01-01"
+        },
+        "g9_cost_resilience": {
+          "breakeven_cost_bp": 258.9,
+          "actual_cost_bp": 10.0,
+          "annual_double_turnover": 21.6,
+          "monthly_alpha": 0.04661,
+          "cost_per_month": 0.0018
+        },
+        "g10_style_neutrality": {
+          "resid_mean_ic": 0.5398,
+          "resid_icir": 3.558,
+          "n_months": 96
+        },
+        "g11_market_segments": {
+          "yearly_ic": {
+            "2018": 0.6034,
+            "2019": 0.5848,
+            "2020": 0.5708,
+            "2021": 0.6201,
+            "2022": 0.5241,
+            "2023": 0.6443,
+            "2024": 0.5638,
+            "2025": 0.5983
+          },
+          "years_aligned": 8,
+          "worst_year_ratio": 0.89
+        },
+        "g12_redundancy": {
+          "library": 0
+        }
+      },
+      "approved_by": "auto:agent",
+      "oos_access_remaining": 2
+    }
+  ]
+}
