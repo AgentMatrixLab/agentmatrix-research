@@ -83,6 +83,12 @@ def export() -> dict[str, int]:
         data_dir / "evidence.json",
         {"events": svc.evidence_feed(200)},
     )
+    # 衰减监控 + SLA 通知（可选：先跑 lifecycle_monitor 生成；缺失导出空占位）
+    monitor = svc.monitor_report()
+    _write_json(
+        data_dir / "monitor.json",
+        monitor if monitor is not None else {"available": False, "notifications": []},
+    )
     for row in rows:
         fid = row["factor_id"]
         detail = svc.factor_detail(fid)
