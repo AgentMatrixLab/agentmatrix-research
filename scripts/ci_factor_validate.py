@@ -234,15 +234,15 @@ def validate_lifecycle_registry() -> dict[str, Any]:
     try:
         from registry.factor_registry.lifecycle import build_promotion_record, validate_transition
 
-        validate_transition("implemented", "internal_validated")
-        build_promotion_record(
+        assert validate_transition("draft", "evaluating") is True
+        # un-approved shortcut must be rejected by the state machine
+        assert validate_transition("draft", "registered") is False
+        record = build_promotion_record(
             factor_name="alpha1",
-            from_state="implemented",
-            to_state="internal_validated",
-            promoted_by="ci",
-            run_id="ci-smoke",
-            reason="CI lifecycle smoke test",
+            from_status="draft",
+            to_status="evaluating",
         )
+        assert record["to_status"] == "evaluating"
     except Exception as exc:
         return {"status": "failed", "error": str(exc)}
     return {"status": "passed"}
