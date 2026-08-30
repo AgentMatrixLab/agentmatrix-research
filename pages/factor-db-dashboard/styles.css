@@ -1,4 +1,4 @@
-/* A股因子数据库 Web 原型 — Factor DB */
+/* A股因子库目录（静态快照版）— Factor DB */
 :root {
   --bg: #0f1419;
   --bg-panel: #161d26;
@@ -138,6 +138,8 @@ html, body {
 .tag.cat-基础因子 { color: var(--green); border-color: rgba(52, 211, 153, 0.3); }
 .tag.cat-技术因子 { color: var(--accent); border-color: rgba(77, 163, 255, 0.3); }
 .tag.cat-基本面因子 { color: var(--purple); border-color: rgba(167, 139, 250, 0.3); }
+.tag.cat-风险因子 { color: #fb7185; border-color: rgba(251, 113, 133, 0.3); }
+.tag.cat-情绪因子 { color: var(--amber); border-color: rgba(251, 191, 36, 0.3); }
 
 /* ---------- 右侧详情 ---------- */
 .detail-panel { overflow-y: auto; min-height: 0; background: var(--bg); }
@@ -153,9 +155,10 @@ html, body {
 .empty-icon { font-size: 56px; opacity: 0.25; font-family: Georgia, serif; }
 
 .detail-content { padding: 24px 32px 48px; max-width: 980px; }
-.detail-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.detail-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
 .detail-title h1 { font-size: 22px; font-weight: 700; }
 .detail-title .en { font-size: 13px; color: var(--text-dim); margin-top: 3px; }
+.detail-title code { font-family: var(--font-mono); color: var(--accent); }
 .detail-actions { display: flex; gap: 8px; flex-shrink: 0; }
 .btn {
   padding: 7px 14px;
@@ -287,3 +290,8 @@ canvas { width: 100%; display: block; }
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
 ::-webkit-scrollbar-thumb:hover { background: #3a4a5c; }
+
+@media (max-width: 860px) {
+  .layout { grid-template-columns: 1fr; grid-template-rows: 40vh 1fr; }
+  .side-panel { border-right: none; border-bottom: 1px solid var(--border); }
+}
