@@ -3,12 +3,31 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex, nofollow" />
   <title>A股因子库目录 | Factor DB</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" />
   <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
-  <link rel="stylesheet" href="./styles.css?v=1" />
+  <link rel="stylesheet" href="./styles.css?v=2" />
 </head>
 <body>
+  <!-- 登录门禁（与生命周期面板同一模式；前端门禁 + 只读展示，真实数据权限由后端控制） -->
+  <div class="login-view" id="loginView">
+    <div class="login-card">
+      <div class="login-brand">
+        <span class="brand-mark">Σ</span>
+        <h2>A股因子库目录</h2>
+      </div>
+      <p class="login-sub">公司内部研究面板 · 请输入访问密码</p>
+      <form id="loginForm" autocomplete="off">
+        <input type="password" id="loginPassword" placeholder="请输入公司访问密码" autofocus />
+        <button type="submit">登录</button>
+        <p class="login-error" id="loginError"></p>
+      </form>
+      <p class="login-hint">仅限公司内部人员访问 · 请勿外传链接或密码</p>
+    </div>
+  </div>
+
+  <div class="app-shell" id="appShell">
   <header class="topbar">
     <div class="brand">
       <span class="brand-mark">Σ</span>
@@ -53,9 +72,11 @@
     <span class="spacer"></span>
     <a href="#" class="footer-link" id="dictCsvLink">下载数据字典 (CSV)</a>
     <a href="#" class="footer-link" id="dictJsonLink">下载数据字典 (JSON)</a>
+    <a href="#" class="footer-link" id="logoutBtn">退出登录</a>
     <a href="../" class="footer-link">返回门户</a>
   </footer>
+  </div><!-- /app-shell -->
 
-  <script src="./app.js?v=1"></script>
+  <script src="./app.js?v=2"></script>
 </body>
 </html>

@@ -18,8 +18,45 @@ const state = {
 
 const $ = (id) => document.getElementById(id);
 
+/* ---------------- 登录门禁（与生命周期面板同一模式） ---------------- */
+const ACCESS_PASSWORD = window.FACTORDB_ACCESS_PASSWORD || "factorlab2026";
+const AUTH_KEY = "FACTORDB_AUTH_OK";
+
+function isAuthed() { return sessionStorage.getItem(AUTH_KEY) === "1"; }
+function showApp() {
+  document.body.classList.remove("auth-locked");
+  $("loginError").textContent = "";
+  if (!state.snapshot) loadData();
+}
+function showLogin(msg) {
+  document.body.classList.add("auth-locked");
+  if (msg) $("loginError").textContent = msg;
+  setTimeout(() => $("loginPassword")?.focus(), 50);
+}
+function bindAuth() {
+  $("loginForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    if (($("loginPassword").value || "") === ACCESS_PASSWORD) {
+      sessionStorage.setItem(AUTH_KEY, "1");
+      showApp();
+    } else {
+      showLogin("密码不正确，请重试");
+    }
+  });
+  $("logoutBtn").addEventListener("click", (e) => {
+    e.preventDefault();
+    sessionStorage.removeItem(AUTH_KEY);
+    showLogin("已退出登录");
+  });
+}
+
 /* ---------------- 初始化 ---------------- */
-document.addEventListener("DOMContentLoaded", async () => {
+document.addEventListener("DOMContentLoaded", () => {
+  bindAuth();
+  if (isAuthed()) showApp(); else showLogin();
+});
+
+async function loadData() {
   try {
     const res = await fetch("./data/factors.json");
     state.snapshot = await res.json();
@@ -43,7 +80,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     const roe = state.byId.get("QAPI33:roe_ttm");
     selectFactor((roe || state.filtered[0]).factor_id);
   }
-});
+}
 
 function bindEvents() {
   let timer = null;
