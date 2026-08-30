@@ -80,17 +80,20 @@ function renderList() {
   const ics = strategies.map(s => s.ic_summary?.mean_rank_ic).filter(isNum);
   const bestAbsIc = ics.length ? Math.max(...ics.map(Math.abs)) : null;
   const cats = new Set(strategies.map(s => s.factor_meta.category));
+  const nMulti = strategies.filter(s => s.strategy_type === "multi_factor").length;
+  const sharpes = strategies.map(s => s.metrics?.sharpe).filter(isNum);
+  const bestSharpe = sharpes.length ? Math.max(...sharpes) : null;
 
   $("stats").innerHTML = `
     <div class="stat"><div class="v">${strategies.length}</div><div class="k">策略总数</div></div>
     <div class="stat"><div class="v">${ready}</div><div class="k">回测就绪</div></div>
     <div class="stat"><div class="v">${validating}</div><div class="k">研究验证中</div></div>
     <div class="stat"><div class="v">${pending}</div><div class="k">验证待启动</div></div>
-    <div class="stat"><div class="v">${cats.size}</div><div class="k">因子类别覆盖</div></div>
-    <div class="stat"><div class="v">${bestAbsIc === null ? "—" : fmt(bestAbsIc)}</div><div class="k">最大 |IC|（因子验证）</div></div>`;
+    <div class="stat"><div class="v">${nMulti}</div><div class="k">多因子组合</div></div>
+    <div class="stat"><div class="v">${bestSharpe === null ? "—" : fmt(bestSharpe, 2)}</div><div class="k">最优夏普（回测）</div></div>`;
 
   $("sub-title").textContent =
-    `${strategies.length} 个单因子策略 · ${new Set(strategies.flatMap(s => s.factors)).size} 个基础因子 · 快照 ${state.doc.generated_at.slice(0, 10)}`;
+    `${strategies.length} 个策略（含 ${nMulti} 个多因子组合）· ${new Set(strategies.flatMap(s => s.factors)).size} 个基础因子 · 简化回测快照 ${state.doc.generated_at.slice(0, 10)}`;
 
   renderGrid();
 }
@@ -130,8 +133,14 @@ function applyFilter(strategies) {
 
   const key = f.sort;
   if (key !== "default") {
-    const [field, dir] = key.split("_"); // absic_desc | icir_desc
-    const val = s => s.ic_summary?.[field === "absic" ? "mean_rank_ic" : "icir"];
+    const [field, dir] = key.split("_"); // absic_desc | icir_desc | annual_desc | sharpe_desc
+    const val = s => {
+      if (field === "absic") return s.ic_summary?.mean_rank_ic === undefined ? undefined : Math.abs(s.ic_summary.mean_rank_ic);
+      if (field === "icir") return s.ic_summary?.icir;
+      if (field === "annual") return s.metrics?.annual_return;
+      if (field === "sharpe") return s.metrics?.sharpe;
+      return undefined;
+    };
     out = [...out].sort((a, b) => {
       const va = val(a), vb = val(b);
       const na = isNum(va) ? Number(va) : -Infinity;
@@ -153,6 +162,7 @@ function renderGrid() {
   $("strategy-grid").innerHTML = list.map(s => {
     const m = s.factor_meta;
     const ic = s.ic_summary || {};
+    const bt = s.metrics || {};
     return `
     <div class="strategy-card" data-sid="${esc(s.strategy_id)}">
       <div class="card-top">
@@ -170,6 +180,11 @@ function renderGrid() {
         ${icCell("Mean Rank IC", ic.mean_rank_ic ?? ic.raw_ic)}
         ${icCell("ICIR", ic.icir)}
         ${icCell("Alpha 衰减", ic.alpha_decay)}
+      </div>
+      <div class="ic-row bt-row">
+        ${icCell("年化 %", bt.annual_return === undefined ? undefined : bt.annual_return * 100)}
+        ${icCell("夏普", bt.sharpe)}
+        ${icCell("回撤 %", bt.max_drawdown === undefined ? undefined : bt.max_drawdown * 100)}
       </div>
       <div class="config-line"><b>池</b> ${esc(s.universe)}</div>
       <div class="config-line"><b>调仓</b> ${esc(s.rebalance)} · ${esc(s.cost_model)}</div>
@@ -225,6 +240,7 @@ function renderDetail(id) {
 
   const s = state.doc.strategies.find(x => x.strategy_id === id);
   const m = s.factor_meta;
+  const isMulti = s.strategy_type === "multi_factor";
 
   document.title = `${s.strategy_name} · 策略监控面板`;
   $("detail-title").textContent = s.strategy_name;
@@ -235,9 +251,11 @@ function renderDetail(id) {
   badge.className = `badge ${s.status}`;
 
   $("detail-config").innerHTML = kv([
-    ["策略类型", s.strategy_type],
-    ["基础因子", m.factor_id],
-    ["因子名称", `${m.name_cn}（${m.name_en}）`],
+    ["策略类型", isMulti ? "多因子组合" : s.strategy_type],
+    isMulti ? ["组合因子数", String(s.factors.length)]
+            : ["基础因子", m.factor_id],
+    isMulti ? ["因子构成", s.factors_detail.map(f => f.name_cn).join(" + ")]
+            : ["因子名称", `${m.name_cn}（${m.name_en}）`],
     ["因子分类", `${m.category} / ${m.subcategory} · ${m.frequency}`],
     ["股票池", s.universe],
     ["调仓频率", s.rebalance],
@@ -248,7 +266,8 @@ function renderDetail(id) {
 
   $("detail-formula").innerHTML = `
     <div class="expr">${esc(m.formula_expr)}</div>
-    <p class="hint" style="margin-top:8px">${esc(m.definition)}</p>`;
+    <p class="hint" style="margin-top:8px">${esc(m.definition)}</p>
+    ${isMulti ? renderFactorsTable(s.factors_detail) : ""}`;
 
   $("detail-ic-chart").innerHTML = renderIcEvidence(s);
 
@@ -275,12 +294,114 @@ function renderDetail(id) {
       `<div class="placeholder-note">该因子的验证数据尚未生成（因子值数据待拉取任务产出），策略停留在「验证待启动」状态。</div>`;
   }
 
-  $("detail-metrics").innerHTML = `
-    <div class="placeholder-note">
-      策略回测尚未运行。接入 research_core/strategy_engine 后，此处将填充年化收益 / 夏普 / 最大回撤 / 换手率（strategy_monitor_view_v1 契约字段）。
-    </div>`;
+  $("detail-metrics").innerHTML = renderBacktestMetrics(s);
+  $("detail-nav-chart").innerHTML = renderNavChart(s);
+  const btWin = s.backtest?.window;
+  $("detail-bt-summary").textContent = btWin
+    ? `简化回测 · ${btWin.start} ~ ${btWin.end} · ${btWin.n_months} 个月`
+    : "简化回测尚未运行";
 
   window.scrollTo(0, 0);
+}
+
+/* ═══════════ 回测渲染 ═══════════ */
+
+function renderBacktestMetrics(s) {
+  const bt = s.backtest;
+  const mt = bt?.metrics || s.metrics;
+  if (!mt || !isNum(mt.annual_return)) {
+    return `<div class="placeholder-note">策略回测尚未运行。运行 <code>python pages/strategy-dashboard/backtest.py</code> 后此处将填充年化收益 / 夏普 / 最大回撤 / 换手率。</div>`;
+  }
+  const bm = bt?.benchmark || {};
+  const pct = v => isNum(v) ? `${(Number(v) * 100).toFixed(2)}%` : "—";
+  const num = (v, d = 2) => isNum(v) ? Number(v).toFixed(d) : "—";
+
+  const row = (label, stratV, benchV, fmtFn) => `
+    <tr>
+      <td>${esc(label)}</td>
+      <td class="num ${Number(stratV) >= 0 ? "pos" : "neg"}">${fmtFn(stratV)}</td>
+      <td class="num">${fmtFn(benchV)}</td>
+    </tr>`;
+
+  return `
+  <table class="ic-table bt-table">
+    <thead><tr><th>指标</th><th>本策略</th><th>基准（${esc(bm.label || "全A等权")}）</th></tr></thead>
+    <tbody>
+      ${row("年化收益", mt.annual_return, bm.annual_return, pct)}
+      ${row("夏普比率", mt.sharpe, bm.sharpe, num)}
+      ${row("最大回撤", mt.max_drawdown, bm.max_drawdown, pct)}
+      <tr><td>年化波动</td><td class="num">${pct(mt.annual_vol)}</td><td class="num">—</td></tr>
+      <tr><td>月均单边换手</td><td class="num">${pct(mt.avg_monthly_turnover)}</td><td class="num">—</td></tr>
+      <tr><td>平均持仓数</td><td class="num">${num(mt.avg_holdings, 0)}</td><td class="num">—</td></tr>
+      <tr><td>回测月数</td><td class="num">${num(mt.n_months, 0)}</td><td class="num">—</td></tr>
+    </tbody>
+  </table>
+  <p class="hint" style="margin-top:8px">${esc(bt.method || "")} · 回测窗口 ${esc(bt.window?.start || "")} ~ ${esc(bt.window?.end || "")} · ${esc(bt.universe_rule || "")}</p>`;
+}
+
+/* 净值曲线 SVG：本策略 vs 1.0 基准线（纯内联，零依赖） */
+function renderNavChart(s) {
+  const nav = s.backtest?.nav;
+  if (!Array.isArray(nav) || nav.length < 2) return "";
+  const W = 720, H = 260, PL = 46, PR = 14, PT = 16, PB = 28;
+  const xs = nav.map(p => p[0]), ys = nav.map(p => Number(p[1]));
+  const yMin = Math.min(...ys, 1) * 0.98, yMax = Math.max(...ys, 1) * 1.02;
+  const x = i => PL + (W - PL - PR) * (i / (nav.length - 1));
+  const y = v => PT + (H - PT - PB) * (1 - (v - yMin) / (yMax - yMin));
+
+  const path = ys.map((v, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+  // 网格线（净值 0.5/1.0/1.5/2.0…按范围）
+  const ticks = [];
+  const step = yMax - yMin > 1.5 ? 0.5 : 0.25;
+  for (let t = Math.ceil(yMin / step) * step; t <= yMax; t += step) {
+    if (t > 0) ticks.push(t);
+  }
+  const grid = ticks.map(t => `
+    <line x1="${PL}" y1="${y(t)}" x2="${W - PR}" y2="${y(t)}" stroke="#eee" stroke-width="1"/>
+    <text x="${PL - 6}" y="${y(t) + 4}" text-anchor="end" class="axis-label">${t.toFixed(2)}</text>`).join("");
+  // x 轴年份刻度
+  const yearMarks = [];
+  let lastYear = "";
+  nav.forEach((p, i) => {
+    const yr = p[0].slice(0, 4);
+    if (yr !== lastYear) { yearMarks.push([i, yr]); lastYear = yr; }
+  });
+  const xLabels = yearMarks.map(([i, yr]) =>
+    `<text x="${x(i)}" y="${H - 8}" text-anchor="middle" class="axis-label">${esc(yr)}</text>`).join("");
+  // 1.0 基准虚线
+  const final = ys[ys.length - 1];
+  const totalRet = final - 1;
+
+  return `
+  <p class="hint" style="margin:14px 0 4px">累计净值曲线（期末净值 <b class="${totalRet >= 0 ? "pos" : "neg"}">${final.toFixed(3)}</b>，累计 ${totalRet >= 0 ? "+" : ""}${(totalRet * 100).toFixed(1)}%）：</p>
+  <svg viewBox="0 0 ${W} ${H}" class="nav-chart" role="img" aria-label="策略累计净值曲线">
+    ${grid}
+    <line x1="${PL}" y1="${y(1)}" x2="${W - PR}" y2="${y(1)}" stroke="#aaa" stroke-dasharray="5 4" stroke-width="1"/>
+    <path d="${path}" fill="none" stroke="#4a7dff" stroke-width="2" stroke-linejoin="round"/>
+    <circle cx="${x(nav.length - 1)}" cy="${y(final)}" r="3" fill="#4a7dff"/>
+    ${xLabels}
+    <line x1="${PL}" y1="${PT}" x2="${PL}" y2="${H - PB}" stroke="#ccc" stroke-width="1"/>
+  </svg>`;
+}
+
+/* 多因子组合：因子构成明细表 */
+function renderFactorsTable(details) {
+  if (!Array.isArray(details) || !details.length) return "";
+  const rows = details.map(f => `
+    <tr>
+      <td><code>${esc(f.factor_id)}</code></td>
+      <td>${esc(f.name_cn)}</td>
+      <td>${esc(f.category)} / ${esc(f.subcategory)}</td>
+      <td class="num ${f.direction_sign >= 0 ? "pos" : "neg"}">${esc(f.direction)}</td>
+      <td class="num">${Number(f.weight).toFixed(1)}</td>
+      <td><code>${esc(f.formula_expr)}</code></td>
+    </tr>`).join("");
+  return `
+  <p class="hint" style="margin:14px 0 6px">组合因子构成（${details.length} 因子 · zscore 加权合成）：</p>
+  <div class="table-wrap"><table class="ic-table bt-table">
+    <thead><tr><th>因子 ID</th><th>名称</th><th>分类</th><th>方向</th><th>权重</th><th>公式</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table></div>`;
 }
 
 /* ═══════════ SVG 图表（纯内联，零依赖） ═══════════ */
