@@ -285,6 +285,7 @@ _PANEL_OPERATORS: dict[str, tuple[str, int]] = {
     "RANK":          ("cross_sectional_rank", 1),
     "TS_RANK":       ("ts_rank",               1),
     "DELTA":         ("ts_delta",              1),
+    "DELAY":         ("ts_delay",               1),
     "MEAN":          ("ts_mean",               1),
     "STD":           ("ts_std",                1),
     "SUM":           ("ts_sum",                1),
