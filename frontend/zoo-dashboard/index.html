@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Zoo 五库因子验证面板</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="logo">Zoo</span>
+    <div>
+      <h1>五库因子验证面板</h1>
+      <p class="sub">GTJA191 · TDXGS · JQ110 · ALPHA158 · ALPHA360 · ALPHA101 — mock 数据计算逻辑验证</p>
+    </div>
+  </div>
+  <nav class="topnav">
+    <a href="/factor-lab-dashboard/">Factor Lab 看板</a>
+    <a href="/factor-trust/">因子信任分级</a>
+    <a href="http://127.0.0.1:8013/lifecycle/" target="_blank">因子生命周期</a>
+    <a href="#" id="reload-btn">刷新数据</a>
+  </nav>
+</header>
+
+<main>
+  <!-- 1. 质量总览 -->
+  <section class="panel" id="overview-panel">
+    <div class="panel-head">
+      <h2>质量总览</h2>
+      <span class="hint" id="meta-hint"></span>
+    </div>
+    <div class="cards" id="meta-cards"></div>
+    <div class="cards lib-cards" id="lib-cards"></div>
+    <details class="defects" id="defects-box">
+      <summary>Zoo 源库缺陷与验证结论（<span id="defect-count">0</span>）</summary>
+      <div id="defects-body"></div>
+    </details>
+  </section>
+
+  <!-- 2. 因子统计表 -->
+  <section class="panel">
+    <div class="panel-head">
+      <h2>因子质量统计表</h2>
+      <div class="controls">
+        <select id="lib-select"></select>
+        <input type="text" id="factor-search" placeholder="搜索因子名…">
+        <label class="chk"><input type="checkbox" id="only-problem"> 只看问题因子（常数/NaN&gt;50%/inf）</label>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table id="factor-table">
+        <thead>
+          <tr>
+            <th data-sort="name">因子</th>
+            <th data-sort="nan_ratio">NaN%</th>
+            <th data-sort="n_inf">inf</th>
+            <th data-sort="min">min</th>
+            <th data-sort="mean">mean</th>
+            <th data-sort="max">max</th>
+            <th data-sort="std">std</th>
+            <th data-sort="constant">常数</th>
+            <th>对比</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <p class="hint" id="factor-count"></p>
+  </section>
+
+  <!-- 3. 因子值时间序列 -->
+  <section class="panel">
+    <div class="panel-head">
+      <h2>因子值时间序列</h2>
+      <div class="controls">
+        <select id="ts-factor"></select>
+        <div id="ts-instruments" class="inst-chips"></div>
+      </div>
+    </div>
+    <canvas id="ts-chart" height="320"></canvas>
+    <p class="hint">点击统计表行可快速切换因子；标签选择标的（最多叠加 5 只）。</p>
+  </section>
+
+  <!-- 3.5 因子对比 -->
+  <section class="panel" id="compare-panel">
+    <div class="panel-head">
+      <h2>因子对比（多因子时序叠加）</h2>
+      <div class="controls">
+        <select id="cmp-lib" title="库"></select>
+        <select id="cmp-factor" title="因子"></select>
+        <select id="cmp-inst" title="标的"></select>
+        <button id="cmp-add" class="btn">+ 添加</button>
+        <span class="chk">
+          归一化：
+          <label><input type="radio" name="cmp-norm" value="raw" checked> 原值</label>
+          <label><input type="radio" name="cmp-norm" value="zscore"> z-score</label>
+          <label><input type="radio" name="cmp-norm" value="minmax"> min-max</label>
+        </span>
+      </div>
+    </div>
+    <div class="inst-chips" id="cmp-chips"></div>
+    <canvas id="cmp-chart" height="360"></canvas>
+    <p class="hint">量纲不同的因子（如 RSI 0-100 与 KMID ±1）请切换 z-score / min-max 归一化对比；点击统计表行内「+ 对比」可快速添加，最多叠加 8 条。</p>
+  </section>
+
+  <!-- 4. 截面热力图 -->
+  <section class="panel">
+    <div class="panel-head">
+      <h2>截面热力图（日期 × 标的）</h2>
+      <div class="controls">
+        <select id="hm-factor"></select>
+        <span class="legend" id="hm-legend">
+          <span class="sw" style="background:#6a7ba2"></span>低
+          <span class="sw gradient"></span>
+          <span class="sw" style="background:#c0392b"></span>高
+          <span class="sw" style="background:#3a3f4b"></span>NaN
+        </span>
+      </div>
+    </div>
+    <canvas id="hm-canvas" height="360"></canvas>
+  </section>
+</main>
+
+<footer>
+  <span id="status-line">加载中…</span>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>
