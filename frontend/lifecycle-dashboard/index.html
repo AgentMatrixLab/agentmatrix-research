@@ -7,6 +7,26 @@
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+
+<!-- 登录门禁（演示级，非真正安全控制） -->
+<div class="login-view" id="loginView">
+  <div class="login-card">
+    <div class="login-brand">
+      <span class="logo">Life</span>
+      <h2>因子生命周期监控</h2>
+    </div>
+    <p class="login-sub">公司内部研究面板 · 请输入访问密码</p>
+    <form id="loginForm" autocomplete="off">
+      <input type="password" id="loginPassword" placeholder="请输入公司访问密码" autofocus>
+      <button type="submit">登录</button>
+      <p class="login-error" id="loginError"></p>
+    </form>
+    <p class="login-hint">GitHub Pages 仅做前端只读展示；真实数据权限由后端控制。</p>
+  </div>
+</div>
+
+<div class="app-shell" id="appShell">
+
 <header class="topbar">
   <div class="brand">
     <span class="logo">Life</span>
@@ -19,13 +39,14 @@
     <a href="/factor-db/">因子库目录</a>
     <a href="http://127.0.0.1:8012/factor-trust/" target="_blank">因子信任分级</a>
     <a href="http://127.0.0.1:8012/zoo-dashboard/" target="_blank">Mock 验证面板</a>
+    <a href="../" class="portal">◀ 面板门户</a>
+    <a href="#" id="logoutBtn">退出</a>
     <a href="#" id="reload-btn">刷新</a>
   </nav>
 </header>
 
 <main id="main">
 
-  <!-- 1. 生命周期流水线 -->
   <section class="panel">
     <div class="panel-head">
       <h2>生命周期流水线</h2>
@@ -34,7 +55,6 @@
     <div class="pipeline" id="pipeline"></div>
   </section>
 
-  <!-- 2. 九道闸门漏斗 + OOS 封存 -->
   <div class="two-col">
     <section class="panel">
       <div class="panel-head">
@@ -52,7 +72,6 @@
     </section>
   </div>
 
-  <!-- 3. 因子总表 -->
   <section class="panel">
     <div class="panel-head">
       <h2>因子总表</h2>
@@ -78,7 +97,6 @@
     <p class="hint" id="factor-count"></p>
   </section>
 
-  <!-- 4. 证据链事件流 -->
   <section class="panel">
     <div class="panel-head">
       <h2>证据链账本（append-only）</h2>
@@ -88,7 +106,6 @@
   </section>
 </main>
 
-<!-- 因子详情抽屉 -->
 <div class="drawer-mask" id="drawer-mask"></div>
 <aside class="drawer" id="drawer">
   <div class="drawer-head">
@@ -101,6 +118,11 @@
   <div class="drawer-body" id="drawer-body"></div>
 </aside>
 
+</div><!-- /.app-shell -->
+
+<script>
+window.LIFECYCLE_ACCESS_PASSWORD = "factorlab2026";
+</script>
 <script src="app.js"></script>
 </body>
 </html>

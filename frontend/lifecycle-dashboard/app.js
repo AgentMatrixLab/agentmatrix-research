@@ -6,6 +6,8 @@
 
 const STATIC = window.LIFECYCLE_STATIC === true;
 const API = "/api/factor-db/lifecycle";
+const ACCESS_PASSWORD = window.LIFECYCLE_ACCESS_PASSWORD || "factorlab2026";
+const AUTH_KEY = "LIFECYCLE_AUTH_OK";
 const PIPELINE_ORDER = [
   "0_conceived", "1_implemented", "2_validated", "3_strategy_candidate",
   "4_live_ready", "6_published", "7_deprecated", "8_retired", "9_rejected",
@@ -264,3 +266,40 @@ els.factorSearch.oninput = () => {
 };
 
 load();
+
+/* ── 登录门禁 ── */
+const loginView = document.getElementById("loginView");
+const loginForm = document.getElementById("loginForm");
+const loginPassword = document.getElementById("loginPassword");
+const loginError = document.getElementById("loginError");
+const logoutBtn = document.getElementById("logoutBtn");
+
+function isAuthed() { return sessionStorage.getItem(AUTH_KEY) === "1"; }
+function showApp() {
+  document.body.classList.remove("auth-locked");
+  loginError.textContent = "";
+}
+function showLogin(msg) {
+  document.body.classList.add("auth-locked");
+  if (msg) loginError.textContent = msg;
+  setTimeout(() => loginPassword?.focus(), 50);
+}
+if (loginForm) {
+  loginForm.addEventListener("submit", e => {
+    e.preventDefault();
+    if ((loginPassword.value || "") === ACCESS_PASSWORD) {
+      sessionStorage.setItem(AUTH_KEY, "1");
+      showApp();
+    } else {
+      showLogin("密码不正确，请重试");
+    }
+  });
+}
+if (logoutBtn) {
+  logoutBtn.addEventListener("click", e => {
+    e.preventDefault();
+    sessionStorage.removeItem(AUTH_KEY);
+    showLogin("已退出登录");
+  });
+}
+if (isAuthed()) showApp(); else showLogin();
