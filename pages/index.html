@@ -14,10 +14,12 @@
         display: flex; align-items: center; justify-content: center;
         padding: 40px 20px;
       }
-      .wrap { max-width: 880px; width: 100%; }
+      .wrap { max-width: 1200px; width: 100%; }
       h1 { font-size: 28px; font-weight: 700; margin-bottom: 6px; }
       .sub { color: #94a3b8; margin-bottom: 32px; font-size: 14px; }
-      .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
+      .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+      @media (max-width: 960px) { .grid { grid-template-columns: repeat(2, 1fr); } }
+      @media (max-width: 560px) { .grid { grid-template-columns: 1fr; } }
       .card {
         background: #111827;
         border: 1px solid #1f2937;
