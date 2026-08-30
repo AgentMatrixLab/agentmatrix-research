@@ -5,18 +5,23 @@
 分级口径（诚实优先，宁缺勿滥）：
 
 - ``S`` truth-proofed     官方真值 CSV 对照通过（max_abs_diff≈0）。
-- ``A`` verified          七道验真闸门全部通过（IC 稳定性 bootstrap、OOS 留存、
-                          成本韧性、市值/行业中性、市场分段、换手、策略复验）。
-- ``B`` internal          真实数据已接入（Quant API 月频真值），但尚未跑完七道验真。
+- ``A`` verified          G2 九道验真闸门（闸门4—12）全部通过：数据质量、可执行性、
+                          IC 稳定性(bootstrap)、多重检验校正(DSR/FDR)、OOS 留存、
+                          成本韧性、风格中性、市场分段、冗余去重。
+- ``B`` internal          真实数据已接入（Quant API 月频真值），但尚未跑完九道验真。
 - ``C`` mock-only         仅在 mock 数据（30 股×300 天，seed=42）上完成计算逻辑
                           验证；因子值未在真实数据上产出。mock 下的 constant /
                           all_nan 属于横截面算子单票退化，不降级，但如实标注。
 - ``D`` rejected          源库缺陷（表达式损坏、重复定义、参数缺失）或验证失败。
 
+口径与 docs/FACTOR_LIFECYCLE.md v2.0 对齐：tier 是 v2.0 状态机的内部视图
+（S→implemented+S 级证据，A→validated，B→validated 前排队，C→implemented，
+D→rejected）。
+
 证据来源：
 - 目录：research_core.factor_db.metadata（1040 因子）
 - mock 验证：runtime/zoo_mock/out/report.json（1007 因子，含 failures/defects）
-- 未来：七道验真 runner 的结果可直接写入 evidence 并升级 tier。
+- 未来：G2 九道验真 runner 的结果可直接写入 evidence 并升级 tier。
 
 模块无副作用、可缓存；7×24 挖掘循环复验后调用 :func:`build_trust_registry`
 重新生成，前端面板只读该注册表。
@@ -44,14 +49,14 @@ TIER_DEFINITIONS: dict[str, dict[str, str]] = {
         "desc": "官方真值 CSV 逐因子比对通过（max_abs_diff≈0），可视为公式实现无偏差。",
     },
     "A": {
-        "label": "七道验真通过",
+        "label": "九道验真通过",
         "color": "#10b981",
-        "desc": "IC 稳定性(bootstrap CI 不含 0) + OOS 留存≥70% + 成本韧性(30bp) + 市值中性 + 市场分段≥3 周期 + 换手合理 + 策略复验 全部通过。",
+        "desc": "G2 闸门4—12 全过：数据质量 + 可执行性(涨跌停/停牌/ST/流动性) + IC稳定性(bootstrap) + 多重检验校正(DSR/FDR) + OOS留存≥70% + 成本韧性 + 风格中性 + 市场分段 + 冗余去重。",
     },
     "B": {
         "label": "真实数据已接入",
         "color": "#3b82f6",
-        "desc": "因子值可经真实数据源（Quant API 月频）查询，但尚未完成七道验真。可用作研究输入，不构成投产依据。",
+        "desc": "因子值可经真实数据源（Quant API 月频）查询，但尚未完成九道验真。可用作研究输入，不构成投产依据。",
     },
     "C": {
         "label": "仅 mock 验证",
@@ -179,7 +184,7 @@ def build_trust_registry() -> dict[str, Any]:
         "mock_meta": report.get("meta", {}),
         "verification_gates": {
             "gates_passed_max": 0,
-            "note": "七道验真闸门尚未实施；S/A 当前为 0 是如实反映，不是缺数据。",
+            "note": "G2 九道验真闸门（v2.0 闸门4—12）尚未实施；S/A 当前为 0 是如实反映，不是缺数据。",
         },
         "factors": factors,
     }

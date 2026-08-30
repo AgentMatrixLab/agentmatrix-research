@@ -24,6 +24,13 @@ from pathlib import Path
 from flask import Blueprint, jsonify, request, send_file
 
 from research_core.factor_db.metadata import get_factor, get_stats, list_factors
+from research_core.factor_db.lifecycle_service import (
+    LifecycleDataError,
+    evidence_feed,
+    factor_detail,
+    factor_rows,
+    overview,
+)
 from research_core.factor_db.service import (
     FactorDataError,
     export_dictionary,
@@ -40,6 +47,7 @@ if str(project_root) not in sys.path:
 factor_db_bp = Blueprint("factor_db", __name__, url_prefix="/api/factor-db")
 
 frontend_root = project_root / "frontend" / "factor-db"
+lifecycle_frontend_root = project_root / "frontend" / "lifecycle-dashboard"
 
 
 def _send_export(payload: dict):
@@ -56,6 +64,43 @@ def _send_export(payload: dict):
 @factor_db_bp.errorhandler(FactorDataError)
 def _handle_factor_data_error(exc: FactorDataError):
     return jsonify({"error": str(exc), "status_code": exc.status_code}), exc.status_code
+
+
+@factor_db_bp.errorhandler(LifecycleDataError)
+def _handle_lifecycle_data_error(exc: LifecycleDataError):
+    return jsonify({"error": str(exc)}), 425
+
+
+# ---------------------------------------------------------------------------
+# 生命周期监控端点（面板数据只读）
+# ---------------------------------------------------------------------------
+
+
+@factor_db_bp.get("/lifecycle/overview")
+def lifecycle_overview_endpoint():
+    return jsonify(overview())
+
+
+@factor_db_bp.get("/lifecycle/factors")
+def lifecycle_factors_endpoint():
+    rows = factor_rows()
+    state = request.args.get("state") or None
+    if state:
+        rows = [r for r in rows if r["state"] == state]
+    return jsonify({"count": len(rows), "factors": rows})
+
+
+@factor_db_bp.get("/lifecycle/factors/<path:factor_id>")
+def lifecycle_factor_detail_endpoint(factor_id: str):
+    return jsonify(factor_detail(factor_id))
+
+
+@factor_db_bp.get("/lifecycle/evidence")
+def lifecycle_evidence_endpoint():
+    limit_raw = request.args.get("limit")
+    return jsonify(
+        {"count_limit": int(limit_raw) if limit_raw else 50, "events": evidence_feed(int(limit_raw) if limit_raw else 50)}
+    )
 
 
 @factor_db_bp.get("/stats")
@@ -154,6 +199,17 @@ def _register_frontend(app):
         if target.is_file():
             return send_file(target)
         return send_file(frontend_root / "index.html")
+
+    @app.get("/lifecycle/")
+    def lifecycle_index():
+        return send_file(lifecycle_frontend_root / "index.html")
+
+    @app.get("/lifecycle/<path:filename>")
+    def lifecycle_asset(filename: str):
+        target = lifecycle_frontend_root / filename
+        if target.is_file():
+            return send_file(target)
+        return send_file(lifecycle_frontend_root / "index.html")
 
 
 def create_app() -> "Flask":
