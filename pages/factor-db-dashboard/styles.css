@@ -18,6 +18,9 @@
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* 防止作者 display 规则覆盖 hidden 属性（.detail-empty 的 flex 曾导致空状态无法隐藏） */
+[hidden] { display: none !important; }
+
 html, body {
   height: 100%;
   background: var(--bg);

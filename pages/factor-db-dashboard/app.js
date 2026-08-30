@@ -33,6 +33,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   state.filtered = [...state.factors];
 
   $("modeStatus").textContent = `静态快照 · 生成于 ${formatTime(state.snapshot.generated_at)} · 因子值实时查询需本地 API`;
+  const byCat = state.stats.by_category || {};
+  $("topStats").innerHTML = `共 <b>${state.stats.total_factors}</b> 个因子 · ` +
+    Object.entries(byCat).map(([k, v]) => `${k} <b>${v}</b>`).join(" · ");
   renderChips();
   renderList();
   bindEvents();
