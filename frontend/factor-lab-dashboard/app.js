@@ -1977,7 +1977,7 @@ function renderMonitor() {
   if (!factors.length) {
     els.monitorTableBody.innerHTML = `
       <tr>
-        <td colspan="11" class="empty-cell">当前筛选下没有可展示的因子。</td>
+        <td colspan="12" class="empty-cell">当前筛选下没有可展示的因子。</td>
       </tr>
     `;
     return;
@@ -2016,6 +2016,7 @@ function renderMonitor() {
           <td><span class="direction-pill ${direction.className}">${direction.symbol} ${direction.label}</span></td>
           <td title="${escapeHtml(proofText)} / ${escapeHtml(factor.truth_status || "-")}">${monitorValidationHtml(factor)}</td>
           <td>${monitorMarketHtml(factor)}</td>
+          <td class="monitor-strategy-ref-cell">${renderStrategyTraceChips(factor.id)}</td>
         </tr>
       `;
     })
@@ -2024,6 +2025,7 @@ function renderMonitor() {
   els.monitorTableBody.querySelectorAll("[data-factor-id]").forEach((button) => {
     button.addEventListener("click", () => openDetail(button.dataset.factorId));
   });
+  bindStrategyTraceChips(els.monitorTableBody);
 }
 
 function compareMonitorRows(left, right) {
@@ -2161,6 +2163,7 @@ async function loadStrategies() {
     state.strategiesLoading = false;
     state.strategiesLoaded = true;
     if (state.view === "strategy") renderStrategy();
+    if (state.view === "monitor") renderMonitor();
   }
 }
 
@@ -2504,6 +2507,78 @@ function renderStrategyBuilder() {
   els.strategyBuilderView.querySelector("#saveStrategyBuilder")?.addEventListener("click", saveStrategyBuilder);
 }
 
+// ── 因子↔策略双向追溯 helpers ──
+
+function parseFactorTokens(factorsStr) {
+  if (!factorsStr) return [];
+  if (Array.isArray(factorsStr)) {
+    return factorsStr
+      .map((f) => (typeof f === "string" ? f.trim() : (f && f.factor_id) || (f && f.id) || ""))
+      .filter(Boolean);
+  }
+  return String(factorsStr)
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function factorTokenShortName(token) {
+  if (!token) return "";
+  const parts = String(token).split(":");
+  return parts.length > 1 ? parts[parts.length - 1] : token;
+}
+
+function strategiesUsingFactor(factorId) {
+  if (!factorId) return [];
+  const fid = String(factorId);
+  return strategyRows().filter((row) => {
+    const tokens = parseFactorTokens(row.factors);
+    return tokens.some((t) => String(t) === fid);
+  });
+}
+
+function renderFactorTraceChips(factorsStr) {
+  const tokens = parseFactorTokens(factorsStr);
+  if (!tokens.length) return '<span class="trace-chip is-placeholder">-</span>';
+  return tokens
+    .map((token) => {
+      const inLibrary = state.rawFactors.some((f) => f.id === token);
+      return `<button type="button" class="trace-chip" data-trace-factor-id="${escapeHtml(token)}" ${inLibrary ? "" : 'title="该因子不在当前因子库中"'}>${escapeHtml(factorTokenShortName(token))}</button>`;
+    })
+    .join("");
+}
+
+function renderStrategyTraceChips(factorId) {
+  const refs = strategiesUsingFactor(factorId);
+  if (!refs.length) return '<span class="trace-chip is-placeholder">-</span>';
+  return refs
+    .slice(0, 3)
+    .map((row) => `<button type="button" class="trace-chip trace-strategy" data-trace-strategy-id="${escapeHtml(row.id)}" title="${escapeHtml(row.name)}">${escapeHtml(row.name)}</button>`)
+    .join(refs.length > 3 ? `<span class="trace-chip is-placeholder">+${refs.length - 3}</span>` : "");
+}
+
+function bindFactorTraceChips(root) {
+  root.querySelectorAll("[data-trace-factor-id]").forEach((chip) => {
+    chip.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const fid = chip.dataset.traceFactorId;
+      const factor = state.rawFactors.find((f) => f.id === fid);
+      if (factor && canOpenFactor(factor)) {
+        openDetail(fid);
+      }
+    });
+  });
+}
+
+function bindStrategyTraceChips(root) {
+  root.querySelectorAll("[data-trace-strategy-id]").forEach((chip) => {
+    chip.addEventListener("click", (event) => {
+      event.stopPropagation();
+      openStrategyDetail(chip.dataset.traceStrategyId);
+    });
+  });
+}
+
 function strategyRows() {
   const apiRows = state.strategies.map((s) => ({
     id: s.id,
@@ -2583,7 +2658,7 @@ function renderStrategy() {
             <button type="button" class="strategy-link" data-strategy-id="${escapeHtml(row.id)}">${escapeHtml(row.name)}</button>
             <span class="monitor-source-sub">${escapeHtml(row.type || "-")}</span>
           </td>
-          <td class="strategy-factors-cell" title="${escapeHtml(row.factors)}">${escapeHtml(row.factors)}</td>
+          <td class="strategy-factors-cell">${renderFactorTraceChips(row.factors)}</td>
           <td class="strategy-universe-cell" title="${escapeHtml(row.universe)}">${escapeHtml(row.universe)}</td>
           <td>
             <strong>${escapeHtml(row.rebalance)}</strong>
@@ -2606,6 +2681,7 @@ function renderStrategy() {
   els.strategyTableBody.querySelectorAll("[data-strategy-id]").forEach((button) => {
     button.addEventListener("click", () => openStrategyDetail(button.dataset.strategyId));
   });
+  bindFactorTraceChips(els.strategyTableBody);
   els.strategyTableBody.querySelectorAll("[data-strategy-delete-id]").forEach((input) => {
     input.addEventListener("change", () => {
       if (input.checked) {
@@ -3159,7 +3235,7 @@ function renderStrategyDetail() {
         <dl class="detail-meta">
           <div><dt>Strategy ID</dt><dd><code>${escapeHtml(row.id)}</code></dd></div>
           <div><dt>类型</dt><dd>${escapeHtml(detailData.type || row.type)}</dd></div>
-          <div><dt>使用因子</dt><dd>${escapeHtml(detailData.factors ? detailData.factors.map(f => f.factor_id).join(', ') : row.factors)}</dd></div>
+          <div><dt>使用因子</dt><dd>${renderFactorTraceChips(detailData.factors ? detailData.factors.map(f => f.factor_id).join(', ') : row.factors)}</dd></div>
           <div><dt>股票池</dt><dd>${escapeHtml(params.universe || row.universe)}</dd></div>
           <div><dt>更新时间</dt><dd>${formatDate(row.updatedAt)}</dd></div>
         </dl>
@@ -3251,7 +3327,7 @@ function renderStrategyDetail() {
       </article>
       <article class="chart-card">
         <header><strong>使用因子</strong><span>${escapeHtml(detailData.factors ? detailData.factors.length : row.factors.split(',').length || 1)} 个</span></header>
-        <div class="strategy-factor-chip">${escapeHtml(detailData.factors ? detailData.factors.map(f => f.factor_id).join(', ') : row.factors)}</div>
+        <div class="strategy-factor-chip-list">${renderFactorTraceChips(detailData.factors ? detailData.factors.map(f => f.factor_id).join(', ') : row.factors)}</div>
       </article>
     </section>
   `;
@@ -3259,6 +3335,7 @@ function renderStrategyDetail() {
   els.strategyDetailView.querySelectorAll("[data-action='back-strategy']").forEach((button) => {
     button.addEventListener("click", closeStrategyDetail);
   });
+  bindFactorTraceChips(els.strategyDetailView);
   
   els.strategyDetailView.querySelectorAll("[data-equity-scale]").forEach((button) => {
     button.addEventListener("click", (e) => {
