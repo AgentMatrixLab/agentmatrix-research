@@ -2861,6 +2861,57 @@ code {
   font-weight: 800;
 }
 
+.trace-chip {
+  display: inline-flex;
+  align-items: center;
+  margin: 2px 4px 2px 0;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  background: #eef4fb;
+  color: #2563eb;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.5;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s, border-color 0.12s;
+}
+
+.trace-chip:hover {
+  background: #dbeafe;
+  border-color: #93c5fd;
+}
+
+.trace-chip:active {
+  background: #bfdbfe;
+}
+
+.trace-chip.trace-strategy {
+  background: #f0fdf4;
+  color: #15803d;
+  border-color: #bbf7d0;
+}
+
+.trace-chip.trace-strategy:hover {
+  background: #dcfce7;
+  border-color: #86efac;
+}
+
+.trace-chip:disabled,
+.trace-chip.is-placeholder {
+  cursor: default;
+  background: #f1f5f9;
+  color: #94a3b8;
+  border-color: #e2e8f0;
+}
+
+.trace-chip:disabled:hover,
+.trace-chip.is-placeholder:hover {
+  background: #f1f5f9;
+  border-color: #e2e8f0;
+}
+
 .task-head {
   display: flex;
   justify-content: space-between;
