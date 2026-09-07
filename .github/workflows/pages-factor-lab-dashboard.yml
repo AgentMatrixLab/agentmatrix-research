@@ -1,14 +1,13 @@
-name: Deploy GitHub Pages
+name: Deploy Factor Lab Dashboard
 
 on:
   push:
     branches:
-      - main
+      - backup/factor-lab-frontend-good
     paths:
+      - "frontend/factor-lab-dashboard/**"
       - "pages/**"
-      - ".github/workflows/github-pages.yml"
-      - "README.md"
-      - "docs/**"
+      - ".github/workflows/pages-factor-lab-dashboard.yml"
   workflow_dispatch:
 
 permissions:
@@ -17,23 +16,25 @@ permissions:
   id-token: write
 
 concurrency:
-  group: "github-pages"
+  group: pages
   cancel-in-progress: true
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Pages
+      - name: Configure Pages
         uses: actions/configure-pages@v5
+        with:
+          enablement: true
 
-      - name: Upload Pages artifact
+      - name: Upload Pages site
         uses: actions/upload-pages-artifact@v3
         with:
           path: pages
