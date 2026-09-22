@@ -1,6 +1,8 @@
 numpy>=2.0
 pandas>=2.2
 scipy>=1.14
+PyYAML>=6.0
+rqdatac>=3.7
 Flask>=3.0
 flask-cors>=5.0
 gunicorn>=22.0

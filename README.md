@@ -101,6 +101,20 @@ python -m research_core.factor_lab.cli run-factor-research --factor-set wq101 --
 python -m research_core.strategy_engine.cli build-alpha-strategy --validated-run runtime/factor_lab/jobs/<job_id>.json --rebalance-frequency daily --top-n 50
 ```
 
+### Deterministic Single-Factor Validation
+
+Configure RQData credentials in the local environment, then run:
+
+```bash
+make validate FACTOR=turnover_20d
+```
+
+All dates, fields, costs, and gate thresholds come from
+`configs/validation_gates.yaml`. Results are written under
+`data/factor_lab/validation_runs/<factor_id>/`; missing fields produce
+`needs_human.json`. The default `license_checked: false` permits only
+`internal_preview`, and `external_release` fails closed.
+
 ### Factor Lab Truth Compare (factor values validation)
 
 Upload-style factor values are compared point-by-point against the library truth
