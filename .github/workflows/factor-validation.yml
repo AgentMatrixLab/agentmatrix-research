@@ -9,6 +9,8 @@ on:
       - 'research_core/backtest_adapter/**'
       - 'registry/factor_registry/**'
       - 'submissions/**'
+      - 'configs/validation_gates.yaml'
+      - 'Makefile'
       - 'contracts/factor_research.py'
       - 'contracts/backtest.py'
   workflow_dispatch:
@@ -38,7 +40,7 @@ jobs:
           python-version: '3.11'
 
       - name: Install dependencies
-        run: pip install numpy pandas scipy pytest Flask flask-cors pyarrow -q
+        run: pip install numpy pandas scipy pytest PyYAML Flask flask-cors pyarrow -q
 
       - name: Detect changed factors
         id: detect
