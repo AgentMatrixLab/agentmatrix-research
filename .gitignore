@@ -21,6 +21,7 @@ runtime/factor_lab/
 runtime/strategy_engine/
 runtime/external_sim/
 runtime/gtja191/
+runtime/tools/
 runtime/*.log
 desktop/node_modules/
 desktop/build/

@@ -1,0 +1,133 @@
+schema_version: 1
+
+data:
+  provider: rqdata
+  universe: all_a
+  frequency: 1d
+  adjust_type: post
+  warmup_start: "2015-01-01"
+  validation_end: "2026-08-31"
+  batch_size: 300
+  cache_enabled: true
+  cache_dir: data/factor_lab/validation_cache
+  price_fields:
+    - close
+    - volume
+    - total_turnover
+    - limit_up
+    - limit_down
+  limit_up_field: limit_up
+  limit_down_field: limit_down
+  turnover_field: today
+  shares_field: circulation_a
+  required_metadata_fields:
+    - order_book_id
+    - trading_code
+    - listed_date
+    - de_listed_date
+    - status
+  excluded_security_prefixes:
+    - "200"
+    - "900"
+  minimum_listing_days: 120
+  active_status: Active
+
+split:
+  train_start: "2016-01-01"
+  train_end: "2023-12-31"
+  oos_start: "2024-01-01"
+  oos_end: "2026-08-31"
+
+factor:
+  primary: turnover_20d
+  fallback: avg_amount_log
+  definitions:
+    turnover_20d:
+      source_field: turnover_rate
+      transform: rolling_mean
+      window: 20
+      minimum_period_ratio: 1.0
+    avg_amount_log:
+      source_field: total_turnover
+      transform: rolling_mean_log
+      window: 20
+      minimum_period_ratio: 1.0
+
+forward_returns:
+  horizons:
+    - 5
+    - 10
+    - 20
+  primary_horizon: 10
+
+styles:
+  fields:
+    - size
+    - momentum
+    - volatility
+    - liquidity
+  size_shares_field: circulation_a
+  momentum_window: 252
+  momentum_minimum_periods: 126
+  volatility_window: 60
+  volatility_minimum_periods: 40
+  liquidity_window: 20
+  liquidity_minimum_periods: 20
+  minimum_cross_section: 20
+
+portfolio:
+  quantiles: 5
+  annual_trading_days: 252
+  rebalance_stride: 10
+  cost:
+    commission_per_side: 0.00015
+    stamp_tax_sell: 0.001
+    impact_per_side: 0.00085
+    round_trip_total: 0.003
+
+perturbation:
+  multipliers:
+    - 0.8
+    - 1.2
+
+gates:
+  order:
+    - coverage
+    - rank_ic
+    - oos_seal
+    - style_r2
+    - residual_ic
+    - cost_adjusted_return
+    - dd_vol_ratio
+    - parameter_perturbation
+  coverage:
+    minimum_daily_ratio: 0.95
+  rank_ic:
+    minimum_abs_mean: 0.01
+    minimum_abs_t_stat: 1.65
+  style_r2:
+    maximum_mean: 0.80
+  residual_ic:
+    minimum_retention: 0.50
+  cost_adjusted_return:
+    minimum_annualized: 0.0
+  dd_vol_ratio:
+    maximum: 3.0
+
+statistics:
+  minimum_ic_cross_section: 20
+  standard_deviation_ddof: 1
+  numeric_tolerance: 1.0e-12
+
+release:
+  mode: internal_preview
+  license_checked: false
+  external_mode: external_release
+
+output:
+  root: data/factor_lab/validation_runs
+  report_filename: validation_report.md
+  result_filename: validation_result.json
+  manifest_filename: run_manifest.json
+  needs_human_filename: needs_human.json
+  float_precision: 12

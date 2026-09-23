@@ -198,6 +198,17 @@ def build_parser() -> argparse.ArgumentParser:
     eval_parser.add_argument("--ic-threshold", type=float, default=0.02, help="Min |IC| to pass")
     eval_parser.add_argument("--turnover-warn", type=float, default=0.7, help="Turnover rate warning threshold")
 
+    validate_parser = subparsers.add_parser(
+        "validate",
+        help="Run the deterministic single-factor validation pipeline",
+    )
+    validate_parser.add_argument("--factor", required=True, help="Configured factor identifier")
+    validate_parser.add_argument(
+        "--config",
+        default="configs/validation_gates.yaml",
+        help="Validation gate configuration path",
+    )
+
     return parser
 
 
@@ -451,6 +462,15 @@ def main() -> None:
             }
             with open(args.output_json, "w") as f:
                 json.dump(out, f, indent=2, ensure_ascii=False)
+        return
+
+    if args.command == "validate":
+        from research_core.factor_lab.deterministic_validation import execute_validation
+
+        result = execute_validation(args.factor, config_path=args.config)
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        if result["status"] == "needs_human":
+            raise SystemExit(2)
         return
 
 
