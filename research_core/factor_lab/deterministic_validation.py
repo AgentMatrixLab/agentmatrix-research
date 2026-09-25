@@ -361,6 +361,41 @@ def _rolling_factor(panel: pd.DataFrame, factor_id: str, config: dict[str, Any],
     selected_window = int(window or definition["window"])
     min_periods = int(math.ceil(selected_window * float(definition["minimum_period_ratio"])))
     source_values = pd.to_numeric(panel[source], errors="coerce")
+    if definition["transform"] == "negative_pct_change":
+        _require_columns(panel, ["date", "code", "is_suspended"], factor_id)
+        ordered = panel.reset_index(drop=True).copy()
+        ordered["date"] = pd.to_datetime(ordered["date"]).dt.normalize()
+        ordered["_source_value"] = pd.to_numeric(ordered[source], errors="coerce")
+        ordered["_row_position"] = np.arange(len(ordered), dtype=np.int64)
+        ordered = ordered.sort_values(["code", "date"], kind="mergesort")
+        ordered["_session_position"] = pd.factorize(ordered["date"], sort=True)[0]
+        grouped = ordered.groupby("code", sort=False)
+        previous_close = grouped["_source_value"].shift(selected_window)
+        previous_position = grouped["_session_position"].shift(selected_window)
+        consecutive_sessions = (
+            ordered["_session_position"] - previous_position == selected_window
+        )
+        valid_observation = (
+            ordered["_source_value"].notna()
+            & (ordered["_source_value"] > 0)
+            & ordered["is_suspended"].eq(False)
+        )
+        valid_window = (
+            valid_observation.groupby(ordered["code"], sort=False)
+            .rolling(selected_window + 1, min_periods=selected_window + 1)
+            .sum()
+            .reset_index(level=0, drop=True)
+            .sort_index()
+            .eq(selected_window + 1)
+        )
+        factor = -(ordered["_source_value"] / previous_close - 1.0)
+        factor = factor.where(consecutive_sessions & valid_window)
+        return pd.Series(
+            factor.to_numpy()[np.argsort(ordered["_row_position"].to_numpy())],
+            index=panel.reset_index(drop=True).index,
+            dtype=float,
+        )
+
     rolled = source_values.groupby(panel["code"], sort=False).rolling(selected_window, min_periods=min_periods).mean()
     rolled = rolled.reset_index(level=0, drop=True).sort_index()
     if definition["transform"] == "rolling_mean_log":
@@ -368,6 +403,32 @@ def _rolling_factor(panel: pd.DataFrame, factor_id: str, config: dict[str, Any],
     elif definition["transform"] != "rolling_mean":
         raise ValueError(f"Unsupported factor transform: {definition['transform']}")
     return rolled.replace([np.inf, -np.inf], np.nan)
+
+
+def _factor_lookup(
+    panel: pd.DataFrame,
+    factor_id: str,
+    config: dict[str, Any],
+    *,
+    window: int | None = None,
+) -> pd.Series:
+    source_panel = panel.reset_index(drop=True).copy()
+    source_panel["date"] = pd.to_datetime(source_panel["date"]).dt.normalize()
+    values = _rolling_factor(source_panel, factor_id, config, window=window)
+    keys = pd.MultiIndex.from_frame(source_panel[["date", "code"]])
+    return pd.Series(values.to_numpy(), index=keys)
+
+
+def _map_factor_values(frame: pd.DataFrame, values: pd.Series) -> pd.Series:
+    keys = pd.MultiIndex.from_frame(
+        pd.DataFrame(
+            {
+                "date": pd.to_datetime(frame["date"]).dt.normalize().to_numpy(),
+                "code": frame["code"].to_numpy(),
+            }
+        )
+    )
+    return pd.Series(values.reindex(keys).to_numpy(), index=frame.index, dtype=float)
 
 
 def _build_styles(panel: pd.DataFrame, config: dict[str, Any]) -> pd.DataFrame:
@@ -596,7 +657,13 @@ def validate_panel(
         fallback_reason = fallback_reason or "turnover_rate_field_missing"
 
     clean = _eligible_panel(panel, config)
-    clean["factor_value"] = _rolling_factor(clean, selected_factor, config)
+    if config["factor"]["definitions"][selected_factor]["transform"] == "negative_pct_change":
+        clean["factor_value"] = _map_factor_values(
+            clean,
+            _factor_lookup(panel, selected_factor, config),
+        )
+    else:
+        clean["factor_value"] = _rolling_factor(clean, selected_factor, config)
     clean = _build_styles(clean, config)
     horizons = [int(value) for value in config["forward_returns"]["horizons"]]
     enriched = _attach_forward_returns(clean, horizons)
@@ -671,7 +738,13 @@ def validate_panel(
     for multiplier in config["perturbation"]["multipliers"]:
         window = max(1, int(round(base_window * float(multiplier))))
         perturbed = enriched.copy()
-        perturbed["perturbed_factor"] = _rolling_factor(clean, selected_factor, config, window=window)
+        if config["factor"]["definitions"][selected_factor]["transform"] == "negative_pct_change":
+            perturbed["perturbed_factor"] = _map_factor_values(
+                perturbed,
+                _factor_lookup(panel, selected_factor, config, window=window),
+            )
+        else:
+            perturbed["perturbed_factor"] = _rolling_factor(clean, selected_factor, config, window=window)
         perturbed_oos = _bounded_period(perturbed, split["oos_start"], split["oos_end"], horizons)
         series = _daily_rank_ic(
             perturbed_oos,
@@ -886,6 +959,10 @@ def execute_validation(
         "params_hash": params_hash,
         "result_hash": result_hash,
     }
+    constraints_path = PROJECT_ROOT / "constraints-rqsdk.txt"
+    if constraints_path.is_file():
+        manifest["constraints_file"] = constraints_path.name
+        manifest["constraints_sha256"] = _sha256(constraints_path.read_bytes())
     _write_json(paths.result, result_safe, precision=precision)
     _write_json(paths.manifest, manifest, precision=precision)
     paths.report.write_text(_report_markdown(result_safe), encoding="utf-8")
