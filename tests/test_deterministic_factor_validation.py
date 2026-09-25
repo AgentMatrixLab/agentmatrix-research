@@ -5,9 +5,14 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import pytest
 import yaml
 
-from research_core.factor_lab.deterministic_validation import execute_validation, load_validation_config
+from research_core.factor_lab.deterministic_validation import (
+    _rolling_factor,
+    execute_validation,
+    load_validation_config,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -64,6 +69,34 @@ def _config_in_tmp(tmp_path: Path, *, output_name: str, coverage_threshold: floa
     path = tmp_path / f"{output_name}.yaml"
     path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
     return path
+
+
+def test_reversal_uses_exact_22_sessions_without_crossing_missing_or_suspended_days() -> None:
+    config = load_validation_config(ROOT / "configs" / "validation_gates.yaml")
+    dates = pd.bdate_range("2020-01-01", periods=55)
+    close = 100.0 * np.cumprod(np.full(len(dates), 1.001))
+    rows = []
+    for code in ("000001.XSHE", "000002.XSHE"):
+        for position, date in enumerate(dates):
+            if code == "000001.XSHE" and position == 8:
+                continue
+            rows.append(
+                {
+                    "date": date,
+                    "code": code,
+                    "close": close[position],
+                    "is_suspended": code == "000001.XSHE" and position == 24,
+                }
+            )
+    panel = pd.DataFrame(rows)
+
+    signal = _rolling_factor(panel, "reversal_1m", config)
+    result = panel.assign(signal=signal)
+    first_code = result[result["code"] == "000001.XSHE"].set_index("date")["signal"]
+
+    assert pd.isna(first_code.loc[dates[22]])
+    assert pd.isna(first_code.loc[dates[31]])
+    assert first_code.loc[dates[47]] == pytest.approx(-(close[47] / close[25] - 1.0))
 
 
 def test_same_inputs_produce_identical_manifest_hashes(tmp_path: Path) -> None:
