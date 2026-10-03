@@ -128,6 +128,19 @@ def _paths(config: dict[str, Any], factor_id: str, *, segment: str = "oos") -> V
     )
 
 
+def _require_factor_coverage(precomputed: PrecomputedFactorSet, config: dict[str, Any]) -> None:
+    """The factor export must cover the frozen train..oos range; gaps are not silently filled."""
+    span_start, span_end = precomputed.coverage_span()
+    split = config["split"]
+    required_start = date.fromisoformat(str(split["train_start"]))
+    required_end = date.fromisoformat(str(split["oos_end"]))
+    if span_start > required_start or span_end < required_end:
+        raise PrecomputedFactorError(
+            "precomputed factor file does not cover the frozen train..oos range "
+            f"(file {span_start}..{span_end}, required {required_start}..{required_end})"
+        )
+
+
 def _write_json(path: Path, payload: dict[str, Any], *, precision: int) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
@@ -1062,12 +1075,16 @@ def execute_validation(
     factor_sidecar: str | Path | None = None,
     panel_file: str | Path | None = None,
     panel_sidecar: str | Path | None = None,
+    precomputed: PrecomputedFactorSet | None = None,
+    extra_manifest: dict[str, Any] | None = None,
     segment: str = "oos",
 ) -> dict[str, Any]:
     if segment not in SEGMENTS:
         raise ValueError(f"segment must be one of {SEGMENTS}, got {segment!r}")
     if panel is not None and panel_file is not None:
         raise ValueError("pass either panel or panel_file, not both")
+    if precomputed is not None and factor_file is not None:
+        raise ValueError("pass either factor_file or precomputed, not both")
     panel_provenance: dict[str, Any] = {}
     config = load_validation_config(config_path)
     paths = _paths(config, factor_id, segment=segment)
@@ -1076,21 +1093,14 @@ def execute_validation(
         paths.needs_human.unlink()
     precision = int(config["output"]["float_precision"])
 
-    precomputed: PrecomputedFactorSet | None = None
+    precomputed_set = precomputed
     if factor_file is not None:
         # Contract violations raise PrecomputedFactorError, which is intentionally not
         # caught here: a bad factor export must stop the run, never degrade silently.
-        precomputed = load_precomputed_factors(factor_file, sidecar_path=factor_sidecar)
-        span_start, span_end = precomputed.coverage_span()
-        split = config["split"]
-        if span_start > date.fromisoformat(str(split["train_start"])) or span_end < date.fromisoformat(
-            str(split["oos_end"])
-        ):
-            raise PrecomputedFactorError(
-                "precomputed factor file does not cover the frozen train..oos range "
-                f"(file {span_start}..{span_end}, required {split['train_start']}..{split['oos_end']})"
-            )
-        precomputed.require(factor_id)
+        precomputed_set = load_precomputed_factors(factor_file, sidecar_path=factor_sidecar)
+    if precomputed_set is not None:
+        _require_factor_coverage(precomputed_set, config)
+        precomputed_set.require(factor_id)
 
     try:
         if panel is not None:
@@ -1118,7 +1128,7 @@ def execute_validation(
             factor_id,
             config,
             source_metadata=loaded_metadata,
-            precomputed=precomputed,
+            precomputed=precomputed_set,
             segment=segment,
         )
     except MissingDataError as exc:
@@ -1141,14 +1151,15 @@ def execute_validation(
         "params_hash": params_hash,
         "result_hash": result_hash,
         "segment": segment,
-        "factor_source": "precomputed_parquet" if precomputed is not None else "pipeline_transform",
+        "factor_source": "precomputed_parquet" if precomputed_set is not None else "pipeline_transform",
     }
     manifest.update(panel_provenance)
-    if precomputed is not None:
-        manifest["factor_file"] = precomputed.path.name
-        manifest["factor_file_sha256"] = precomputed.sha256
-        manifest["factor_sidecar_data_start"] = precomputed.sidecar["data_start"]
-        manifest["factor_sidecar_data_end"] = precomputed.sidecar["data_end"]
+    manifest.update(extra_manifest or {})
+    if precomputed_set is not None:
+        manifest["factor_file"] = precomputed_set.path.name
+        manifest["factor_file_sha256"] = precomputed_set.sha256
+        manifest["factor_sidecar_data_start"] = precomputed_set.sidecar["data_start"]
+        manifest["factor_sidecar_data_end"] = precomputed_set.sidecar["data_end"]
     constraints_path = PROJECT_ROOT / "constraints-rqsdk.txt"
     if constraints_path.is_file():
         manifest["constraints_file"] = constraints_path.name
