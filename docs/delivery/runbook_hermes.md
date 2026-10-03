@@ -207,6 +207,42 @@ reversal_1m,一月反转,"-(close_t / close_{t-22} - 1)",price_momentum,"close,d
   - `outputs.batch_summary_sha256`
 - 每个因子的 `validation_report.md` / `validation_result.json` / `run_manifest.json` 仍写到 `config.output.root/<factor_id>/`（`train` 段在 `.../<factor_id>/train/`）。
 
+### 5.3 全链路命令顺序（照这个顺序跑）
+
+```bash
+# 1) 批量验证（有因子报错时退出码 3，但整批已经跑完）
+python -X utf8 -m research_core.factor_lab.cli validate-batch \
+  --candidates candidate_list.csv --config configs/validation_gates.yaml \
+  --panel-file panel.parquet --factor-file factors.parquet \
+  --segment oos --output-dir batch/
+
+# 2) 生成因子目录（状态只来自真实运行结果，没跑的写 not_run）
+python -X utf8 scripts/build_factor_catalog.py \
+  --candidates candidate_list.csv \
+  --batch-manifest batch/batch_manifest.json \
+  --output batch/factor_catalog.csv
+
+# 3) 打包（只收 validated；一个都没通过时退出码 4 并且不出包）
+python -X utf8 scripts/package_delivery.py \
+  --batch-manifest batch/batch_manifest.json \
+  --candidates candidate_list.csv \
+  --output-dir delivery_package/
+
+# 4) 自检互查（DS 收到结果后也会跑同一个命令）
+python -X utf8 scripts/cross_check_delivery.py \
+  --batch-manifest batch/batch_manifest.json \
+  --panel-file panel.parquet --factor-file factors.parquet \
+  --candidates candidate_list.csv \
+  --factor-catalog delivery_package/factor_catalog.csv \
+  --package-manifest delivery_package/package_manifest.json \
+  --config configs/validation_gates.yaml \
+  --output batch/cross_check.json
+```
+
+互查会独立重算所有哈希（面板/因子文件/逐因子产物/`result_hash`），并把报告、`batch_summary.csv`、`factor_catalog.csv`、`package_manifest.json` 与 `batch_manifest.json` 逐项对齐。**退出码 `0` = 无不一致，`5` = 有（会在 JSON 里逐条列出），`2` = 没法查（输入缺失）。**
+
+**请把下面这些回传给 DS：** `batch/`（含 `batch_manifest.json`、`batch_summary.csv`、`cross_check.json`）、`panel.parquet` + sidecar、`factors.parquet` + sidecar、`candidate_list.csv`、`delivery_package/package_manifest.json`、以及服务器上 `git rev-parse HEAD` 的输出。
+
 ## 6. 输出文件
 
 输出根目录来自 `config.output.root`（默认 `data/factor_lab/validation_runs`）：
