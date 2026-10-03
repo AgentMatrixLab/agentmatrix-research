@@ -29,6 +29,8 @@ REQUIRED_CANDIDATE_COLUMNS = ("factor_id",)
 SUMMARY_COLUMNS = (
     "factor_id",
     "status",
+    "risk_exposure",
+    "window",
     "failed_gates",
     "reason",
     "rank_ic_mean_primary",
@@ -43,6 +45,8 @@ SUMMARY_COLUMNS = (
     "manifest_path",
     "report_path",
 )
+_TRUE_VALUES = {"true", "1", "yes", "y", "t"}
+_FALSE_VALUES = {"", "false", "0", "no", "n", "f"}
 
 
 class BatchValidationError(ValueError):
@@ -53,10 +57,46 @@ class BatchValidationError(ValueError):
 class Candidate:
     factor_id: str
     metadata: dict[str, str]
+    risk_exposure: bool = False
+    window: int | None = None
+
+
+def _parse_risk_exposure(raw: str, factor_id: str, position: int) -> bool:
+    value = str(raw).strip().lower()
+    if value in _TRUE_VALUES:
+        return True
+    if value in _FALSE_VALUES:
+        return False
+    raise BatchValidationError(
+        f"candidate list row {position} ({factor_id}) has an invalid risk_exposure value: {raw!r} "
+        "(use true/false)"
+    )
+
+
+def _parse_window(raw: str, factor_id: str, position: int) -> int | None:
+    value = str(raw).strip()
+    if not value:
+        return None
+    try:
+        window = int(value)
+    except ValueError as exc:
+        raise BatchValidationError(
+            f"candidate list row {position} ({factor_id}) has a non-integer window: {raw!r}"
+        ) from exc
+    if window < 1:
+        raise BatchValidationError(
+            f"candidate list row {position} ({factor_id}) has a non-positive window: {raw!r}"
+        )
+    return window
 
 
 def load_candidate_list(path: str | Path) -> list[Candidate]:
-    """Read candidate_list.csv. ``factor_id`` is required; other columns pass through."""
+    """Read candidate_list.csv. ``factor_id`` is required; every other column passes through.
+
+    ``risk_exposure`` (true/false) and ``window`` (positive integer) get validated here because
+    they change how a factor is treated: a risk exposure still runs but never counts as effective
+    alpha, and ``window`` defines the perturbed parameterization.
+    """
     candidates_path = Path(path)
     if not candidates_path.is_file():
         raise BatchValidationError(f"candidate list does not exist: {candidates_path}")
@@ -82,7 +122,14 @@ def load_candidate_list(path: str | Path) -> list[Candidate]:
             raise BatchValidationError(f"candidate list has a duplicate factor_id: {factor_id}")
         seen.add(factor_id)
         metadata = {str(key): str(value) for key, value in row.items() if str(key) != "factor_id"}
-        candidates.append(Candidate(factor_id=factor_id, metadata=metadata))
+        candidates.append(
+            Candidate(
+                factor_id=factor_id,
+                metadata=metadata,
+                risk_exposure=_parse_risk_exposure(row.get("risk_exposure", ""), factor_id, position),
+                window=_parse_window(row.get("window", ""), factor_id, position),
+            )
+        )
     return candidates
 
 
@@ -175,6 +222,8 @@ def _build_entry(
     outcome: dict[str, Any],
     metadata: dict[str, str],
     primary_horizon: int,
+    risk_exposure: bool = False,
+    window: int | None = None,
 ) -> dict[str, Any]:
     """Read the written result artifact so the summary carries the real metrics."""
     artifacts = {
@@ -186,6 +235,8 @@ def _build_entry(
     return {
         "factor_id": factor_id,
         "status": status,
+        "risk_exposure": risk_exposure,
+        "window": window,
         "failed_gates": list(payload.get("failed_gates") or []),
         "reason": _rejection_reason(payload),
         "metadata": metadata,
@@ -256,6 +307,17 @@ def run_batch(
     for candidate in candidates:
         factor_id = candidate.factor_id
         try:
+            sidecar_window = factor_set.declared_base_window(factor_id)
+            if (
+                candidate.window is not None
+                and sidecar_window is not None
+                and candidate.window != sidecar_window
+            ):
+                raise BatchValidationError(
+                    f"{factor_id}: candidate_list declares window={candidate.window} but the factor "
+                    f"file sidecar declares window={sidecar_window}; refusing to guess which one "
+                    "defines the perturbed parameterization"
+                )
             outcome = execute_validation(
                 factor_id,
                 config_path=config_path,
@@ -264,12 +326,15 @@ def run_batch(
                 precomputed=factor_set,
                 segment=segment,
                 extra_manifest=panel_provenance,
+                base_window_override=candidate.window,
             )
         except Exception as exc:  # one bad factor must not stop the batch
             entries.append(
                 {
                     "factor_id": factor_id,
                     "status": "error",
+                    "risk_exposure": candidate.risk_exposure,
+                    "window": candidate.window,
                     "failed_gates": [],
                     "reason": f"{type(exc).__name__}: {exc}",
                     "metadata": candidate.metadata,
@@ -288,6 +353,8 @@ def run_batch(
                 {
                     "factor_id": factor_id,
                     "status": "needs_human",
+                    "risk_exposure": candidate.risk_exposure,
+                    "window": candidate.window,
                     "failed_gates": [],
                     "reason": str(outcome.get("reason", "")),
                     "metadata": candidate.metadata,
@@ -307,6 +374,8 @@ def run_batch(
                 outcome=outcome,
                 metadata=candidate.metadata,
                 primary_horizon=primary_horizon,
+                risk_exposure=candidate.risk_exposure,
+                window=candidate.window,
             )
         )
 
@@ -320,6 +389,8 @@ def run_batch(
                 {
                     "factor_id": entry["factor_id"],
                     "status": entry["status"],
+                    "risk_exposure": "true" if entry.get("risk_exposure") else "false",
+                    "window": "" if entry.get("window") is None else str(entry["window"]),
                     "failed_gates": ";".join(entry.get("failed_gates") or []),
                     "reason": entry.get("reason", ""),
                     "rank_ic_mean_primary": _csv_value(metrics.get("rank_ic_mean_primary")),
@@ -339,6 +410,20 @@ def run_batch(
     counts = {"validated": 0, "rejected": 0, "train_only": 0, "needs_human": 0, "error": 0}
     for entry in entries:
         counts[entry["status"]] = counts.get(entry["status"], 0) + 1
+    # Ruling (接龙10): risk-exposure factors run like any other, but they are never part of the
+    # effective alpha count and never enter the delivery package.
+    effective_alpha = [
+        entry["factor_id"]
+        for entry in entries
+        if entry["status"] == "validated" and not entry.get("risk_exposure")
+    ]
+    validated_risk_exposure = [
+        entry["factor_id"]
+        for entry in entries
+        if entry["status"] == "validated" and entry.get("risk_exposure")
+    ]
+    counts["validated_effective_alpha"] = len(effective_alpha)
+    counts["validated_risk_exposure"] = len(validated_risk_exposure)
 
     manifest = {
         "batch_id": output_root.name,
@@ -349,6 +434,9 @@ def run_batch(
         "candidates_file_sha256": _sha256_file(Path(candidates_path)),
         "candidate_count": len(candidates),
         "factor_ids": [candidate.factor_id for candidate in candidates],
+        "risk_exposure_factor_ids": [
+            candidate.factor_id for candidate in candidates if candidate.risk_exposure
+        ],
         "panel_file": panel.path.name,
         "panel_file_sha256": panel.sha256,
         "panel_price_basis": panel.price_basis,
@@ -362,6 +450,8 @@ def run_batch(
         "parameters": _parameters_snapshot(config),
         "counts": counts,
         "validated": [entry["factor_id"] for entry in entries if entry["status"] == "validated"],
+        "validated_effective_alpha": effective_alpha,
+        "validated_risk_exposure": validated_risk_exposure,
         "rejected": [entry["factor_id"] for entry in entries if entry["status"] == "rejected"],
         "errors": [entry["factor_id"] for entry in entries if entry["status"] == "error"],
         "needs_human": [entry["factor_id"] for entry in entries if entry["status"] == "needs_human"],

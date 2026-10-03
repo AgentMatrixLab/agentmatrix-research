@@ -236,12 +236,18 @@ class PrecomputedFactorSet:
             raise PrecomputedFactorError(f"sidecar factors is missing base factor {factor_id!r}")
         return int(entry["window"])
 
-    def require_perturbation(self, factor_id: str, window: int) -> pd.Series:
-        name = perturbation_factor_name(factor_id, window)
-        return self._require(
-            name,
-            purpose=f"the parameter_perturbation gate of {factor_id!r} at window {int(window)}",
-        )
+    def declared_base_window(self, factor_id: str) -> int | None:
+        """Sidecar base window, or ``None`` when the sidecar does not declare this factor."""
+        entry = self.sidecar["factors"].get(factor_id)
+        return None if entry is None else int(entry["window"])
+
+    def optional_perturbation(self, factor_id: str, window: int) -> pd.Series | None:
+        """Perturbed parameterization, or ``None`` when the export does not carry it.
+
+        Ruling (接龙10, 扰动 A+B): a missing variant must NOT abort the run. The caller records
+        the ``parameter_perturbation`` gate as unmeasured and therefore not passed.
+        """
+        return self.series.get(perturbation_factor_name(factor_id, window))
 
     def coverage_span(self) -> tuple[date, date]:
         return date.fromisoformat(self.sidecar["data_start"]), date.fromisoformat(self.sidecar["data_end"])

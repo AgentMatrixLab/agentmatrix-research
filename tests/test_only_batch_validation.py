@@ -39,7 +39,9 @@ def _long_frame(series: pd.Series, factor_name: str) -> pd.DataFrame:
     return frame[["date", "code", "factor_name", "value"]]
 
 
-def _write_multi_factor_file(tmp_path: Path, panel: pd.DataFrame, config: dict) -> Path:
+def _write_multi_factor_file(
+    tmp_path: Path, panel: pd.DataFrame, config: dict, *, include_perturbation: bool = True
+) -> Path:
     """Export two factors, each with its required perturbation variants."""
     frames: list[pd.DataFrame] = []
     factors: dict[str, dict[str, int]] = {}
@@ -47,6 +49,8 @@ def _write_multi_factor_file(tmp_path: Path, panel: pd.DataFrame, config: dict) 
         base_window = int(config["factor"]["definitions"][factor_id]["window"])
         factors[factor_id] = {"window": base_window}
         frames.append(_long_frame(_factor_lookup(panel, factor_id, config), factor_id))
+        if not include_perturbation:
+            continue
         for multiplier in config["perturbation"]["multipliers"]:
             window = max(1, int(round(base_window * float(multiplier))))
             frames.append(
@@ -93,13 +97,49 @@ def _write_panel_file(tmp_path: Path, panel: pd.DataFrame) -> Path:
     return path
 
 
-def _write_candidates(tmp_path: Path, factor_ids: list[str]) -> Path:
+def _write_candidates(
+    tmp_path: Path,
+    factor_ids: list[str],
+    *,
+    risk_exposure: tuple[str, ...] = (),
+    windows: dict[str, int] | None = None,
+    raw_rows: list[dict[str, str]] | None = None,
+) -> Path:
+    """Write the ruled 9-column candidate list (接龙10)."""
+    fields = [
+        "factor_id",
+        "name",
+        "formula",
+        "category",
+        "required_fields",
+        "direction",
+        "status",
+        "risk_exposure",
+        "window",
+    ]
+    window_map = windows or {}
     path = tmp_path / "test_only_candidate_list.csv"
     with path.open("w", encoding="utf-8", newline="") as stream:
-        writer = csv.DictWriter(stream, fieldnames=["factor_id", "name", "category"])
+        writer = csv.DictWriter(stream, fieldnames=fields)
         writer.writeheader()
+        if raw_rows is not None:
+            for row in raw_rows:
+                writer.writerow({field: row.get(field, "") for field in fields})
+            return path
         for index, factor_id in enumerate(factor_ids):
-            writer.writerow({"factor_id": factor_id, "name": f"test only {index}", "category": "test_only"})
+            writer.writerow(
+                {
+                    "factor_id": factor_id,
+                    "name": f"test only {index}",
+                    "formula": "",
+                    "category": "test_only",
+                    "required_fields": "",
+                    "direction": "",
+                    "status": "test_only",
+                    "risk_exposure": "true" if factor_id in risk_exposure else "false",
+                    "window": window_map.get(factor_id, ""),
+                }
+            )
     return path
 
 
@@ -189,6 +229,137 @@ def test_only_batch_records_a_failure_and_keeps_running(
         segment="oos",
     )
     assert single["manifest"]["result_hash"] == by_id[FACTOR_ID]["result_hash"]
+
+
+def test_only_candidate_list_parses_risk_exposure_and_window(tmp_path: Path) -> None:
+    path = _write_candidates(
+        tmp_path,
+        [FACTOR_ID, SECOND_FACTOR_ID],
+        risk_exposure=(SECOND_FACTOR_ID,),
+        windows={FACTOR_ID: 22},
+    )
+
+    candidates = load_candidate_list(path)
+
+    assert candidates[0].factor_id == FACTOR_ID
+    assert candidates[0].risk_exposure is False
+    assert candidates[0].window == 22
+    assert candidates[1].risk_exposure is True
+    assert candidates[1].window is None
+
+
+def test_only_candidate_list_rejects_a_bad_risk_exposure_value(tmp_path: Path) -> None:
+    path = _write_candidates(
+        tmp_path, [FACTOR_ID], raw_rows=[{"factor_id": FACTOR_ID, "risk_exposure": "maybe"}]
+    )
+
+    with pytest.raises(BatchValidationError, match="risk_exposure"):
+        load_candidate_list(path)
+
+
+def test_only_candidate_list_rejects_a_non_positive_window(tmp_path: Path) -> None:
+    path = _write_candidates(
+        tmp_path, [FACTOR_ID], raw_rows=[{"factor_id": FACTOR_ID, "window": "0"}]
+    )
+
+    with pytest.raises(BatchValidationError, match="window"):
+        load_candidate_list(path)
+
+
+def test_only_batch_carries_risk_exposure_and_window(
+    tmp_path: Path, synthetic_panel: pd.DataFrame, test_config: dict
+) -> None:
+    config_path = _write_config(tmp_path, test_config)
+    panel_file = _write_panel_file(tmp_path, synthetic_panel)
+    factor_file = _write_multi_factor_file(tmp_path, synthetic_panel, test_config)
+    candidates = _write_candidates(
+        tmp_path,
+        [FACTOR_ID, SECOND_FACTOR_ID],
+        risk_exposure=(SECOND_FACTOR_ID,),
+        windows={FACTOR_ID: 22},
+    )
+
+    payload = run_batch(
+        candidates,
+        config_path=config_path,
+        panel_file=panel_file,
+        factor_file=factor_file,
+        segment="oos",
+        output_dir=tmp_path / "batch_risk",
+    )
+
+    assert payload["risk_exposure_factor_ids"] == [SECOND_FACTOR_ID]
+    by_id = {entry["factor_id"]: entry for entry in payload["results"]}
+    assert by_id[FACTOR_ID]["risk_exposure"] is False
+    assert by_id[FACTOR_ID]["window"] == 22
+    assert by_id[SECOND_FACTOR_ID]["risk_exposure"] is True
+    assert by_id[SECOND_FACTOR_ID]["window"] is None
+    # a risk exposure is never counted as effective alpha, whatever its verdict
+    for factor_id in payload["validated_effective_alpha"]:
+        assert factor_id != SECOND_FACTOR_ID
+    assert payload["counts"]["validated_effective_alpha"] == len(payload["validated_effective_alpha"])
+    assert payload["counts"]["validated_risk_exposure"] == len(payload["validated_risk_exposure"])
+
+    summary = pd.read_csv(Path(payload["outputs"]["batch_summary_csv"]), dtype=str, keep_default_na=False)
+    assert list(summary["risk_exposure"]) == ["false", "true"]
+    assert list(summary["window"]) == ["22", ""]
+
+
+def test_only_window_conflict_between_csv_and_sidecar_is_isolated(
+    tmp_path: Path, synthetic_panel: pd.DataFrame, test_config: dict
+) -> None:
+    config_path = _write_config(tmp_path, test_config)
+    panel_file = _write_panel_file(tmp_path, synthetic_panel)
+    factor_file = _write_multi_factor_file(tmp_path, synthetic_panel, test_config)
+    candidates = _write_candidates(
+        tmp_path,
+        [FACTOR_ID, SECOND_FACTOR_ID],
+        windows={FACTOR_ID: 22, SECOND_FACTOR_ID: 19},  # sidecar says avg_amount_log window=20
+    )
+
+    payload = run_batch(
+        candidates,
+        config_path=config_path,
+        panel_file=panel_file,
+        factor_file=factor_file,
+        segment="oos",
+        output_dir=tmp_path / "batch_window_conflict",
+    )
+
+    by_id = {entry["factor_id"]: entry for entry in payload["results"]}
+    assert by_id[SECOND_FACTOR_ID]["status"] == "error"
+    assert "window" in by_id[SECOND_FACTOR_ID]["reason"]
+    assert by_id[FACTOR_ID]["status"] in {"validated", "rejected"}
+    assert payload["counts"]["error"] == 1
+
+
+def test_only_missing_perturbation_variant_is_rejected_not_an_error(
+    tmp_path: Path, synthetic_panel: pd.DataFrame, test_config: dict
+) -> None:
+    """Ruling A+B: unmeasured perturbation must show up as a failed gate, not abort the batch."""
+    config_path = _write_config(tmp_path, test_config)
+    panel_file = _write_panel_file(tmp_path, synthetic_panel)
+    factor_file = _write_multi_factor_file(tmp_path, synthetic_panel, test_config, include_perturbation=False)
+    candidates = _write_candidates(tmp_path, [FACTOR_ID])
+
+    payload = run_batch(
+        candidates,
+        config_path=config_path,
+        panel_file=panel_file,
+        factor_file=factor_file,
+        segment="oos",
+        output_dir=tmp_path / "batch_unmeasured",
+    )
+
+    entry = payload["results"][0]
+    assert entry["status"] == "rejected"
+    assert "parameter_perturbation" in entry["failed_gates"]
+    assert payload["counts"]["error"] == 0
+    result_payload = json.loads(Path(entry["artifacts"]["result"]).read_text(encoding="utf-8"))
+    gate = next(item for item in result_payload["gates"] if item["name"] == "parameter_perturbation")
+    assert gate["passed"] is False
+    assert gate["actual"]["measured"] is False
+    assert gate["threshold"]["unmeasured_counts_as"] == "not_passed"
 
 
 def test_only_batch_train_segment_reports_no_oos_metrics(

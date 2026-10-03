@@ -18,6 +18,9 @@ CATALOG_COLUMNS = (
     "category",
     "required_fields",
     "direction",
+    "risk_exposure",
+    "counts_as_alpha",
+    "window",
     "status",
     "failed_gates",
     "reason",
@@ -54,6 +57,8 @@ def _entry_from_result_files(factor_dir: Path) -> dict[str, Any] | None:
             "failed_gates": [],
             "reason": str(payload.get("reason", "")),
             "result_hash": None,
+            "risk_exposure": False,
+            "window": None,
             "evidence": str(needs_human_path),
             "artifacts": {"needs_human": str(needs_human_path)},
         }
@@ -63,6 +68,8 @@ def _entry_from_result_files(factor_dir: Path) -> dict[str, Any] | None:
         "failed_gates": list(payload.get("failed_gates") or []),
         "reason": _rejection_reason(payload),
         "result_hash": manifest.get("result_hash"),
+        "risk_exposure": False,
+        "window": None,
         "evidence": str(manifest_path if manifest_path.is_file() else result_path),
         "artifacts": {
             "report": str(factor_dir / "validation_report.md"),
@@ -104,6 +111,8 @@ def index_from_batch_manifest(batch_manifest: str | Path) -> dict[str, dict[str,
             "failed_gates": list(entry.get("failed_gates") or []),
             "reason": str(entry.get("reason", "")),
             "result_hash": entry.get("result_hash"),
+            "risk_exposure": bool(entry.get("risk_exposure")),
+            "window": entry.get("window"),
             "evidence": str(path),
             "artifacts": dict(entry.get("artifacts") or {}),
         }
@@ -137,6 +146,11 @@ def build_factor_catalog(
         row = {"factor_id": candidate.factor_id}
         for column in METADATA_COLUMNS:
             row[column] = candidate.metadata.get(column, "")
+        row["risk_exposure"] = "true" if candidate.risk_exposure else "false"
+        # Ruling (接龙10): risk exposures still run and still report a status, but they are not
+        # part of the effective alpha count and never enter the delivery package.
+        row["counts_as_alpha"] = "false" if candidate.risk_exposure else "true"
+        row["window"] = "" if candidate.window is None else str(candidate.window)
         if entry is None:
             row.update(
                 {

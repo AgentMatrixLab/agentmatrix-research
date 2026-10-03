@@ -18,6 +18,7 @@ from research_core.factor_lab.precomputed_factors import (
     PrecomputedFactorError,
     PrecomputedFactorSet,
     load_precomputed_factors,
+    perturbation_factor_name,
 )
 
 
@@ -739,6 +740,7 @@ def validate_panel(
     source_metadata: dict[str, Any] | None = None,
     precomputed: PrecomputedFactorSet | None = None,
     segment: str = "oos",
+    base_window_override: int | None = None,
 ) -> tuple[dict[str, Any], str]:
     if segment not in SEGMENTS:
         raise ValueError(f"segment must be one of {SEGMENTS}, got {segment!r}")
@@ -870,21 +872,36 @@ def validate_panel(
     base_sign = int(np.sign(raw_primary_unoriented_mean))
     perturbation_passed = base_sign != 0
     base_window = (
-        precomputed.base_window(selected_factor)
-        if precomputed is not None
-        else int(config["factor"]["definitions"][selected_factor]["window"])
+        int(base_window_override)
+        if base_window_override is not None
+        else (
+            precomputed.base_window(selected_factor)
+            if precomputed is not None
+            else int(config["factor"]["definitions"][selected_factor]["window"])
+        )
     )
+    unmeasured_variants: list[str] = []
     for multiplier in config["perturbation"]["multipliers"]:
         window = max(1, int(round(base_window * float(multiplier))))
         perturbed = enriched.copy()
         if precomputed is not None:
-            # A precomputed export must ship the perturbed parameterization as
-            # "<factor_id>|window=<w>"; if it does not, this raises instead of silently
-            # turning the parameter_perturbation gate into a free pass.
-            perturbed["perturbed_factor"] = _map_factor_values(
-                perturbed,
-                precomputed.require_perturbation(selected_factor, window),
-            )
+            # Ruling (接龙10, 扰动 A+B): the export should carry "<factor_id>|window=<w>".
+            # When it does not, the gate is recorded as unmeasured and therefore NOT passed;
+            # it must never abort the run and must never be treated as a pass.
+            variant_values = precomputed.optional_perturbation(selected_factor, window)
+            if variant_values is None:
+                missing_name = perturbation_factor_name(selected_factor, window)
+                unmeasured_variants.append(missing_name)
+                perturbation[str(multiplier)] = {
+                    "window": window,
+                    "rank_ic_mean": None,
+                    "sign_matches": False,
+                    "measured": False,
+                    "missing_factor_name": missing_name,
+                }
+                perturbation_passed = False
+                continue
+            perturbed["perturbed_factor"] = _map_factor_values(perturbed, variant_values)
         elif config["factor"]["definitions"][selected_factor]["transform"] == "negative_pct_change":
             perturbed["perturbed_factor"] = _map_factor_values(
                 perturbed,
@@ -905,6 +922,22 @@ def validate_panel(
         perturbation_passed = perturbation_passed and sign_matches
 
     gate_config = config["gates"]
+    perturbation_actual: Any = perturbation
+    perturbation_threshold: dict[str, Any] = {"require_same_rank_ic_sign": True}
+    if unmeasured_variants:
+        perturbation_actual = {
+            "measured": False,
+            "unmeasured_variants": sorted(set(unmeasured_variants)),
+            "reason": (
+                "the precomputed factor export does not provide the perturbed parameterization; "
+                "per ruling A+B this gate is not measured and therefore not passed"
+            ),
+            "variants": perturbation,
+        }
+        perturbation_threshold = {
+            "require_same_rank_ic_sign": True,
+            "unmeasured_counts_as": "not_passed",
+        }
     rank_threshold = gate_config["rank_ic"]
     primary_ic = rank_ic[f"{primary_horizon}d"]
     valid_train_labels = train[primary_return].notna()
@@ -971,8 +1004,8 @@ def validate_panel(
         "parameter_perturbation": _gate(
             "parameter_perturbation",
             perturbation_passed,
-            perturbation,
-            {"require_same_rank_ic_sign": True},
+            perturbation_actual,
+            perturbation_threshold,
         ),
     }
     ordered_gates = [gates[name] for name in gate_config["order"]]
@@ -1078,6 +1111,7 @@ def execute_validation(
     precomputed: PrecomputedFactorSet | None = None,
     extra_manifest: dict[str, Any] | None = None,
     segment: str = "oos",
+    base_window_override: int | None = None,
 ) -> dict[str, Any]:
     if segment not in SEGMENTS:
         raise ValueError(f"segment must be one of {SEGMENTS}, got {segment!r}")
@@ -1130,6 +1164,7 @@ def execute_validation(
             source_metadata=loaded_metadata,
             precomputed=precomputed_set,
             segment=segment,
+            base_window_override=base_window_override,
         )
     except MissingDataError as exc:
         needs_human = {

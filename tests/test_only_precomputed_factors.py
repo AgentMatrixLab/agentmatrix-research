@@ -353,14 +353,48 @@ def test_only_missing_factor_rows_are_never_filled(
     assert not gapped_values.index.get_level_values("code").isin(dropped).any()
 
 
-def test_only_missing_perturbation_variant_fails_instead_of_passing_the_gate(
+def test_only_missing_perturbation_variant_is_not_measured_and_not_passed(
     tmp_path: Path, synthetic_panel: pd.DataFrame, test_config: dict
 ) -> None:
+    """Ruling A+B: a missing variant must neither abort the run nor count as a pass."""
     path = _write_precomputed_file(tmp_path, synthetic_panel, test_config, include_perturbation=False)
     precomputed = load_precomputed_factors(path)
 
-    with pytest.raises(PrecomputedFactorError, match="parameter_perturbation"):
-        validate_panel(synthetic_panel, "reversal_1m", test_config, precomputed=precomputed)
+    result, _ = validate_panel(synthetic_panel, "reversal_1m", test_config, precomputed=precomputed)
+
+    assert result["status"] == "rejected"
+    assert "parameter_perturbation" in result["failed_gates"]
+    gate = next(item for item in result["gates"] if item["name"] == "parameter_perturbation")
+    assert gate["passed"] is False
+    assert gate["actual"]["measured"] is False
+    assert sorted(gate["actual"]["unmeasured_variants"]) == [
+        "reversal_1m|window=18",
+        "reversal_1m|window=26",
+    ]
+    assert gate["threshold"]["unmeasured_counts_as"] == "not_passed"
+    for multiplier in test_config["perturbation"]["multipliers"]:
+        variant = result["perturbation"][str(multiplier)]
+        assert variant["measured"] is False
+        assert variant["rank_ic_mean"] is None
+        assert variant["sign_matches"] is False
+    # the other gates still ran, i.e. the run completed instead of aborting
+    assert {item["name"] for item in result["gates"]} >= {"coverage", "rank_ic", "style_r2"}
+
+
+def test_only_measured_perturbation_keeps_the_plain_payload(
+    tmp_path: Path, synthetic_panel: pd.DataFrame, test_config: dict
+) -> None:
+    """A fully measured run must not gain extra keys, so native and precomputed stay identical."""
+    precomputed = load_precomputed_factors(_write_precomputed_file(tmp_path, synthetic_panel, test_config))
+
+    result, _ = validate_panel(synthetic_panel, "reversal_1m", test_config, precomputed=precomputed)
+
+    gate = next(item for item in result["gates"] if item["name"] == "parameter_perturbation")
+    assert "measured" not in gate["actual"]
+    assert gate["threshold"] == {"require_same_rank_ic_sign": True}
+    for multiplier in test_config["perturbation"]["multipliers"]:
+        variant = result["perturbation"][str(multiplier)]
+        assert set(variant) == {"window", "rank_ic_mean", "sign_matches"}
 
 
 def test_only_require_reports_a_missing_factor(
