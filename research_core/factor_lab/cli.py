@@ -241,6 +241,12 @@ def build_parser() -> argparse.ArgumentParser:
         default="oos",
         help="train writes training-period statistics only; oos runs the sealed out-of-sample gates",
     )
+    validate_parser.add_argument(
+        "--base-window",
+        type=int,
+        default=None,
+        help="Override the base window used to derive the parameter-perturbation variants",
+    )
 
     batch_parser = subparsers.add_parser(
         "validate-batch",
@@ -548,6 +554,7 @@ def main() -> None:
                 panel_file=args.panel_file or None,
                 panel_sidecar=args.panel_sidecar or None,
                 segment=args.segment,
+                base_window_override=args.base_window,
             )
         except (PrecomputedFactorError, PanelSourceError) as exc:
             print(

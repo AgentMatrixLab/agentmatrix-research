@@ -93,27 +93,47 @@ def _results_root(tmp_path: Path) -> Path:
     return root
 
 
-def _candidates(tmp_path: Path) -> Path:
+def _candidates(
+    tmp_path: Path,
+    *,
+    extra_factor_ids: tuple[str, ...] = (),
+    risk_exposure: tuple[str, ...] = (),
+) -> Path:
+    """Candidate list in the ruled 9-column shape (接龙10)."""
+    fields = [
+        "factor_id",
+        "name",
+        "formula",
+        "category",
+        "required_fields",
+        "direction",
+        "status",
+        "risk_exposure",
+        "window",
+    ]
+    rows: list[dict[str, str]] = [
+        {
+            "factor_id": GOOD,
+            "name": "One-Month Reversal",
+            "formula": "-(close_t / close_{t-22} - 1)",
+            "category": "price_momentum",
+            "required_fields": "close;date;code",
+            "direction": "negative_reversal",
+        },
+        {"factor_id": BAD, "name": "Momentum 20"},
+        {"factor_id": STUCK, "name": "RSI 6"},
+        {"factor_id": NEVER_RUN, "name": "Alpha 002"},
+    ]
+    for factor_id in extra_factor_ids:
+        rows.append({"factor_id": factor_id, "name": factor_id})
     path = tmp_path / "test_only_candidates.csv"
     with path.open("w", encoding="utf-8", newline="") as stream:
-        writer = csv.DictWriter(
-            stream,
-            fieldnames=["factor_id", "name", "formula", "category", "required_fields", "direction"],
-        )
+        writer = csv.DictWriter(stream, fieldnames=fields)
         writer.writeheader()
-        writer.writerow(
-            {
-                "factor_id": GOOD,
-                "name": "One-Month Reversal",
-                "formula": "-(close_t / close_{t-22} - 1)",
-                "category": "price_momentum",
-                "required_fields": "close;date;code",
-                "direction": "negative_reversal",
-            }
-        )
-        writer.writerow({"factor_id": BAD, "name": "Momentum 20"})
-        writer.writerow({"factor_id": STUCK, "name": "RSI 6"})
-        writer.writerow({"factor_id": NEVER_RUN, "name": "Alpha 002"})
+        for row in rows:
+            enriched = dict(row)
+            enriched["risk_exposure"] = "true" if enriched["factor_id"] in risk_exposure else "false"
+            writer.writerow({field: enriched.get(field, "") for field in fields})
     return path
 
 
@@ -172,6 +192,34 @@ def test_only_package_includes_only_validated_factors(tmp_path: Path) -> None:
     with catalog.open(encoding="utf-8", newline="") as stream:
         rows = list(csv.DictReader(stream))
     assert [row["status"] for row in rows] == ["validated", "rejected", "needs_human", "not_run"]
+
+
+def test_only_risk_exposure_is_never_packaged_as_alpha(tmp_path: Path) -> None:
+    """Ruling (接龙10): a risk exposure may pass every gate and still must not ship as alpha."""
+    risk_id = "hma20"
+    root = _results_root(tmp_path)
+    _write_result(root, risk_id, {"status": "validated", "failed_gates": [], "gates": []})
+    candidates = _candidates(tmp_path, extra_factor_ids=(risk_id,), risk_exposure=(risk_id,))
+
+    payload = build_delivery_package(
+        output_dir=tmp_path / "package_risk",
+        results_root=root,
+        candidates_path=candidates,
+    )
+
+    assert [item["factor_id"] for item in payload["included_factors"]] == [GOOD]
+    excluded = {item["factor_id"]: item for item in payload["excluded_factors"]}
+    assert excluded[risk_id]["status"] == "validated"
+    assert "risk_exposure" in excluded[risk_id]["reason"]
+    assert payload["risk_exposure_factor_ids"] == [risk_id]
+    assert not (tmp_path / "package_risk" / "factors" / risk_id).exists()
+
+    with (tmp_path / "package_risk" / "factor_catalog.csv").open(encoding="utf-8", newline="") as stream:
+        catalog = {row["factor_id"]: row for row in csv.DictReader(stream)}
+    assert catalog[risk_id]["risk_exposure"] == "true"
+    assert catalog[risk_id]["counts_as_alpha"] == "false"
+    assert catalog[GOOD]["risk_exposure"] == "false"
+    assert catalog[GOOD]["counts_as_alpha"] == "true"
 
 
 def test_only_package_warns_when_nothing_is_validated(tmp_path: Path) -> None:

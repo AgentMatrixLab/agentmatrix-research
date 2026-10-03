@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from research_core.factor_lab.batch_validation import load_candidate_list
 from research_core.factor_lab.factor_catalog import (
     build_factor_catalog,
     index_from_batch_manifest,
@@ -68,6 +69,15 @@ def build_delivery_package(
     package_root.mkdir(parents=True, exist_ok=True)
     factors_root = package_root / "factors"
 
+    # Ruling (接龙10): a risk exposure may pass every gate and still must never ship as alpha.
+    risk_ids: set[str] = {
+        factor_id for factor_id, entry in index.items() if entry.get("risk_exposure")
+    }
+    if candidates_path is not None:
+        risk_ids |= {
+            candidate.factor_id for candidate in load_candidate_list(candidates_path) if candidate.risk_exposure
+        }
+
     included: list[dict[str, Any]] = []
     excluded: list[dict[str, Any]] = []
     for factor_id in sorted(index):
@@ -79,6 +89,19 @@ def build_delivery_package(
                     "status": entry["status"],
                     "failed_gates": entry["failed_gates"],
                     "reason": entry["reason"],
+                }
+            )
+            continue
+        if factor_id in risk_ids:
+            excluded.append(
+                {
+                    "factor_id": factor_id,
+                    "status": entry["status"],
+                    "failed_gates": entry["failed_gates"],
+                    "reason": (
+                        "risk_exposure=true: passes the gates but does not count as effective "
+                        "alpha, so it is excluded from the delivery package"
+                    ),
                 }
             )
             continue
@@ -123,7 +146,10 @@ def build_delivery_package(
     manifest: dict[str, Any] = {
         "package_id": package_root.name,
         "created_at_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "rule": "only factors with status == 'validated' are included; everything else is listed as excluded",
+        "rule": (
+            "only factors with status == 'validated' AND risk_exposure == false are included; "
+            "everything else is listed as excluded with its status and reason"
+        ),
         "source": {
             "path": str(source_path),
             "sha256": _sha256_file(source_path) if source_path.is_file() else None,
@@ -133,6 +159,7 @@ def build_delivery_package(
             "excluded": len(excluded),
             "total_seen": len(index),
         },
+        "risk_exposure_factor_ids": sorted(risk_ids),
         "included_factors": included,
         "excluded_factors": excluded,
         "factor_catalog_csv": str(catalog_path) if catalog_path is not None else None,
@@ -140,7 +167,8 @@ def build_delivery_package(
     }
     if not included:
         manifest["warning"] = (
-            "no factor reached status 'validated'; this package contains no valid alpha factor"
+            "no factor reached status 'validated' with risk_exposure == false; "
+            "this package contains no valid alpha factor"
         )
     manifest_path = package_root / "package_manifest.json"
     manifest_path.write_text(
