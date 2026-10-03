@@ -33,9 +33,9 @@ data:
   active_status: Active
 
 split:
-  train_start: "2016-01-01"
-  train_end: "2023-12-31"
-  oos_start: "2024-01-01"
+  train_start: "2020-01-02"
+  train_end: "2022-12-31"
+  oos_start: "2023-01-01"
   oos_end: "2026-08-31"
 
 factor:
