@@ -24,7 +24,6 @@ from research_core.factor_lab.deterministic_validation import (
     _factor_lookup,
     _json_safe,
     execute_validation,
-    load_validation_config,
     validate_panel,
 )
 from research_core.factor_lab.precomputed_factors import (
@@ -34,7 +33,6 @@ from research_core.factor_lab.precomputed_factors import (
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-CONFIG_PATH = REPO_ROOT / "configs" / "validation_gates.yaml"
 
 # The brief fixes the floating-point tolerance for the equivalence check at 1e-10.
 FLOAT_TOLERANCE = 1e-10
@@ -57,58 +55,6 @@ def _assert_metrics_close(left: object, right: object, path: str = "$") -> None:
         )
     else:
         assert left == right, f"value mismatch at {path}: {left!r} != {right!r}"
-
-
-def _synthetic_panel() -> pd.DataFrame:
-    """Deterministic, synthetic all-A-shaped panel (TEST ONLY, not market data)."""
-    dates = pd.bdate_range("2014-01-02", "2019-12-31")
-    codes = [f"{index:06d}.XSHE" for index in range(1, 31)]
-    generator = np.random.default_rng(20261003)
-
-    closes = []
-    for position, _code in enumerate(codes):
-        shocks = generator.normal(0.0004, 0.02, len(dates))
-        level = 12.0 + position * 0.35
-        closes.append(level * np.exp(np.cumsum(shocks)))
-    close = np.concatenate(closes)
-    volume = np.concatenate(
-        [
-            1_000_000.0 + 1_000.0 * position + 10_000.0 * np.abs(np.sin(np.arange(len(dates)) / (7.0 + position)))
-            for position in range(len(codes))
-        ]
-    )
-
-    frame = pd.DataFrame(
-        {
-            "date": np.tile(dates.to_numpy(), len(codes)),
-            "code": np.repeat(codes, len(dates)),
-            "close": close,
-            "volume": volume,
-            "total_turnover": close * volume,
-            "limit_up": close * 1.1,
-            "limit_down": close * 0.9,
-            "circulation_a": 100_000_000.0,
-            "listed_date": pd.Timestamp("2010-01-04"),
-            "de_listed_date": pd.NaT,
-            "is_st": False,
-            "is_suspended": False,
-        }
-    )
-    frame["date"] = pd.to_datetime(frame["date"])
-    frame["listed_date"] = pd.to_datetime(frame["listed_date"])
-    frame["de_listed_date"] = pd.to_datetime(frame["de_listed_date"])
-    return frame
-
-
-def _test_config() -> dict:
-    config = copy.deepcopy(load_validation_config(CONFIG_PATH))
-    config["split"] = {
-        "train_start": "2016-01-01",
-        "train_end": "2017-12-31",
-        "oos_start": "2018-01-01",
-        "oos_end": "2019-12-31",
-    }
-    return config
 
 
 def _long_frame(series: pd.Series, factor_name: str) -> pd.DataFrame:
@@ -169,15 +115,6 @@ def _write_test_panel_file(tmp_path: Path, panel: pd.DataFrame) -> Path:
     }
     Path(f"{path}.json").write_text(json.dumps(metadata, ensure_ascii=False), encoding="utf-8")
     return path
-
-
-@pytest.fixture(scope="module")
-def synthetic_panel() -> pd.DataFrame:
-    return _synthetic_panel()
-
-@pytest.fixture(scope="module")
-def test_config() -> dict:
-    return _test_config()
 
 
 def test_only_precomputed_channel_reproduces_native_reversal_1m(
@@ -344,7 +281,8 @@ def test_only_cli_runs_fully_offline_from_panel_and_factor_files(
     assert Path(payload["artifacts"]["manifest"]).is_file()
 
 
-def test_only_missing_perturbation_variant_fails_instead_of_passing_the_gate(    tmp_path: Path, synthetic_panel: pd.DataFrame, test_config: dict
+def test_only_missing_perturbation_variant_fails_instead_of_passing_the_gate(
+    tmp_path: Path, synthetic_panel: pd.DataFrame, test_config: dict
 ) -> None:
     path = _write_precomputed_file(tmp_path, synthetic_panel, test_config, include_perturbation=False)
     precomputed = load_precomputed_factors(path)

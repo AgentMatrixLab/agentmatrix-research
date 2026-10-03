@@ -242,6 +242,43 @@ def build_parser() -> argparse.ArgumentParser:
         help="train writes training-period statistics only; oos runs the sealed out-of-sample gates",
     )
 
+    batch_parser = subparsers.add_parser(
+        "validate-batch",
+        help="Validate every factor in candidate_list.csv, one command, no aborting on failures",
+    )
+    batch_parser.add_argument("--candidates", required=True, help="candidate_list.csv path")
+    batch_parser.add_argument(
+        "--config",
+        default="configs/validation_gates.yaml",
+        help="Validation gate configuration path",
+    )
+    batch_parser.add_argument("--panel-file", required=True, help="Local validation-panel Parquet")
+    batch_parser.add_argument(
+        "--panel-sidecar", default="", help="Sidecar JSON for --panel-file"
+    )
+    batch_parser.add_argument(
+        "--factor-file", required=True, help="Local precomputed factor-values Parquet"
+    )
+    batch_parser.add_argument(
+        "--factor-sidecar", default="", help="Sidecar JSON for --factor-file"
+    )
+    batch_parser.add_argument(
+        "--segment",
+        choices=["train", "oos"],
+        default="oos",
+        help="train writes training-period statistics only; oos runs the sealed out-of-sample gates",
+    )
+    batch_parser.add_argument(
+        "--output-dir",
+        default="",
+        help="Where batch_manifest.json and batch_summary.csv go (default: a timestamped _batches dir)",
+    )
+    batch_parser.add_argument(
+        "--factors",
+        default="",
+        help="Optional comma separated subset of factor ids to run from the candidate list",
+    )
+
     return parser
 
 
@@ -524,6 +561,39 @@ def main() -> None:
         print(json.dumps(result, ensure_ascii=False, indent=2))
         if result["status"] == "needs_human":
             raise SystemExit(2)
+        return
+
+    if args.command == "validate-batch":
+        from research_core.factor_lab.batch_validation import BatchValidationError, run_batch
+        from research_core.factor_lab.panel_source import PanelSourceError
+        from research_core.factor_lab.precomputed_factors import PrecomputedFactorError
+
+        subset = [value.strip() for value in args.factors.split(",") if value.strip()]
+        try:
+            payload = run_batch(
+                args.candidates,
+                config_path=args.config,
+                panel_file=args.panel_file,
+                panel_sidecar=args.panel_sidecar or None,
+                factor_file=args.factor_file,
+                factor_sidecar=args.factor_sidecar or None,
+                segment=args.segment,
+                output_dir=args.output_dir or None,
+                factor_ids=subset or None,
+            )
+        except (BatchValidationError, PrecomputedFactorError, PanelSourceError) as exc:
+            print(
+                json.dumps(
+                    {"status": "error", "reason": str(exc)},
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+            raise SystemExit(2) from exc
+        summary = {key: value for key, value in payload.items() if key != "results"}
+        print(json.dumps(summary, ensure_ascii=False, indent=2))
+        if payload["counts"].get("error"):
+            raise SystemExit(3)
         return
 
 
