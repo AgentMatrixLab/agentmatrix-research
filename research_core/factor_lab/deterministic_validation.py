@@ -5,6 +5,7 @@ import json
 import math
 import subprocess
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -12,8 +13,17 @@ import numpy as np
 import pandas as pd
 import yaml
 
+from research_core.factor_lab.panel_source import load_validation_panel
+from research_core.factor_lab.precomputed_factors import (
+    PrecomputedFactorError,
+    PrecomputedFactorSet,
+    load_precomputed_factors,
+)
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+SEGMENTS = ("train", "oos")
 
 
 class MissingDataError(RuntimeError):
@@ -104,9 +114,11 @@ def _git_commit() -> str:
     ).stdout.strip()
 
 
-def _paths(config: dict[str, Any], factor_id: str) -> ValidationPaths:
+def _paths(config: dict[str, Any], factor_id: str, *, segment: str = "oos") -> ValidationPaths:
     output = config["output"]
     root = PROJECT_ROOT / output["root"] / factor_id
+    if segment != "oos":
+        root = root / segment
     return ValidationPaths(
         root=root,
         report=root / output["report_filename"],
@@ -626,13 +638,97 @@ def _gate(name: str, passed: bool, actual: Any, threshold: Any) -> dict[str, Any
     return {"name": name, "passed": bool(passed), "actual": actual, "threshold": threshold}
 
 
+def _training_segment_result(
+    train: pd.DataFrame,
+    clean: pd.DataFrame,
+    config: dict[str, Any],
+    *,
+    requested_factor: str,
+    selected_factor: str,
+    fallback_reason: str | None,
+    source_metadata: dict[str, Any] | None,
+    split: dict[str, Any],
+    scope: list[str],
+) -> dict[str, Any]:
+    """Training-period statistics only.
+
+    This path deliberately never touches the sealed out-of-sample window: it exists so that a
+    cluster representative can be picked without inspecting OOS results. No gate is evaluated
+    here and no OOS metric is computed or written.
+    """
+    release = config["release"]
+    stats_config = config["statistics"]
+    minimum_cross_section = int(stats_config["minimum_ic_cross_section"])
+    ddof = int(stats_config["standard_deviation_ddof"])
+    horizons = [int(value) for value in config["forward_returns"]["horizons"]]
+    primary_horizon = int(config["forward_returns"]["primary_horizon"])
+    primary_return = f"forward_return_{primary_horizon}d"
+
+    rank_ic: dict[str, Any] = {}
+    for horizon in horizons:
+        series = _daily_rank_ic(
+            train,
+            "factor_value",
+            f"forward_return_{horizon}d",
+            minimum_cross_section=minimum_cross_section,
+        )
+        rank_ic[f"{horizon}d"] = _ic_summary(series, ddof)
+    primary_mean = rank_ic[f"{primary_horizon}d"]["mean"]
+    if not math.isfinite(float(primary_mean)):
+        raise MissingDataError("Training period produced no valid RankIC observations.")
+
+    coverage_by_date = train.groupby("date")["factor_value"].apply(
+        lambda values: float(values.notna().mean())
+    )
+    coverage_actual = float(coverage_by_date.mean()) if len(coverage_by_date) else float("nan")
+    return {
+        "status": "train_only",
+        "segment": "train",
+        "requested_factor": requested_factor,
+        "factor_id": selected_factor,
+        "fallback_reason": fallback_reason,
+        "release_classification": release["mode"],
+        "license_checked": bool(release["license_checked"]),
+        "scope": list(scope),
+        "data": {
+            "provider": (source_metadata or {}).get("provider", "provided_panel"),
+            "universe": config["data"]["universe"],
+            "frequency": config["data"]["frequency"],
+            "adjust_type": config["data"]["adjust_type"],
+            "eligible_rows": int(len(clean)),
+            "eligible_codes": int(clean["code"].nunique()),
+            "eligible_dates": int(clean["date"].nunique()),
+        },
+        "training": {
+            "direction": 1.0 if float(primary_mean) >= 0 else -1.0,
+            "primary_rank_ic_mean": primary_mean,
+            "statistics_scope": [split["train_start"], split["train_end"]],
+        },
+        "train_rank_ic": rank_ic,
+        "coverage": {
+            "mean_daily_coverage": coverage_actual,
+            "minimum_daily_coverage": float(coverage_by_date.min()) if len(coverage_by_date) else float("nan"),
+        },
+        "gates": [],
+        "failed_gates": [],
+        "note": (
+            "training segment only: no out-of-sample statistic is computed, and no gate is "
+            "evaluated. Not usable as factor-validity evidence."
+        ),
+    }
+
+
 def validate_panel(
     panel: pd.DataFrame,
     requested_factor: str,
     config: dict[str, Any],
     *,
     source_metadata: dict[str, Any] | None = None,
+    precomputed: PrecomputedFactorSet | None = None,
+    segment: str = "oos",
 ) -> tuple[dict[str, Any], str]:
+    if segment not in SEGMENTS:
+        raise ValueError(f"segment must be one of {SEGMENTS}, got {segment!r}")
     release = config["release"]
     if release["mode"] == release["external_mode"] and not bool(release["license_checked"]):
         raise MissingDataError(
@@ -652,12 +748,20 @@ def validate_panel(
 
     selected_factor = requested_factor
     fallback_reason = (source_metadata or {}).get("fallback_reason")
-    if requested_factor == config["factor"]["primary"] and "turnover_rate" not in panel.columns:
+    if (
+        precomputed is None
+        and requested_factor == config["factor"]["primary"]
+        and "turnover_rate" not in panel.columns
+    ):
         selected_factor = config["factor"]["fallback"]
         fallback_reason = fallback_reason or "turnover_rate_field_missing"
 
     clean = _eligible_panel(panel, config)
-    if config["factor"]["definitions"][selected_factor]["transform"] == "negative_pct_change":
+    if precomputed is not None:
+        # Factor values come from a validated local export; the pipeline only maps them
+        # onto the eligible panel. No transform, threshold or split logic is bypassed.
+        clean["factor_value"] = _map_factor_values(clean, precomputed.require(selected_factor))
+    elif config["factor"]["definitions"][selected_factor]["transform"] == "negative_pct_change":
         clean["factor_value"] = _map_factor_values(
             clean,
             _factor_lookup(panel, selected_factor, config),
@@ -669,6 +773,24 @@ def validate_panel(
     enriched = _attach_forward_returns(clean, horizons)
     split = config["split"]
     train = _bounded_period(enriched, split["train_start"], split["train_end"], horizons)
+    if segment == "train":
+        if train.empty:
+            raise MissingDataError(
+                "Configured training period has no eligible rows.",
+                details={"train_rows": len(train)},
+            )
+        train_result = _training_segment_result(
+            train,
+            clean,
+            config,
+            requested_factor=requested_factor,
+            selected_factor=selected_factor,
+            fallback_reason=fallback_reason,
+            source_metadata=source_metadata,
+            split=split,
+            scope=[split["train_start"], split["train_end"]],
+        )
+        return train_result, _frame_hash(panel)
     oos = _bounded_period(enriched, split["oos_start"], split["oos_end"], horizons)
     if train.empty or oos.empty:
         raise MissingDataError(
@@ -734,11 +856,23 @@ def validate_panel(
     perturbation: dict[str, Any] = {}
     base_sign = int(np.sign(raw_primary_unoriented_mean))
     perturbation_passed = base_sign != 0
-    base_window = int(config["factor"]["definitions"][selected_factor]["window"])
+    base_window = (
+        precomputed.base_window(selected_factor)
+        if precomputed is not None
+        else int(config["factor"]["definitions"][selected_factor]["window"])
+    )
     for multiplier in config["perturbation"]["multipliers"]:
         window = max(1, int(round(base_window * float(multiplier))))
         perturbed = enriched.copy()
-        if config["factor"]["definitions"][selected_factor]["transform"] == "negative_pct_change":
+        if precomputed is not None:
+            # A precomputed export must ship the perturbed parameterization as
+            # "<factor_id>|window=<w>"; if it does not, this raises instead of silently
+            # turning the parameter_perturbation gate into a free pass.
+            perturbed["perturbed_factor"] = _map_factor_values(
+                perturbed,
+                precomputed.require_perturbation(selected_factor, window),
+            )
+        elif config["factor"]["definitions"][selected_factor]["transform"] == "negative_pct_change":
             perturbed["perturbed_factor"] = _map_factor_values(
                 perturbed,
                 _factor_lookup(panel, selected_factor, config, window=window),
@@ -864,6 +998,9 @@ def validate_panel(
         "gates": ordered_gates,
         "failed_gates": [item["name"] for item in failed],
     }
+    # Provenance is recorded in run_manifest.json only, so that result_hash stays a pure
+    # function of the numbers: the native transform and the precomputed channel must produce
+    # the same result_hash for the same data.
     return result, _frame_hash(panel)
 
 
@@ -873,7 +1010,7 @@ def _report_markdown(result: dict[str, Any]) -> str:
         first = next(item for item in result["gates"] if item["name"] == failed[0])
         first_line = f"status=rejected failed_gate={first['name']} actual={_canonical_json(first['actual'])}"
     else:
-        first_line = "status=validated"
+        first_line = f"status={result['status']}"
     lines = [
         first_line,
         "",
@@ -896,13 +1033,14 @@ def _report_markdown(result: dict[str, Any]) -> str:
     lines.extend(
         [
             "",
-            "## RankIC",
+            "## RankIC" if "rank_ic" in result else "## RankIC (training segment)",
             "",
             "| Horizon | Mean | IC_IR | t-stat | Days |",
             "|---|---:|---:|---:|---:|",
         ]
     )
-    for horizon, values in result["rank_ic"].items():
+    rank_ic_table = result.get("rank_ic") or result.get("train_rank_ic") or {}
+    for horizon, values in rank_ic_table.items():
         lines.append(
             f"| {horizon} | {_format_metric(values['mean'])} | {_format_metric(values['ic_ir'])} | "
             f"{_format_metric(values['t_stat'])} | {values['days']} |"
@@ -920,24 +1058,68 @@ def execute_validation(
     config_path: str | Path = PROJECT_ROOT / "configs" / "validation_gates.yaml",
     panel: pd.DataFrame | None = None,
     source_metadata: dict[str, Any] | None = None,
+    factor_file: str | Path | None = None,
+    factor_sidecar: str | Path | None = None,
+    panel_file: str | Path | None = None,
+    panel_sidecar: str | Path | None = None,
+    segment: str = "oos",
 ) -> dict[str, Any]:
+    if segment not in SEGMENTS:
+        raise ValueError(f"segment must be one of {SEGMENTS}, got {segment!r}")
+    if panel is not None and panel_file is not None:
+        raise ValueError("pass either panel or panel_file, not both")
+    panel_provenance: dict[str, Any] = {}
     config = load_validation_config(config_path)
-    paths = _paths(config, factor_id)
+    paths = _paths(config, factor_id, segment=segment)
     paths.root.mkdir(parents=True, exist_ok=True)
     if paths.needs_human.exists():
         paths.needs_human.unlink()
     precision = int(config["output"]["float_precision"])
+
+    precomputed: PrecomputedFactorSet | None = None
+    if factor_file is not None:
+        # Contract violations raise PrecomputedFactorError, which is intentionally not
+        # caught here: a bad factor export must stop the run, never degrade silently.
+        precomputed = load_precomputed_factors(factor_file, sidecar_path=factor_sidecar)
+        span_start, span_end = precomputed.coverage_span()
+        split = config["split"]
+        if span_start > date.fromisoformat(str(split["train_start"])) or span_end < date.fromisoformat(
+            str(split["oos_end"])
+        ):
+            raise PrecomputedFactorError(
+                "precomputed factor file does not cover the frozen train..oos range "
+                f"(file {span_start}..{span_end}, required {split['train_start']}..{split['oos_end']})"
+            )
+        precomputed.require(factor_id)
+
     try:
-        loaded_panel, loaded_metadata = (
-            (panel, source_metadata or {"provider": "provided_panel"})
-            if panel is not None
-            else RQDataPanelLoader(config).load(factor_id)
-        )
+        if panel is not None:
+            loaded_panel = panel
+            loaded_metadata = dict(source_metadata or {"provider": "provided_panel"})
+        elif panel_file is not None:
+            local_panel = load_validation_panel(panel_file, sidecar_path=panel_sidecar)
+            loaded_panel = local_panel.frame
+            loaded_metadata = {
+                "provider": "local_panel_parquet",
+                "panel_file": local_panel.path.name,
+                "panel_sha256": local_panel.sha256,
+                "price_basis": local_panel.price_basis,
+            }
+            loaded_metadata.update(source_metadata or {})
+            panel_provenance = {
+                "panel_file": local_panel.path.name,
+                "panel_file_sha256": local_panel.sha256,
+                "panel_price_basis": local_panel.price_basis,
+            }
+        else:
+            loaded_panel, loaded_metadata = RQDataPanelLoader(config).load(factor_id)
         result, data_snapshot_hash = validate_panel(
             loaded_panel,
             factor_id,
             config,
             source_metadata=loaded_metadata,
+            precomputed=precomputed,
+            segment=segment,
         )
     except MissingDataError as exc:
         needs_human = {
@@ -958,7 +1140,15 @@ def execute_validation(
         "code_commit": _git_commit(),
         "params_hash": params_hash,
         "result_hash": result_hash,
+        "segment": segment,
+        "factor_source": "precomputed_parquet" if precomputed is not None else "pipeline_transform",
     }
+    manifest.update(panel_provenance)
+    if precomputed is not None:
+        manifest["factor_file"] = precomputed.path.name
+        manifest["factor_file_sha256"] = precomputed.sha256
+        manifest["factor_sidecar_data_start"] = precomputed.sidecar["data_start"]
+        manifest["factor_sidecar_data_end"] = precomputed.sidecar["data_end"]
     constraints_path = PROJECT_ROOT / "constraints-rqsdk.txt"
     if constraints_path.is_file():
         manifest["constraints_file"] = constraints_path.name
