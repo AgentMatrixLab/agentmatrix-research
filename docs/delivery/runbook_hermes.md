@@ -161,7 +161,53 @@ python -X utf8 -m research_core.factor_lab.cli validate \
 
 **退出码**：`0` = 跑完（`validated` 或 `rejected` 都是 0，**必须读 JSON 里的 `status`**）；`2` = 输入契约错误或 `needs_human`，stdout 里有 `reason`。
 
-## 5. 输出文件
+## 5. 批量跑全部候选（validate-batch）
+
+一条命令跑完 `candidate_list.csv` 里的全部因子。**单个因子失败会记录原因并继续跑，不会中断整批。**
+
+```bash
+python -X utf8 -m research_core.factor_lab.cli validate-batch \
+  --candidates candidate_list.csv \
+  --config configs/validation_gates.yaml \
+  --panel-file /data/panel.parquet \
+  --factor-file /data/factors.parquet \
+  --segment oos \
+  --output-dir /data/batch_run_20261004
+```
+
+可选参数：`--factors a,b,c` 只跑子集；`--segment train` 跑训练段。
+
+**退出码**：`0` = 全部因子都跑完且**没有** `error`；`3` = 跑完了但有因子报错（结果仍在产物里）；`2` = 输入契约错误（整批没跑）。
+
+### 5.1 candidate_list.csv 格式
+
+必需列：`factor_id`。其余列随便加，会原样带进 `batch_manifest.json` 的 `metadata`（建议按 D4 因子目录用 `name,formula,category,required_fields,direction,status`）。
+
+```csv
+factor_id,name,formula,category,required_fields,direction,status
+reversal_1m,一月反转,"-(close_t / close_{t-22} - 1)",price_momentum,"close,date,code,is_suspended",negative_reversal,research
+```
+
+规则：
+- `factor_id` 不能为空、不能重复，否则整批拒绝启动。
+- 每个 `factor_id` 必须在因子文件里有对应行；**没有的那个因子会被记成 `error` 并继续跑别的**。
+- 编码用 UTF-8（读的时候也兼容带 BOM 的 UTF-8）。
+
+### 5.2 批量产物
+
+- `batch_summary.csv`：每因子一行 —— `factor_id, status, failed_gates, reason, 指标, result_hash, params_hash, 产物路径`。
+- `batch_manifest.json`：
+  - `code_commit`、`created_at_utc`、`segment`
+  - `candidates_file` + sha256、`candidate_count`、`factor_ids`
+  - `panel_file` + sha256 + `panel_price_basis`、`data_snapshot_hash`
+  - `factor_file` + sha256 + 因子文件区间
+  - `configuration_file` + sha256，以及 `parameters`（`split` / `gates` / `portfolio.cost` / `perturbation` / `statistics` / `forward_returns` 全量快照）
+  - `counts`、`validated` / `rejected` / `errors` / `needs_human` 清单
+  - `results`：每个因子的状态、`failed_gates`、淘汰原因、指标、`result_hash`、产物路径与产物文件的 sha256
+  - `outputs.batch_summary_sha256`
+- 每个因子的 `validation_report.md` / `validation_result.json` / `run_manifest.json` 仍写到 `config.output.root/<factor_id>/`（`train` 段在 `.../<factor_id>/train/`）。
+
+## 6. 输出文件
 
 输出根目录来自 `config.output.root`（默认 `data/factor_lab/validation_runs`）：
 
@@ -189,7 +235,7 @@ data/factor_lab/validation_runs/<factor_id>/train/...                 # --segmen
 
 **重要性质**：`result_hash` 只由数值结果决定，与因子来自哪条通道无关。同一份面板、同一个因子，`--factor-file` 与原生自算两条路必须得到**完全相同的 `result_hash`**。请用这一条做自查。
 
-## 6. 预计耗时（实测）
+## 7. 预计耗时（实测）
 
 本机（Windows，非服务器）用合成面板实测：
 
@@ -200,7 +246,9 @@ data/factor_lab/validation_runs/<factor_id>/train/...                 # --segmen
 
 **真实全 A 的耗时与内存占用：未知**，必须由你在服务器上实测后回报。全 A 日线全区间（含 2015 起预热）行数量级远大于上面的合成面板，导出文件与内存占用请提前评估。
 
-## 7. 常见失败与含义
+**批量耗时 ≈ 因子数 × 单因子耗时**（每个因子都要完整跑一遍准入+OOS+扰动）。批量入口已经做了一件事来省时间：**面板和因子文件只读一次**，所有因子共用同一份内存对象，不会每个因子重读大文件。
+
+## 8. 常见失败与含义
 
 | 现象 | 含义 |
 |---|---|
@@ -211,11 +259,11 @@ data/factor_lab/validation_runs/<factor_id>/train/...                 # --segmen
 | `needs_human.json`，`reason` 提 `No rows remain after all-A eligibility filters` | 过滤后没有样本，多半是列口径或日期区间不对 |
 | `status: rejected` | 正常结果，说明没过门槛；看 `failed_gates` 与报告 |
 
-## 8. 跑之前必须先确认的两件事
+## 9. 跑之前必须先确认的两件事
 
 1. **切分**：`configs/validation_gates.yaml` 当前写的是 train `2016-01-01~2023-12-31` / OOS `2024-01-01~2026-08-31`；任务书冻结的是 train 到 `2022-12-31` / OOS 从 `2023-01-01` 起。**两者不一致，尚未裁定**。这条直接决定 `oos_seal` 与全部样本外指标，不要自行改。
 2. **价格口径**：config 是 `adjust_type: post`（后复权价），Trae 的原始契约是「未复权 OHLC + 复权因子」。面板 sidecar 的 `price_basis` 必须与 config 实际口径一致，不一致就停下来问。
 
-## 9. 交付边界
+## 10. 交付边界
 
 本手册只说明怎么跑。**跑出来的结果不代表因子有效**；有效与否只看流水线门槛判定，且真实数据证据只能来自 115 服务器上的正式运行。
