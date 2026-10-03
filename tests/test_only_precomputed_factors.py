@@ -21,6 +21,7 @@ import yaml
 
 from research_core.factor_lab.deterministic_validation import (
     _canonical_json,
+    _eligible_panel,
     _factor_lookup,
     _json_safe,
     execute_validation,
@@ -70,6 +71,7 @@ def _write_precomputed_file(
     *,
     factor_id: str = "reversal_1m",
     include_perturbation: bool = True,
+    drop_codes: tuple[str, ...] = (),
 ) -> Path:
     """Export the built-in transform's own output, so both channels can be compared."""
     base_window = int(config["factor"]["definitions"][factor_id]["window"])
@@ -84,6 +86,8 @@ def _write_precomputed_file(
                 )
             )
     table = pd.concat(frames, ignore_index=True)
+    if drop_codes:
+        table = table[~table["code"].isin(drop_codes)].reset_index(drop=True)
     path = tmp_path / "test_only_reversal_1m_factor_values.parquet"
     table.to_parquet(path, index=False)
     metadata = {
@@ -281,6 +285,74 @@ def test_only_cli_runs_fully_offline_from_panel_and_factor_files(
     assert Path(payload["artifacts"]["manifest"]).is_file()
 
 
+def test_only_equivalence_holds_on_a_realistically_messy_panel(
+    tmp_path: Path, synthetic_panel: pd.DataFrame, test_config: dict
+) -> None:
+    """Suspensions, ST days, limit-locked days, late listings and delistings must not break it."""
+    panel, expectations = _messy_panel(synthetic_panel)
+    eligible = _eligible_panel(panel, test_config)
+
+    assert len(eligible) < len(panel), "the eligibility filters must actually remove rows"
+    st_code = expectations["st_code"]
+    st_window = eligible[
+        (eligible["code"] == st_code) & eligible["date"].between("2017-01-01", "2017-12-31")
+    ]
+    assert st_window.empty, "ST rows must never be eligible"
+    late = eligible.loc[eligible["code"] == expectations["late_code"], "date"]
+    assert not late.empty and late.min() >= pd.Timestamp("2016-06-01") + pd.Timedelta(days=120)
+    dead = eligible.loc[eligible["code"] == expectations["dead_code"], "date"]
+    assert not dead.empty and dead.max() <= pd.Timestamp("2017-06-30")
+    assert eligible["is_suspended"].eq(False).all()
+    assert eligible["is_st"].eq(False).all()
+    assert (eligible["close"] < eligible["limit_up"]).all()
+
+    native_result, native_panel_hash = validate_panel(panel, "reversal_1m", test_config)
+    precomputed = load_precomputed_factors(
+        _write_precomputed_file(tmp_path, panel, test_config)
+    )
+    precomputed_result, precomputed_panel_hash = validate_panel(
+        panel, "reversal_1m", test_config, precomputed=precomputed
+    )
+
+    assert native_panel_hash == precomputed_panel_hash
+    assert native_result["data"]["eligible_rows"] == len(eligible)
+    _assert_metrics_close(native_result, precomputed_result)
+    assert _canonical_json(_json_safe(native_result, precision=12)) == _canonical_json(
+        _json_safe(precomputed_result, precision=12)
+    )
+
+
+def test_only_missing_factor_rows_are_never_filled(
+    tmp_path: Path, synthetic_panel: pd.DataFrame, test_config: dict
+) -> None:
+    """An incomplete export must lose coverage and fail the coverage gate, not get filled in."""
+    full_dir = tmp_path / "full"
+    gap_dir = tmp_path / "gap"
+    full_dir.mkdir()
+    gap_dir.mkdir()
+    dropped = tuple(sorted(synthetic_panel["code"].unique())[:3])
+
+    full = load_precomputed_factors(_write_precomputed_file(full_dir, synthetic_panel, test_config))
+    gapped = load_precomputed_factors(
+        _write_precomputed_file(gap_dir, synthetic_panel, test_config, drop_codes=dropped)
+    )
+    full_result, _ = validate_panel(synthetic_panel, "reversal_1m", test_config, precomputed=full)
+    gap_result, _ = validate_panel(synthetic_panel, "reversal_1m", test_config, precomputed=gapped)
+
+    def coverage(result: dict) -> float:
+        return float(
+            next(gate["actual"]["mean_daily_coverage"] for gate in result["gates"] if gate["name"] == "coverage")
+        )
+
+    assert coverage(gap_result) < coverage(full_result)
+    assert coverage(gap_result) < 0.95
+    assert gap_result["status"] == "rejected"
+    assert gap_result["failed_gates"][0] == "coverage"
+    # the dropped codes end up with no factor value at all: nothing was synthesised for them
+    gapped_values = gapped.require("reversal_1m")
+    assert not gapped_values.index.get_level_values("code").isin(dropped).any()
+
+
 def test_only_missing_perturbation_variant_fails_instead_of_passing_the_gate(
     tmp_path: Path, synthetic_panel: pd.DataFrame, test_config: dict
 ) -> None:
@@ -299,6 +371,24 @@ def test_only_require_reports_a_missing_factor(
 
     with pytest.raises(PrecomputedFactorError, match="alpha002"):
         precomputed.require("alpha002")
+
+
+def _messy_panel(base: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, str]]:
+    """Inject realistic all-A conditions without touching the shared fixture frame."""
+    frame = base.copy().sort_values(["code", "date"]).reset_index(drop=True)
+    position = frame.groupby("code").cumcount()
+    codes = sorted(frame["code"].unique())
+    st_code, late_code, dead_code = codes[5], codes[7], codes[9]
+
+    frame.loc[position % 97 == 3, "is_suspended"] = True
+    locked = position % 89 == 5
+    frame.loc[locked, "limit_up"] = frame.loc[locked, "close"]
+    frame.loc[
+        (frame["code"] == st_code) & frame["date"].between("2017-01-01", "2017-12-31"), "is_st"
+    ] = True
+    frame.loc[frame["code"] == late_code, "listed_date"] = pd.Timestamp("2016-06-01")
+    frame.loc[frame["code"] == dead_code, "de_listed_date"] = pd.Timestamp("2017-06-30")
+    return frame, {"st_code": st_code, "late_code": late_code, "dead_code": dead_code}
 
 
 def _long_table() -> pd.DataFrame:
