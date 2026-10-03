@@ -1,6 +1,6 @@
 # A股因子数据库产品交付方案
 
-> 版本：v1.0 | 日期：2026-08-28 | 负责人：因子工程组
+> 版本：v1.1 | 日期：2026-09-01 | 负责人：因子工程组
 > 基础仓库：AgentMatrixLab/agentmatrix-research（`research_core/factor_lab`）
 
 ---
@@ -20,8 +20,8 @@
 
 | 优先级 | 目标 | 衡量标准 |
 |---|---|---|
-| P0 | 100+ 核心因子标准化入库 | 因子元数据覆盖 134 个（33 Quant API + 101 Alpha101） |
-| P0 | 可演示 Web 原型 | 检索/详情/公式/分布/导出 5 项功能可现场演示 |
+| P0 | 统一因子目录标准化入库 | 因子元数据覆盖 1058 个（9 个来源） |
+| P0 | 可演示 Web 目录 | 检索/详情/公式/分布/导出 5 项功能可现场演示，前端可全量展示目录 |
 | P0 | API 接口原型 | 因子列表/详情/数据/导出 4 类端点可调用 |
 | P1 | 真实数据联通 | 33 因子月频数据（41.9 万行）经 Quant API v2 可查 |
 | P2 | 数据质量控制 | 校验/完整性/异常值三项机制落地 |
@@ -36,14 +36,16 @@
 
 ## 2. 产品内容设计
 
-### 2.1 因子分类体系（三大类别）
+### 2.1 因子分类体系（当前目录口径）
 
 | 大类 | 子类 | 因子示例 | 数量（首批） |
 |---|---|---|---|
-| **基础因子** | 规模/价格/流动性 | log_price、log_amount_1m、avg_amount_1m、turnover_proxy、volume_ratio、illiquidity | 9 |
-| **技术因子** | 动量/反转/波动/技术指标 | ret_1m~12m、momentum_12_1、reversal、volatility_1m/3m/6m、rsi_14、bb_position、ma_signal、Alpha101 全系 | 119 |
+| **基础因子** | 规模/价格/流动性/原始量价回溯 | log_price、log_amount_1m、Alpha360 全系 | 366 |
+| **技术因子** | 动量/反转/波动/技术指标/量价特征 | Alpha101、GTJA191、TDXGS、JQ110、Alpha158 等 | 666 |
 | **基本面因子** | 盈利/成长/杠杆/运营 | roe_ttm、roa_ttm、net_margin、revenue_yoy、profit_yoy、eps_yoy、debt_to_asset、asset_turnover | 8 |
-| **合计** | | | **134** |
+| **风险因子** | 风格因子 | Barra CNE5 风格因子 | 11 |
+| **情绪因子** | 换手率 | JQGM 换手率家族 | 7 |
+| **合计** | | | **1058** |
 
 ### 2.2 因子元数据规范（每个因子标准化信息）
 
@@ -67,10 +69,11 @@
 | | `application` | 应用场景 | 质量风格选股、多因子模型质量维度 |
 | | `cautions` | 注意事项 | 金融/地产高杠杆行业需行业中性化… |
 
-### 2.3 初始因子库（134 个）
+### 2.3 当前目录范围（1058 个）
 
 - **Quant API 33 因子**（`QAPI33:*`）：数据现成（月频 41.9 万行，2020-01 至 2026-04），元数据详尽，为首批主推
-- **Alpha101 因子**（`ALPHA101:alphaNNN`）：公式与实现齐备（`research_core/factor_lab/libraries/alpha101`），元数据从既有规格批量生成，数据可经 RQData 拉取任务补充
+- **Alpha101 因子**（`ALPHA101:alphaNNN`）：公式与实现齐备，当前提供元数据与公式展示
+- **GTJA191 / TDXGS / JQ110 / Alpha158 / Alpha360 / Barra / JQGM**：当前已统一纳入目录检索、详情展示与元数据导出，真实因子值仍依赖额外计算或数据环境
 
 ---
 
@@ -84,7 +87,7 @@
 | **计算引擎** | `research_core/factor_lab/libraries/`：quant_api_33 / alpha101 / gtja191 / alpha158 / barra 完整实现 + truth 校验 | ★★★★★ 直接复用 |
 | **存储系统** | `runtime/`（本地 JSON/parquet）+ ClickHouse（远端）+ Supabase（真值层，规划中） | ★★★☆☆ 本期用本地+远端 CH |
 | **Web 框架** | Flask（`backend/factor_lab_api.py` 已有 REST 骨架 + CORS）+ 静态前端模式（factor-lab-dashboard） | ★★★★☆ 复用框架与部署模式 |
-| **因子规格** | 134 个因子的公式/描述/分类已在 `specs.py` 中结构化 | ★★★★★ 直接转换 |
+| **因子规格** | 当前目录已聚合 1058 个因子的公式/描述/分类元数据 | ★★★★★ 直接转换 |
 | **开发人力** | 因子工程组（本方案执行主体），智能体辅助开发（本仓库已内置 5 个 Skill 流水线） | ★★★★☆ |
 
 ### 3.2 差距分析（Gap）
@@ -111,20 +114,20 @@
 
 ## 4. 分阶段交付计划
 
-### 阶段 0：产品雏形（2026-08-28 ~ 09-11，2 周）
+### 阶段 0：产品雏形（已完成）
 
 | 项 | 内容 |
 |---|---|
-| 交付内容 | ① 本交付方案文档；② `research_core/factor_db/` 元数据+API 模块；③ `frontend/factor-db/` Web 原型；④ 134 因子元数据；⑤ 数据字典+技术文档 |
-| 验收标准 | (a) Web 原型可检索/看详情/渲染 LaTeX 公式/看分布图/导出 CSV；(b) `GET /api/factor-db/factors` 返回 134 条；(c) 33 因子可查真实月频数据（需 token）；(d) CSV/Excel 导出可用 |
+| 交付内容 | ① 本交付方案文档；② `research_core/factor_db/` 元数据+API 模块；③ `frontend/factor-db/` Web 原型；④ 目录基线版本；⑤ 数据字典+技术文档 |
+| 验收标准 | (a) Web 原型可检索/看详情/渲染 LaTeX 公式/看分布图/导出 CSV；(b) QAPI33 33 因子可查真实月频数据（需 token）；(c) CSV/Excel 导出可用 |
 | 演示脚本 | 打开首页 → 搜索"ROE" → 查看详情（公式/场景/注意） → 查看分布图 → 导出 CSV → curl 调 API |
 
-### 阶段 1：初始因子库成型（2026-09-12 ~ 10-16，5 周）
+### 阶段 1：目录扩容与多来源聚合（进行中）
 
 | 项 | 内容 |
 |---|---|
-| 交付内容 | ① RQData 拉取 Alpha101 因子值（101 个，月频）；② 因子值本地 parquet 缓存层；③ GTJA191/Alpha158 元数据扩展（至 350+ 因子）；④ API 增加 IC 查询、批量拉取端点 |
-| 验收标准 | (a) 134 因子全部有可查数据；(b) 元数据 350+；(c) API 支持 `?fields=` 列裁剪与分页 |
+| 交付内容 | ① 目录扩展至 1058 因子；② 宿主服务已暴露 `/api/factor-db/*` 与 `/factor-db/`；③ 前端支持全量目录加载；④ API 支持 `limit/offset` 分页 |
+| 验收标准 | (a) `GET /api/factor-db/factors` 分页可覆盖 1058 条；(b) 前端可完整展示目录；(c) QAPI33 保持真实数据可查 |
 
 ### 阶段 2：质量控制与数据治理（2026-10-17 ~ 11-13，4 周）
 
@@ -163,8 +166,9 @@
         │                             │
 ┌───────▼──────────┐   ┌──────────────▼───────────────┐
 │ 因子元数据层      │   │ 因子值数据层（QuantApiClient）│
-│ metadata JSON    │   │ → Quant API v2 factor_monthly│
-│ (134 因子，版本化)│   │ → 本地 parquet 缓存（阶段1）  │
+│ metadata.py +    │   │ → Quant API v2 factor_monthly│
+│ zoo_meta.json    │   │ → 本地 parquet 缓存（阶段1）  │
+│ (1058 因子聚合)  │   │ → 多来源扩展（后续接入）       │
 └──────────────────┘   │ → RQData 异步拉取（阶段1）    │
                        └──────────────────────────────┘
 ```
@@ -192,7 +196,7 @@
 
 | 层 | 载体 | 说明 |
 |---|---|---|
-| 元数据 | `research_core/factor_db/metadata/*.json`（版本化于 git） | 单一事实源 |
+| 元数据 | `research_core/factor_db/metadata.py` + `quant_api_33_meta.py` + `zoo_meta.json`（版本化于 git） | 单一事实源 |
 | 因子值缓存 | `runtime/factor_db/cache/*.parquet` | 阶段 1 落地，TTL 策略 |
 | 远端真值 | ClickHouse `factor_monthly` / `factor_ic` | 已存在 |
 
@@ -250,20 +254,20 @@
 
 ---
 
-## 9. 交付物清单（本期阶段 0）
+## 9. 交付物清单（当前版本）
 
 | # | 交付物 | 路径 | 状态 |
 |---|---|---|---|
 | 1 | 交付方案文档（本文件，含计划/资源/风险） | `docs/FACTOR_DB_DELIVERY_PLAN.md` | ✅ |
 | 2 | 产品雏形——Web 系统 | `frontend/factor-db/`（index.html / app.js / styles.css） | ✅ |
 | 3 | 产品雏形——API 接口 | `research_core/factor_db/api.py` | ✅ |
-| 4 | 初始因子库（134 因子元数据） | `research_core/factor_db/metadata/` | ✅ |
-| 5 | 数据字典及使用说明 | `docs/FACTOR_DB_DICTIONARY.md` | ✅ |
-| 6 | 技术实现文档及维护指南 | `docs/FACTOR_DB_TECHNICAL.md` | ✅ |
+| 4 | 初始因子库（当前以 `metadata.py` 聚合） | `research_core/factor_db/metadata.py` | ✅ |
+| 5 | 数据字典及使用说明 | `docs/FACTOR_DB_USER_GUIDE.md` | ✅ |
+| 6 | 技术实现文档及维护指南 | `docs/FACTOR_DB_TECH_GUIDE.md` | ✅ |
 
 ---
 
-## 10. 验收演示脚本（阶段 0）
+## 10. 验收演示脚本（当前版本）
 
 ```powershell
 # 1. 启动服务（仓库根目录）

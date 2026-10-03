@@ -20,8 +20,23 @@ const state = {
 
 const $ = (id) => document.getElementById(id);
 
-/* ---------------- 登录门禁（与生命周期面板同一模式） ---------------- */
-const ACCESS_PASSWORD = window.FACTORDB_ACCESS_PASSWORD || "factorlab2026";
+/* ---------------- 登录门禁（仓库只存盐值哈希，不含明文密码） ---------------- */
+const PASSWORD_SALT = "amx-factor-db";
+const PASSWORD_HASH = "41f1a5f18641f6a060401b4a877602794ba87b23f239368ce146d11001d7c79b";
+
+async function verifyPassword(input) {
+  try {
+    const digest = await crypto.subtle.digest(
+      "SHA-256",
+      new TextEncoder().encode(PASSWORD_SALT + input)
+    );
+    const hex = [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+    return hex === PASSWORD_HASH;
+  } catch {
+    return false;
+  }
+}
+
 const AUTH_KEY = "FACTORDB_AUTH_OK";
 
 function isAuthed() { return sessionStorage.getItem(AUTH_KEY) === "1"; }
@@ -36,9 +51,9 @@ function showLogin(msg) {
   setTimeout(() => $("loginPassword")?.focus(), 50);
 }
 function bindAuth() {
-  $("loginForm").addEventListener("submit", (e) => {
+  $("loginForm").addEventListener("submit", async (e) => {
     e.preventDefault();
-    if (($("loginPassword").value || "") === ACCESS_PASSWORD) {
+    if (await verifyPassword($("loginPassword").value || "")) {
       sessionStorage.setItem(AUTH_KEY, "1");
       showApp();
     } else {

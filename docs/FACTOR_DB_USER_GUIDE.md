@@ -1,18 +1,25 @@
 # A股因子数据库 — 数据字典及使用说明
 
-> 版本：v0.1（阶段 0 产品雏形） · 更新日期：2026-08-28
+> 版本：v0.4（客户策略版） · 更新日期：2026-09-01
 > 配套交付方案：[FACTOR_DB_DELIVERY_PLAN.md](./FACTOR_DB_DELIVERY_PLAN.md) · 技术文档：[FACTOR_DB_TECH_GUIDE.md](./FACTOR_DB_TECH_GUIDE.md)
 
 ## 1. 产品概览
 
-A股因子数据库（Factor DB）是面向量化研究流程的因子元数据与因子值数据服务，当前版本包含 **134 个因子**：
+A股因子数据库（Factor DB）是面向量化研究流程的因子元数据与因子值数据服务。当前目录共 **1058 个因子**，其中 **33 个因子可直接查询真实月频值**，其余来源当前以元数据、公式、口径说明和目录检索能力为主。
 
 | 来源 | 数量 | 数据频率 | 因子值数据状态 |
 |---|---|---|---|
 | Quant API 33 因子（QAPI33） | 33 | 月频 | 实时可查（经 Quant API v2，41.9 万行 × 76 月） |
-| WorldQuant Alpha101（ALPHA101） | 101 | 日频（计算） | 元数据+公式就绪；因子值待 RQData 拉取任务生成（阶段 1） |
+| WorldQuant Alpha101（ALPHA101） | 101 | 日频（计算） | 元数据+公式就绪；因子值待后续数据任务生成 |
+| GTJA191 | 191 | 日频（计算） | 目录已收录；真实因子值需额外计算环境 |
+| TDXGS | 88 | 日频（计算） | 目录已收录；真实因子值需额外计算环境 |
+| JQ110 | 109 | 日频（计算） | 目录已收录；真实因子值需额外计算环境 |
+| Alpha158 | 158 | 日频（计算） | 目录已收录；真实因子值需额外计算环境 |
+| Alpha360 | 360 | 日频（计算） | 目录已收录；真实因子值需额外计算环境 |
+| Barra | 11 | 日频（计算） | 目录已收录；真实因子值需额外计算环境 |
+| JQGM | 7 | 日频（计算） | 目录已收录；真实因子值需额外计算环境 |
 
-因子分类分布：技术因子 120 · 基本面因子 8 · 基础因子 6。
+因子分类分布：基础因子 366 · 技术因子 666 · 基本面因子 8 · 风险因子 11 · 情绪因子 7。
 
 ## 2. 快速开始
 
@@ -37,14 +44,39 @@ $env:FACTOR_LAB_QUANT_API_TOKEN = "<your-token>"   # 或 QUANT_API_TOKEN
 ```
 
 未配置 token 时：因子目录 / 详情 / 公式 / 演示分布 / 元数据导出均可用；
-真实因子值查询与真实分布统计返回 401。前端可勾选「演示模式」查看分布形态。
+真实因子值查询与真实分布统计不可用。若服务端已启用客户鉴权，调用受控接口时还需提供 API Key。
+
+### 2.3 客户 API Key（受控接口）
+
+当服务端配置了 `FACTOR_DB_API_KEYS` 或客户策略 `FACTOR_DB_CUSTOMER_POLICIES_JSON` / `FACTOR_DB_CUSTOMER_POLICIES_PATH` 后，以下接口默认转为受控：
+
+- `/api/factor-db/factors/{factor_id}/values`
+- `/api/factor-db/factors/{factor_id}/distribution`（真实分布，`demo=1` 仍可公开演示）
+- `/api/factor-db/factors/{factor_id}/export?scope=values`
+- `/api/factor-db/quant-api/status?remote=1`
+
+调用方式任选其一：
+
+```bash
+curl -H "Authorization: Bearer <your-api-key>" "http://127.0.0.1:8013/api/factor-db/factors/QAPI33:roe_ttm/values?symbol=000001.SZ"
+curl -H "X-FactorDB-API-Key: <your-api-key>" "http://127.0.0.1:8013/api/factor-db/factors/QAPI33:roe_ttm/export?scope=values&format=csv"
+```
+
+受控接口默认带基础限流；若短时间内请求过于频繁，服务会返回 `429`。
+若启用了客户策略，还可以进一步按客户控制：
+
+- 客户名称 / 客户编号
+- 到期时间
+- 可访问来源或指定因子
+- 是否允许导出真实因子值
+- 单客户独立限流额度
 
 ## 3. Web 界面使用
 
 | 功能 | 入口 | 说明 |
 |---|---|---|
 | 因子检索 | 左侧搜索框 | 匹配中文名 / 英文名 / factor_id / 定义 / 公式，200ms 防抖 |
-| 分类过滤 | 左侧大类/来源标签 | 基础 / 技术 / 基本面 × Quant API / Alpha101 |
+| 分类过滤 | 左侧大类/来源标签 | 基础 / 技术 / 基本面 / 风险 / 情绪 × 9 个来源 |
 | 因子详情 | 点击因子条目 | 元数据、定义、计算逻辑、LaTeX 公式（KaTeX 渲染）、伪代码表达式 |
 | 因子分布 | 详情页「因子分布」 | 直方图 + P25/P50/P75 分位线 + 12 项统计指标 |
 | 数据导出 | 详情页按钮 / 页脚 | 因子值 CSV/Excel、元数据 CSV、全量数据字典 CSV/Excel |
@@ -75,14 +107,14 @@ curl "http://127.0.0.1:8013/api/factor-db/factors?search=momentum"
 # 因子详情（含 LaTeX 公式）
 curl "http://127.0.0.1:8013/api/factor-db/factors/QAPI33:roe_ttm"
 
-# 查询平安银行 ROE 时序（需 token）
-curl "http://127.0.0.1:8013/api/factor-db/factors/QAPI33:roe_ttm/values?symbol=000001.SZ"
+# 查询平安银行 ROE 时序（需 token + API Key）
+curl -H "Authorization: Bearer <your-api-key>" "http://127.0.0.1:8013/api/factor-db/factors/QAPI33:roe_ttm/values?symbol=000001.SZ"
 
 # 演示分布（无需 token）
 curl "http://127.0.0.1:8013/api/factor-db/factors/QAPI33:roe_ttm/distribution?demo=1"
 
-# 导出因子值 Excel
-curl -OJ "http://127.0.0.1:8013/api/factor-db/factors/QAPI33:roe_ttm/export?scope=values&format=xlsx"
+# 导出因子值 Excel（需 API Key）
+curl -H "X-FactorDB-API-Key: <your-api-key>" -OJ "http://127.0.0.1:8013/api/factor-db/factors/QAPI33:roe_ttm/export?scope=values&format=xlsx"
 
 # 下载数据字典
 curl -OJ "http://127.0.0.1:8013/api/factor-db/dictionary?format=csv"
@@ -105,9 +137,12 @@ print(detail["formula_latex"])   # ROE_{ttm,t} = \frac{NP_{ttm,t}}{E_{t}}
 
 | 状态码 | 含义 |
 |---|---|
-| 401 | Quant API token 未配置 |
+| 401 | 缺少客户 API Key，或 API Key 无效 |
+| 403 | 客户凭证已过期，或当前客户无权访问该因子 / 导出真实数据 |
+| 429 | 受控接口触发频率限制，请稍后重试 |
 | 404 | 因子不存在 / 截面无有效数据 |
-| 425 | 因子元数据就绪但因子值数据未生成（Alpha101 阶段 1 前） |
+| 425 | 因子目录已收录，但真实因子值尚未在当前数据链路中就绪 |
+| 503 | 受控接口未启用（服务端未配置 `FACTOR_DB_API_KEYS`） |
 | 502 | 远端 Quant API 不可达或返回异常 |
 
 ## 5. 因子元数据字段（数据字典 schema）
@@ -177,13 +212,23 @@ curl -OJ "http://127.0.0.1:8013/api/factor-db/dictionary?format=xlsx"   # Excel
 | QAPI33:volatility_3m | 3月波动率 | 波动率 | 月频 | 过去 63 个交易日日收益率的标准差，中期波动水平 |
 | QAPI33:volatility_6m | 6月波动率 | 波动率 | 月频 | 过去 126 个交易日日收益率的标准差，长期波动水平 |
 
-### 6.2 WorldQuant Alpha101（日频，共 101 个）
+### 6.2 其他来源概览（1025 个，当前以目录与元数据为主）
 
-- 标识符：`ALPHA101:alpha1` … `ALPHA101:alpha101`
-- 大类：技术因子；子类按主要算子自动归类：横截面排序 / 时序排序 / 价量相关性 / 价量协方差 / 衰减加权量价 / 行业中性量价 / 复合量价
-- 公式与描述直接来自本仓库 factor_lab Alpha101 规格（单一事实源，随仓库自动更新）
-- 因子值数据需经 RQData 拉取任务生成（交付方案阶段 1），当前查询返回 425 状态码
-- 完整 101 因子明细见 API：`/api/factor-db/factors?source=ALPHA101&limit=200`
+| 来源 | 数量 | 当前状态 | 说明 |
+|---|---|---|---|
+| `ALPHA101:*` | 101 | 仅元数据 | 公式与描述直接来自本仓库 Alpha101 规格 |
+| `GTJA191:*` | 191 | 需外部环境 | 国泰君安 191 短周期量价因子 |
+| `TDXGS:*` | 88 | 需外部环境 | 通达信技术指标目录 |
+| `JQ110:*` | 109 | 需外部环境 | 技术指标与量价特征目录 |
+| `ALPHA158:*` | 158 | 需外部环境 | Qlib Alpha158 特征 |
+| `ALPHA360:*` | 360 | 需外部环境 | Qlib Alpha360 原始量价回溯特征 |
+| `BARRA:*` | 11 | 需外部环境 | Barra CNE5 风格因子 |
+| `JQGM:*` | 7 | 需外部环境 | 换手率家族情绪因子 |
+
+说明：
+- 这些来源当前都可以在目录中检索、查看详情、导出元数据。
+- `GET /values` 或真实分布统计若返回 `425`，表示该来源的真实因子值尚未接入当前数据链路。
+- 若只需浏览完整目录，可直接使用 `/api/factor-db/factors?limit=300&offset=...` 分页读取。
 
 ### 6.3 基础因子（6 个）
 
@@ -203,11 +248,17 @@ curl -OJ "http://127.0.0.1:8013/api/factor-db/dictionary?format=xlsx"   # Excel
 **Q: 导出的 CSV 用 Excel 打开中文乱码？**
 A: 不会。CSV 导出统一使用 `utf-8-sig`（带 BOM）编码，Excel 可直接打开。
 
-**Q: Alpha101 因子值什么时候可查？**
-A: 阶段 1（见交付方案）通过 RQData 异步拉取任务生成后开放，届时 `/values` 与 `/distribution` 自动切换为真实数据，无需改代码。
+**Q: 为什么目录里能看到很多因子，但不是每个都能直接查真实值？**
+A: 当前产品是“统一目录 + 部分来源实时数据”的形态。QAPI33 已接通真实月频值；其余来源先提供目录、公式、口径、检索与元数据导出能力，真实因子值仍依赖后续计算或数据环境接入。
 
 **Q: token 放在哪里安全？**
 A: 通过环境变量 `FACTOR_LAB_QUANT_API_TOKEN` 注入后端进程，API 响应、导出文件、前端页面中均不出现凭证。
 
+**Q: 客户调用记录会保留吗？**
+A: 会。受控接口会把调用时间、接口类型、因子标识、状态码、客户凭证指纹和来源 IP 写入审计日志，便于交付后排查与合规留痕。
+
+**Q: 能不能按客户限制只看一部分因子？**
+A: 可以。客户策略支持按 `allowed_sources` 或 `allowed_factors` 控制访问范围，也支持单独关闭真实数据导出权限。
+
 **Q: 如何把 Factor DB 挂到已有的 factor_lab_api 服务？**
-A: `from research_core.factor_db.api import factor_db_bp; app.register_blueprint(factor_db_bp)`（详见技术文档第 3 节）。
+A: `from research_core.factor_db.api import register_factor_db; register_factor_db(app)`（详见技术文档第 3 节）。

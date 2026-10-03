@@ -69,6 +69,7 @@ from research_core.data_loader.quant_api_client import QuantApiClient  # noqa: E
 from research_core.factor_lab.real_data import fetch_quant_kline_panel  # noqa: E402
 from research_core.factor_lab.libraries.factor_sets import compute_factor_set  # noqa: E402
 from research_core.factor_lab.libraries.alpha101 import compute_alpha101_factors  # noqa: E402
+from research_core.factor_db.api import register_factor_db  # noqa: E402
 from research_core.factor_lab_web import (  # noqa: E402
     build_factor_library_view,
     build_factor_view,
@@ -108,6 +109,7 @@ def _cors_origins() -> list[str]:
 
 
 CORS(app, resources={r"/api/*": {"origins": _cors_origins()}})
+register_factor_db(app)
 
 
 def _workspace() -> FactorLabWorkspaceConfig:

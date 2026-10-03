@@ -2,6 +2,18 @@
 "use strict";
 
 const API = "/api/factor-db";
+const PAGE_SIZE = 300;
+const SOURCE_LABELS = {
+  QAPI33: "Quant API 33",
+  ALPHA101: "Alpha101",
+  GTJA191: "GTJA191",
+  TDXGS: "通达信指标",
+  JQ110: "JQ110 技术因子",
+  ALPHA158: "Alpha158",
+  ALPHA360: "Alpha360",
+  BARRA: "Barra CNE5",
+  JQGM: "换手率家族",
+};
 
 const state = {
   factors: [],
@@ -11,6 +23,7 @@ const state = {
   category: "",
   source: "",
   search: "",
+  loadComplete: false,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -63,7 +76,7 @@ async function loadStats() {
   try {
     const res = await fetch(`${API}/stats`);
     state.stats = await res.json();
-    $("topStats").innerHTML = `共 <b>${state.stats.total_factors}</b> 个因子 · ` +
+    $("topStats").innerHTML = `共 <b>${state.stats.total_factors}</b> 个因子 · 实时可查 <b>${state.stats.factors_with_live_data || 0}</b> 个 · ` +
       Object.entries(state.stats.by_category || {})
         .map(([k, v]) => `${k} <b>${v}</b>`)
         .join(" · ");
@@ -73,10 +86,24 @@ async function loadStats() {
 }
 
 async function loadFactors() {
-  const res = await fetch(`${API}/factors?limit=500`);
-  const payload = await res.json();
-  state.factors = payload.factors || [];
+  const rows = [];
+  let offset = 0;
+  let total = null;
+
+  while (total === null || rows.length < total) {
+    const res = await fetch(`${API}/factors?limit=${PAGE_SIZE}&offset=${offset}`);
+    if (!res.ok) throw new Error(`目录加载失败: ${res.status}`);
+    const payload = await res.json();
+    const batch = payload.factors || [];
+    total = payload.total ?? batch.length;
+    rows.push(...batch);
+    if (!batch.length || batch.length < PAGE_SIZE) break;
+    offset += batch.length;
+  }
+
+  state.factors = rows;
   state.filtered = [...state.factors];
+  state.loadComplete = total === null ? true : rows.length >= total;
 }
 
 /* ---------------- 过滤与列表 ---------------- */
@@ -117,17 +144,7 @@ function renderChips() {
   const allSrc = chipEl("全部", "", state.source, () => { state.source = ""; refresh(); });
   srcChips.appendChild(allSrc);
   Object.entries(bySrc).forEach(([key, count]) => {
-    const label = {
-      QAPI33: "Quant API 33",
-      ALPHA101: "Alpha101",
-      GTJA191: "GTJA191",
-      TDXGS: "通达信指标",
-      JQ110: "JQ110 技术因子",
-      ALPHA158: "Alpha158",
-      ALPHA360: "Alpha360",
-      BARRA: "Barra CNE5",
-      JQGM: "换手率家族",
-    }[key] || key;
+    const label = SOURCE_LABELS[key] || key;
     srcChips.appendChild(chipEl(label, `${label} (${count})`, state.source === key, () => {
       state.source = state.source === key ? "" : key;
       refresh();
@@ -151,10 +168,13 @@ function refresh() {
 
 function renderList() {
   const list = $("factorList");
-  $("resultMeta").textContent = `${state.filtered.length} / ${state.factors.length} 个因子`;
+  const total = state.stats.total_factors || state.factors.length;
+  const loadState = state.loadComplete ? "已全量加载" : "部分加载";
+  $("resultMeta").textContent = `${state.filtered.length} / ${total} 个因子 · 当前 ${loadState}`;
   list.innerHTML = "";
   const frag = document.createDocumentFragment();
   for (const f of state.filtered) {
+    const availability = factorAvailability(f);
     const item = document.createElement("div");
     item.className = "factor-item" + (state.selected === f.factor_id ? " active" : "");
     item.dataset.id = f.factor_id;
@@ -165,6 +185,7 @@ function renderList() {
         <span class="tag cat-${f.category}">${f.category}</span>
         <span class="tag">${f.subcategory}</span>
         <span class="tag">${f.frequency}</span>
+        <span class="tag ${availability.className}">${availability.label}</span>
       </div>`;
     item.addEventListener("click", () => selectFactor(f.factor_id));
     frag.appendChild(item);
@@ -192,6 +213,8 @@ function metaCell(k, v) {
 }
 
 function renderDetail(f) {
+  const availability = factorAvailability(f);
+  const sourceLabel = SOURCE_LABELS[f.factor_id.split(":")[0]] || f.factor_id.split(":")[0];
   $("detailEmpty").hidden = true;
   const panel = $("detailContent");
   panel.hidden = false;
@@ -212,7 +235,8 @@ function renderDetail(f) {
     <div class="meta-grid">
       ${metaCell("大类", f.category)}
       ${metaCell("子类", f.subcategory)}
-      ${metaCell("数据来源", f.data_source)}
+      ${metaCell("数据来源", `${sourceLabel} · ${f.data_source}`)}
+      ${metaCell("数据状态", availability.detail)}
       ${metaCell("数据频率", f.frequency)}
       ${metaCell("覆盖范围", f.coverage)}
       ${metaCell("历史起始", f.history_start)}
@@ -425,15 +449,42 @@ async function checkApiStatus() {
   try {
     const res = await fetch(`${API}/quant-api/status`);
     const s = await res.json();
-    $("apiStatus").textContent = s.token_configured
-      ? `Quant API: 已连接（${s.base_url}）`
-      : "Quant API: token 未配置（因子值查询不可用，可勾选演示模式）";
+    if (s.real_data_enabled) {
+      $("apiStatus").textContent = s.controlled_access_enabled
+        ? "真实数据: 已启用，需客户 API Key；目录与元数据可直接浏览"
+        : "真实数据: 服务端已连通，但当前实例未配置客户 API Key";
+    } else {
+      $("apiStatus").textContent = "真实数据: 未启用（因子值查询不可用，可勾选演示模式）";
+    }
   } catch {
     $("apiStatus").textContent = "Quant API: 状态未知";
   }
 }
 
 /* ---------------- 工具 ---------------- */
+function factorAvailability(factor) {
+  const source = (factor.factor_id || "").split(":")[0];
+  if (source === "QAPI33") {
+    return {
+      label: "真实数据",
+      detail: "实时可查（当前接通 Quant API 月频因子值）",
+      className: "status-live",
+    };
+  }
+  if (source === "ALPHA101") {
+    return {
+      label: "仅元数据",
+      detail: "目录与公式已就绪，因子值仍需后续数据任务生成",
+      className: "status-meta",
+    };
+  }
+  return {
+    label: "需外部环境",
+    detail: "目录已收录，真实因子值依赖额外计算或数据环境",
+    className: "status-external",
+  };
+}
+
 function escapeHtml(s) {
   return String(s ?? "")
     .replace(/&/g, "&amp;")

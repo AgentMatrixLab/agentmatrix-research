@@ -1,6 +1,6 @@
 # A股因子数据库 — 技术实现文档及维护指南
 
-> 版本：v0.1（阶段 0 产品雏形） · 更新日期：2026-08-28
+> 版本：v0.5（客户策略版） · 更新日期：2026-09-01
 > 面向维护者。使用说明见 [FACTOR_DB_USER_GUIDE.md](./FACTOR_DB_USER_GUIDE.md)，交付计划见 [FACTOR_DB_DELIVERY_PLAN.md](./FACTOR_DB_DELIVERY_PLAN.md)。
 
 ## 1. 架构总览
@@ -19,9 +19,10 @@
 │  因子值查询 · 分布统计 · CSV/Excel 导出 · 数据源状态          │
 ├──────────────────────────────────────────────────────────┤
 │  元数据层 research_core/factor_db/metadata.py              │
-│  统一因子目录（134 个）：检索 / 详情 / 统计 / 数据字典        │
+│  统一因子目录（1058 个）：检索 / 详情 / 统计 / 数据字典       │
 │    ├─ quant_api_33_meta.py   33 因子精编中文元数据（静态）   │
-│    └─ Alpha101 specs 动态加载（101 个，单一事实源）           │
+│    ├─ Alpha101 / qlib-factor-zoo / Barra / JQGM 聚合         │
+│    └─ zoo_meta.json 等多来源元数据事实源                      │
 ├──────────────────────────────────────────────────────────┤
 │  数据访问  research_core/data_loader/quant_api_client.py   │
 │  Quant API v2 HTTP 客户端（token 经环境变量注入）            │
@@ -46,9 +47,37 @@
 | `frontend/factor-db/index.html` | 单页应用骨架 |
 | `frontend/factor-db/styles.css` | 深色主题样式 |
 | `frontend/factor-db/app.js` | 前端逻辑（检索/详情/分布图/导出） |
-| `runtime/factor_db_smoke_test.py` | 18 项端到端冒烟测试 |
+| `tests/test_factor_db.py` | Factor DB 元数据与 API 回归测试 |
 
 ## 3. 关键实现说明
+
+### 3.0 公开接口与受控接口分层
+
+- 公开接口：`/stats`、`/factors`、`/factors/{id}`、`/dictionary`、`/distribution?demo=1`
+- 受控接口：`/factors/{id}/values`、真实 `/distribution`、`/export?scope=values`、`/quant-api/status?remote=1`
+- 客户鉴权：`Authorization: Bearer <key>` 或 `X-FactorDB-API-Key: <key>`
+- 客户配置来源：`FACTOR_DB_CUSTOMER_POLICIES_JSON` / `FACTOR_DB_CUSTOMER_POLICIES_PATH`（未配置时回退到 `FACTOR_DB_API_KEYS`）
+- CORS 白名单：独立运行优先读取 `FACTOR_DB_CORS_ORIGINS`，未设置时回退到 `FACTOR_LAB_CORS_ORIGINS`
+- 受控接口留痕：请求完成后写入 `runtime/factor_db/audit/access.jsonl`（可用环境变量改路径）
+- 基础限流：按 `客户/凭证 × 端点` 维度限频，超限返回 `429`
+
+客户策略 JSON 示例：
+
+```json
+[
+  {
+    "customer_id": "client_a",
+    "name": "客户A",
+    "api_key": "client-a-key",
+    "expires_at": "2026-12-31T23:59:59Z",
+    "allowed_sources": ["QAPI33", "ALPHA101"],
+    "allowed_factors": ["QAPI33:roe_ttm"],
+    "allow_export_values": false,
+    "rate_limit_count": 60,
+    "rate_limit_window_seconds": 60
+  }
+]
+```
 
 ### 3.1 因子标识符体系
 
@@ -87,15 +116,27 @@
 python -X utf8 -m research_core.factor_db.api --port 8013
 
 # 挂载到已有 factor_lab_api Flask 应用
-from research_core.factor_db.api import factor_db_bp
-app.register_blueprint(factor_db_bp)
-# 前端页面路由（/factor-db/）由 _register_frontend 提供，如宿主应用已有
-# 静态路由体系，可只注册蓝图、复用宿主静态服务。
+from research_core.factor_db.api import register_factor_db
+register_factor_db(app)
 ```
 
 依赖：flask、flask-cors、pandas、openpyxl（Excel 导出）、requests（quant_api_client）。前端除 KaTeX CDN 外零依赖。
 
 ## 4. 维护指南
+
+### 4.0 关键环境变量
+
+| 变量名 | 说明 |
+|---|---|
+| `FACTOR_DB_API_KEYS` | 受控接口客户凭证列表，多个值用逗号分隔 |
+| `FACTOR_DB_CUSTOMER_POLICIES_JSON` | 客户策略 JSON，支持客户名、到期时间、访问范围、导出权限、客户级限流 |
+| `FACTOR_DB_CUSTOMER_POLICIES_PATH` | 客户策略 JSON 文件路径 |
+| `FACTOR_DB_CORS_ORIGINS` | Factor DB 独立应用允许的浏览器来源白名单 |
+| `FACTOR_DB_PUBLIC_ORIGIN` | 对外公开域名，可自动加入 CORS 白名单 |
+| `FACTOR_DB_RATE_LIMIT_COUNT` | 单个 API Key 在窗口期内的最大调用次数，默认 120 |
+| `FACTOR_DB_RATE_LIMIT_WINDOW_SECONDS` | 限流窗口秒数，默认 60 |
+| `FACTOR_DB_AUDIT_LOG_PATH` | 审计日志落盘路径，默认 `runtime/factor_db/audit/access.jsonl` |
+| `FACTOR_LAB_QUANT_API_TOKEN` / `QUANT_API_TOKEN` | 后端访问 Quant API 的服务端凭证 |
 
 ### 4.1 新增一个 Quant API 因子（元数据 + 数据即齐）
 
@@ -119,30 +160,31 @@ app.register_blueprint(factor_db_bp)
 
 ### 4.4 冒烟测试
 
-服务运行中（默认 8013 端口）执行：
+仓库根目录执行：
 
 ```bash
-python -X utf8 runtime/factor_db_smoke_test.py
-# 预期输出：18/18 passed
+python -m pytest -q tests/test_factor_db.py
 ```
 
-覆盖：健康检查、目录统计、检索过滤、详情（QAPI33/ALPHA101/短名/404）、
-token 语义（401/425）、演示分布、字典 CSV/XLSX 导出、因子元数据导出、前端页面与静态资源。
+覆盖：目录统计、检索过滤、详情（QAPI33/ALPHA158/短名）、来源计数、
+token/425 语义、演示分布、字典接口。
 
 ### 4.5 质量控制机制（与交付方案 6 节对应）
 
 | 机制 | 实现位置 |
 |---|---|
 | 因子值准确性 | 服务层透传 Quant API 原始值，不做静默修改；分布统计独立复算均值/分位数供交叉校验 |
-| 完整性检查 | 元数据加载时校验 134 因子 formula/definition 非空（冒烟测试覆盖） |
+| 完整性检查 | 元数据加载时校验当前目录聚合结果可正常检索、统计与导出（回归测试覆盖） |
 | 异常值提示 | 分布统计输出 P1/P99 离群率、偏度、峰度，前端直方图叠加分位线 |
 | 口径透明 | 每个因子强制携带 `cautions`（注意事项）字段，提示口径陷阱 |
 
 ### 4.6 安全要点
 
 - token 仅经环境变量 `FACTOR_LAB_QUANT_API_TOKEN` / `QUANT_API_TOKEN` 进入后端进程
+- 真实数据接口默认可通过客户策略或 `FACTOR_DB_API_KEYS` 转为客户受控接口；目录检索类接口保持公开只读
+- 受控接口默认记录客户编号、客户名称、来源 IP、路径、状态码，便于交付后的审计与追溯
 - 所有导出文件名由服务端生成（基于 factor_id 白名单字符），拒绝用户输入拼接
-- CORS 仅开放 `/api/*`；演示环境若需收紧，改 `api.py` 中 `CORS(...)` 的 origins
+- CORS 仅开放 `/api/*`；独立应用通过 `FACTOR_DB_CORS_ORIGINS` 收紧来源白名单
 
 ## 5. 已知限制与阶段 1 待办
 
@@ -151,11 +193,15 @@ token 语义（401/425）、演示分布、字典 CSV/XLSX 导出、因子元数
 | Alpha101 因子值 | 元数据/公式就绪，值未生成 | RQData 异步拉取任务 → 本地 parquet → service 路由 |
 | 真实分布 | 需 token，逐因子现算 | 增加（因子×日期）分布结果缓存（parquet 落地） |
 | 因子历史截面 | 单因子单截面查询 | 批量截面导出（NDJSON/Parquet 流式） |
-| 鉴权 | 无（原型） | 演示后按需求加 API key / 内网网关 |
+| 鉴权 | 已支持客户策略 / API Key 保护受控接口 | 后续可接入内网网关、数据库化客户配置与额度管理 |
 | 前端 | 原生 JS 单页 | 按反馈迭代（React/Vue 化仅在复杂度需要时） |
 
 ## 6. 变更记录
 
 | 日期 | 版本 | 变更 |
 |---|---|---|
-| 2026-08-28 | v0.1 | 阶段 0 产品雏形：134 因子元数据目录、API 8 端点、Web 原型、CSV/Excel 导出、演示分布、18 项冒烟测试通过 |
+| 2026-08-28 | v0.1 | 阶段 0 产品雏形：134 因子元数据目录、API 8 端点、Web 原型、CSV/Excel 导出、演示分布 |
+| 2026-09-01 | v0.2 | 目录扩展至 1058 因子，宿主服务挂载 Factor DB，回归测试改为 `tests/test_factor_db.py` |
+| 2026-09-01 | v0.3 | 增加客户 API Key、CORS 白名单与公开/受控接口分层 |
+| 2026-09-01 | v0.4 | 为受控接口增加基础限流与审计日志 |
+| 2026-09-01 | v0.5 | 增加客户策略：到期控制、因子范围授权、导出权限与客户级限流 |

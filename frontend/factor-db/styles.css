@@ -138,6 +138,11 @@ html, body {
 .tag.cat-基础因子 { color: var(--green); border-color: rgba(52, 211, 153, 0.3); }
 .tag.cat-技术因子 { color: var(--accent); border-color: rgba(77, 163, 255, 0.3); }
 .tag.cat-基本面因子 { color: var(--purple); border-color: rgba(167, 139, 250, 0.3); }
+.tag.cat-风险因子 { color: var(--amber); border-color: rgba(251, 191, 36, 0.35); }
+.tag.cat-情绪因子 { color: #f472b6; border-color: rgba(244, 114, 182, 0.35); }
+.tag.status-live { color: var(--green); border-color: rgba(52, 211, 153, 0.35); }
+.tag.status-meta { color: var(--amber); border-color: rgba(251, 191, 36, 0.35); }
+.tag.status-external { color: #f472b6; border-color: rgba(244, 114, 182, 0.35); }
 
 /* ---------- 右侧详情 ---------- */
 .detail-panel { overflow-y: auto; min-height: 0; background: var(--bg); }
