@@ -107,7 +107,13 @@ python -m research_core.factor_lab.cli validate --factor reversal_1m --config co
 
 1. **列名不兼容**：`RQDataPanelLoader` 需要 RQData 原生列名 `listed_date` / `de_listed_date` / `total_turnover` / `circulation_a` / `is_suspended` / `is_st` / `turnover_rate`；Trae 的数据契约用的是 `listing_date` / `delisting_date` / `amount` / `adjustment_factor`。**离线喂真实面板需要一层列名适配**，不能直接塞。
 2. **复权口径冲突**：config 写 `adjust_type: post`（用后复权价），Trae 契约写「原始未复权 OHLC + 独立复权因子」。两者对不上，跑之前必须定口径。
-3. **切分冲突**：config 是 train `2016-01-01~2023-12-31` / OOS `2024-01-01~2026-08-31`；任务书冻结的是 train 到 `2022-12-31` / OOS 从 `2023-01-01` 起。**没有 Sam 确认前我不动 config。**
+3. **切分冲突（已取证）**：config 是 train `2016-01-01~2023-12-31` / OOS `2024-01-01~2026-08-31`；任务书冻结的是 train 到 `2022-12-31` / OOS 从 `2023-01-01` 起。**没有 Sam 确认前我不动 config。**
+   取证结果（`2026-10-03`）：
+   - `git log --follow -- configs/validation_gates.yaml` 只有两个 commit：`61dcf19`（建文件，PR #120）与 `cf9c883`（只加了 `reversal_1m` 定义）。
+   - `git log -S'train_end'` 与 `git log -S'adjust_type'` 都只命中 `61dcf19` —— 也就是说**这个切分和 `adjust_type: post` 自建库起从未变过**。
+   - 全仓 `grep 2022-12-31` **零命中**（`*.md`、`*.py`、`*.yaml` 都没有）。任务书里的冻结切分在仓库里**没有任何对应记录**。
+   - 没有任何测试把这个生产切分写死（`tests/` 里只有 `conftest.py` 自己合成面板用的 `2017-12-31/2018-01-01`）。**因此改 config 的切分不会破坏任何测试**，这纯粹是一个口径决定，不是技术约束。
+   - 结论：两个日期都「有出处」——一个是代码事实（`61dcf19`），一个只存在于任务书。**必须由 Sam 裁定后改 config，或由 Sam 确认以 config 为准并修正任务书。**
 4. **自动 fallback**：`factor.primary = turnover_20d`，若 panel 缺 `turnover_rate` 列，会自动换成 `avg_amount_log` 并写 `fallback_reason`（第 655-657 行）。批量跑时不能把 fallback 结果当成原因子结果。
 5. **硬性数据要求**：`_eligible_panel` 要求 `limit_up` / `limit_down` 非空，且 `close` 严格落在两者之间；缺字段抛 `MissingDataError` 并写 `needs_human.json`。
 6. **rejected 不报错**：退出码仍为 0，批量驱动必须读 JSON。
