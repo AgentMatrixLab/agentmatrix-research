@@ -737,10 +737,367 @@ def industry_neutralize(
     return result
 
 
+def rolling_quantile(
+    df: pd.DataFrame,
+    value_col: str,
+    window: int,
+    q: float,
+    *,
+    code_col: str = "code",
+    min_periods: int | None = None,
+) -> pd.Series:
+    """Rolling quantile at level ``q`` (linear interpolation between order stats)."""
+    window = as_window(window)
+    min_obs = window if min_periods is None else min_periods
+    level = float(q)
+    if not 0.0 <= level <= 1.0:
+        raise ValueError(f"quantile level must lie in [0, 1], got {q!r}")
+    return df.groupby(code_col)[value_col].transform(
+        lambda x: x.rolling(window, min_periods=min_obs).quantile(level)
+    )
+
+
+def rolling_slope(
+    df: pd.DataFrame,
+    value_col: str,
+    window: int,
+    *,
+    code_col: str = "code",
+    min_periods: int | None = None,
+) -> pd.Series:
+    """Rolling OLS slope of the series against time ``t = 1..N``.
+
+    Matches Qlib's ``Slope``: regress the window (in chronological order) on
+    ``1, 2, ..., N`` and return the slope. NaN observations inside the window
+    are dropped from the fit rather than treated as zero.
+    """
+    window = as_window(window)
+    min_obs = window if min_periods is None else min_periods
+
+    def _slope(values: np.ndarray) -> float:
+        y = values.astype(float)
+        mask = ~np.isnan(y)
+        n = int(mask.sum())
+        if n < 2:
+            return np.nan
+        x = np.arange(1, len(y) + 1, dtype=float)[mask]
+        y = y[mask]
+        sxx = n * np.dot(x, x) - x.sum() ** 2
+        if sxx == 0:
+            return np.nan
+        return float((n * np.dot(x, y) - x.sum() * y.sum()) / sxx)
+
+    return df.groupby(code_col)[value_col].transform(
+        lambda x: x.rolling(window, min_periods=min_obs).apply(_slope, raw=True)
+    )
+
+
+def _ols_diagnostics(values: np.ndarray) -> tuple[float, float, float]:
+    """Return (slope, r_squared, residual_of_last_point) for one window."""
+    y = values.astype(float)
+    mask = ~np.isnan(y)
+    n = int(mask.sum())
+    if n < 2:
+        return np.nan, np.nan, np.nan
+    x = np.arange(1, len(y) + 1, dtype=float)[mask]
+    y = y[mask]
+    sxx = n * np.dot(x, x) - x.sum() ** 2
+    if sxx == 0:
+        return np.nan, np.nan, np.nan
+    slope = (n * np.dot(x, y) - x.sum() * y.sum()) / sxx
+    intercept = y.mean() - slope * x.mean()
+
+    # The residual is taken at the *current* bar, i.e. at t = len(window),
+    # which is what Qlib's Resi returns.
+    current_t = float(len(values))
+    current_value = float(values[-1])
+    residual = current_value - (slope * current_t + intercept)
+
+    denom = sxx * (n * np.dot(y, y) - y.sum() ** 2)
+    rsquare = np.nan if denom <= 0 else ((n * np.dot(x, y) - x.sum() * y.sum()) ** 2) / denom
+    return float(slope), float(rsquare), float(residual)
+
+
+def rolling_rsquare(
+    df: pd.DataFrame,
+    value_col: str,
+    window: int,
+    *,
+    code_col: str = "code",
+    min_periods: int | None = None,
+) -> pd.Series:
+    """Rolling coefficient of determination of the series against time ``t = 1..N``."""
+    window = as_window(window)
+    min_obs = window if min_periods is None else min_periods
+    return df.groupby(code_col)[value_col].transform(
+        lambda x: x.rolling(window, min_periods=min_obs).apply(
+            lambda v: _ols_diagnostics(v)[1], raw=True
+        )
+    )
+
+
+def rolling_resi(
+    df: pd.DataFrame,
+    value_col: str,
+    window: int,
+    *,
+    code_col: str = "code",
+    min_periods: int | None = None,
+) -> pd.Series:
+    """Rolling residual of the newest bar against a linear fit over the window.
+
+    Matches Qlib's ``Resi``: fit the window on ``t = 1..N``, then return
+    ``y_t - (slope * t + intercept)`` evaluated at the current bar.
+    """
+    window = as_window(window)
+    min_obs = window if min_periods is None else min_periods
+    return df.groupby(code_col)[value_col].transform(
+        lambda x: x.rolling(window, min_periods=min_obs).apply(
+            lambda v: _ols_diagnostics(v)[2], raw=True
+        )
+    )
+
+
+def rolling_idxmax(
+    df: pd.DataFrame,
+    value_col: str,
+    window: int,
+    *,
+    code_col: str = "code",
+    min_periods: int | None = None,
+) -> pd.Series:
+    """1-based position of the window maximum, counted from the window start.
+
+    Matches Qlib's ``IdxMax``, which returns ``argmax() + 1`` over the window in
+    chronological order. The result therefore lies in ``[1, window]`` rather
+    than being normalised.
+    """
+    window = as_window(window)
+    min_obs = window if min_periods is None else min_periods
+    return df.groupby(code_col)[value_col].transform(
+        lambda x: x.rolling(window, min_periods=min_obs).apply(
+            lambda v: float(np.nanargmax(v) + 1) if not np.all(np.isnan(v)) else np.nan,
+            raw=True,
+        )
+    )
+
+
+def rolling_idxmin(
+    df: pd.DataFrame,
+    value_col: str,
+    window: int,
+    *,
+    code_col: str = "code",
+    min_periods: int | None = None,
+) -> pd.Series:
+    """1-based position of the window minimum, counted from the window start."""
+    window = as_window(window)
+    min_obs = window if min_periods is None else min_periods
+    return df.groupby(code_col)[value_col].transform(
+        lambda x: x.rolling(window, min_periods=min_obs).apply(
+            lambda v: float(np.nanargmin(v) + 1) if not np.all(np.isnan(v)) else np.nan,
+            raw=True,
+        )
+    )
+
+
+def ts_ema(
+    df: pd.DataFrame,
+    value_col: str,
+    window: int,
+    *,
+    code_col: str = "code",
+    min_periods: int | None = None,
+) -> pd.Series:
+    """Exponential moving average with ``span = window``.
+
+    Follows Qlib's ``EMA``, which calls ``ewm(span=N)`` with pandas' default
+    ``adjust=True``. A fractional window in ``(0, 1)`` is read as a decay
+    factor, again matching Qlib.
+    """
+    min_obs = 1 if min_periods is None else min_periods
+    raw = float(window)
+    if 0.0 < raw < 1.0:
+        return df.groupby(code_col)[value_col].transform(
+            lambda x: x.ewm(alpha=raw, min_periods=min_obs).mean()
+        )
+    span = as_window(window)
+    return df.groupby(code_col)[value_col].transform(
+        lambda x: x.ewm(span=span, min_periods=min_obs).mean()
+    )
+
+
+def bollinger_band(
+    df: pd.DataFrame,
+    value_col: str,
+    window: int,
+    num_std: float = 2.0,
+    *,
+    code_col: str = "code",
+    min_periods: int | None = None,
+    upper: bool = True,
+) -> pd.Series:
+    """Bollinger band: moving average plus or minus ``num_std`` deviations."""
+    window = as_window(window)
+    min_obs = window if min_periods is None else min_periods
+    k = float(num_std)
+
+    def _band(x: pd.Series) -> pd.Series:
+        mean = x.rolling(window, min_periods=min_obs).mean()
+        std = x.rolling(window, min_periods=min_obs).std(ddof=0)
+        return mean + k * std if upper else mean - k * std
+
+    return df.groupby(code_col)[value_col].transform(_band)
+
+
+def bollinger_band_upper(
+    df: pd.DataFrame,
+    value_col: str,
+    window: int,
+    num_std: float = 2.0,
+    *,
+    code_col: str = "code",
+    min_periods: int | None = None,
+) -> pd.Series:
+    """Upper Bollinger band, bound for the expression compiler's calling shape."""
+    return bollinger_band(
+        df, value_col, window, num_std,
+        code_col=code_col, min_periods=min_periods, upper=True,
+    )
+
+
+def bollinger_band_lower(
+    df: pd.DataFrame,
+    value_col: str,
+    window: int,
+    num_std: float = 2.0,
+    *,
+    code_col: str = "code",
+    min_periods: int | None = None,
+) -> pd.Series:
+    """Lower Bollinger band, bound for the expression compiler's calling shape."""
+    return bollinger_band(
+        df, value_col, window, num_std,
+        code_col=code_col, min_periods=min_periods, upper=False,
+    )
+
+
+def bias(
+    df: pd.DataFrame,
+    value_col: str,
+    window: int,
+    *,
+    code_col: str = "code",
+    min_periods: int | None = None,
+) -> pd.Series:
+    """BIAS: percentage deviation of the value from its moving average."""
+    window = as_window(window)
+    min_obs = window if min_periods is None else min_periods
+
+    def _bias(x: pd.Series) -> pd.Series:
+        mean = x.rolling(window, min_periods=min_obs).mean()
+        return (x - mean) / mean.replace(0, np.nan) * 100.0
+
+    return df.groupby(code_col)[value_col].transform(_bias)
+
+
+def true_range(
+    df: pd.DataFrame,
+    close_col: str,
+    high_col: str,
+    low_col: str,
+    window: int,
+    *,
+    code_col: str = "code",
+    min_periods: int | None = None,
+) -> pd.Series:
+    """Average True Range over ``window`` bars.
+
+    True range is the greatest of the bar's own range and its gaps from the
+    previous close; the passed ``close_col`` supplies that previous close.
+    """
+    window = as_window(window)
+    min_obs = window if min_periods is None else min_periods
+    previous_close = df.groupby(code_col)[close_col].shift(1)
+    high = df[high_col]
+    low = df[low_col]
+    tr = pd.concat(
+        [
+            (high - low).abs(),
+            (high - previous_close).abs(),
+            (low - previous_close).abs(),
+        ],
+        axis=1,
+    ).max(axis=1)
+    working = df.assign(_true_range=tr)
+    return working.groupby(code_col)["_true_range"].transform(
+        lambda x: x.rolling(window, min_periods=min_obs).mean()
+    )
+
+
+def commodity_channel_index(
+    df: pd.DataFrame,
+    close_col: str,
+    high_col: str,
+    low_col: str,
+    window: int,
+    *,
+    code_col: str = "code",
+    min_periods: int | None = None,
+) -> pd.Series:
+    """Commodity Channel Index: deviation of typical price from its own mean."""
+    window = as_window(window)
+    min_obs = window if min_periods is None else min_periods
+    typical = (df[high_col] + df[low_col] + df[close_col]) / 3.0
+    working = df.assign(_typical=typical)
+
+    def _cci(x: pd.Series) -> pd.Series:
+        mean = x.rolling(window, min_periods=min_obs).mean()
+        mad = x.rolling(window, min_periods=min_obs).apply(
+            lambda v: np.nanmean(np.abs(v - np.nanmean(v))), raw=True
+        )
+        return (x - mean) / (0.015 * mad.replace(0, np.nan))
+
+    return working.groupby(code_col)["_typical"].transform(_cci)
+
+
+def relative_strength_index(
+    df: pd.DataFrame,
+    value_col: str,
+    window: int,
+    *,
+    code_col: str = "code",
+    min_periods: int | None = None,
+) -> pd.Series:
+    """Relative Strength Index over ``window`` bars, scaled to 0-100."""
+    window = as_window(window)
+    min_obs = window if min_periods is None else min_periods
+    change = df.groupby(code_col)[value_col].diff()
+    gain = change.clip(lower=0.0)
+    loss = (-change).clip(lower=0.0)
+    working = df.assign(_gain=gain, _loss=loss)
+
+    def _rsi(x: pd.Series) -> pd.Series:
+        group = working.loc[x.index]
+        avg_gain = group["_gain"].rolling(window, min_periods=min_obs).mean()
+        avg_loss = group["_loss"].rolling(window, min_periods=min_obs).mean()
+        rs = avg_gain / avg_loss.replace(0, np.nan)
+        rsi = 100.0 - 100.0 / (1.0 + rs)
+        # All-gain windows have zero average loss and RSI 100 by definition.
+        return rsi.where(avg_loss != 0, 100.0).where(avg_gain.notna())
+
+    return working.groupby(code_col)[value_col].transform(lambda x: _rsi(x))
+
+
 __all__ = [
     "SequenceSpec",
     "align_sort",
     "as_window",
+    "bias",
+    "bollinger_band",
+    "bollinger_band_lower",
+    "bollinger_band_upper",
+    "commodity_channel_index",
     "compute_vwap",
     "cross_sectional_rank",
     "cross_sectional_scale",
@@ -753,15 +1110,22 @@ __all__ = [
     "lowday",
     "panel_to_wide",
     "returns_from_close",
+    "relative_strength_index",
     "rolling_corr",
     "rolling_count",
     "rolling_cov",
+    "rolling_idxmax",
+    "rolling_idxmin",
     "rolling_max",
     "rolling_mean",
     "rolling_min",
     "rolling_product",
+    "rolling_quantile",
     "rolling_regression_beta",
     "rolling_regression_residual",
+    "rolling_resi",
+    "rolling_rsquare",
+    "rolling_slope",
     "rolling_std",
     "rolling_sum",
     "rolling_sumif",
@@ -771,11 +1135,13 @@ __all__ = [
     "sort_panel",
     "sumac",
     "time_series_rank",
+    "true_range",
     "ts_argmax",
     "ts_argmin",
     "ts_decay_linear",
     "ts_delay",
     "ts_delta",
+    "ts_ema",
     "ts_max",
     "ts_mean",
     "ts_min",

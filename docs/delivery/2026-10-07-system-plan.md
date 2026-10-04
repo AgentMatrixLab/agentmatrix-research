@@ -233,13 +233,27 @@
 | 阶段 | 动作 | 可算因子 | 占比 | 状态 |
 |---|---|---:|---:|---|
 | 原始 | — | 111 | 10.5% | 基线 |
-| +1 | 词法器接受 `$` 前缀 + 补 `TS_DELAY`/`TS_PRODUCT`/`TS_ARGMAX`/`TS_ARGMIN`/`POWER`/`SIGNED_POWER`/`GREATER`/`LESS` | 255 | 24.1% | ✅ **本机已完成** |
-| +2 | 加算子别名表（`Ref`/`Delay`/`Ts_*`/`Correlation`/`StdDev` 等，**语义逐条核对**） | **816** | **77.1%** | ✅ **本机已完成** |
-| +3 | 补 top 算子（EMA / SLOPE / IDXMAX / IDXMIN / QUANTILE / ATR / CCI / RSI / BOLL / TRIX …） | ~1013 | ~96% | 待做 |
+| +1 | 词法器接受 `$` 前缀 + 补 `TS_DELAY`/`TS_PRODUCT`/`TS_ARGMAX`/`TS_ARGMIN`/`POWER`/`SIGNED_POWER`/`GREATER`/`LESS` | 255 | 24.1% | ✅ **已完成** |
+| +2 | 加算子别名表（`Ref`/`Delay`/`Ts_*`/`Correlation`/`StdDev` 等，**语义逐条核对**） | 816 | 77.1% | ✅ **已完成** |
+| +3 | 补统计与指标算子（EMA / SLOPE / RSQUARE / RESI / QUANTILE / IDXMAX / IDXMIN / BIAS / RSI / BOLL / ATR / CCI） | **913** | **86.3%** | ✅ **已完成** |
+| +4 | 剩余 100 条：TRIX / VPT / BBI / VR / CR / AR / BR / MFI / PSY / ADX 族等 + 财务字段 | ~1013 | ~96% | 待做 |
 
-**本轮已完成 `$` 词法与别名表两项**（commit 见分支 `feat/factor-console-and-1007-plan`），实测目录可算率 **10.5% → 77.1%**。
+**目录可算率 10.5% → 86.3%**，`needs_numerics` 从 197 降到 **100**。
 
-**同时修掉一个正确性缺陷**：`formula_compiler` 原先对**未识别的函数名**兜底生成 `NAME(...)` 源码，`compile_formula` **成功返回**，错误直到执行时才以 `NameError` 暴露。现在改为在编译期抛 `UnsupportedOperatorError`，并新增测试断言「分类器判定可算 ⟺ 编译器能编译」，杜绝两者再次分叉。
+**新算子的语义全部来自 Qlib 源码，不是猜的**（本机 `D:\Qlibexample\qlib` 有完整 checkout）：
+
+| 算子 | 定义来源 | 关键点 |
+|---|---|---|
+| `IdxMax/IdxMin(x,N)` | `qlib/data/ops.py:933` | 返回窗口内**从窗口起点数的 1-based 位置**（`argmax()+1`），**不是归一化值**，取值 ∈ [1,N] |
+| `Slope(x,N)` | `qlib/data/_libs/rolling.pyx:49` | 对 `t=1..N` 做 OLS 的斜率，窗口内 NaN 剔除而非补零 |
+| `Rsquare(x,N)` | 同上 `:137` | 该回归的 R²，∈ [0,1] |
+| `Resi(x,N)` | 同上 `:91` | **当前 bar** 相对拟合线的残差（在 `t=N` 处取值） |
+| `Quantile(x,N,q)` | `qlib/data/ops.py:990` | 滚动分位，注意参数顺序是 **(窗口, 分位)** |
+| `EMA(x,N)` | `qlib/data/ops.py:1284` | `ewm(span=N)`，pandas 默认 `adjust=True`；N∈(0,1) 时按衰减因子处理 |
+
+`ATR`/`CCI`/`RSI`/`BOLL`/`BIAS` 用各自唯一通行的定义实现，并在测试里钉住关键性质（`RSI∈[0,100]`、`Rsquare∈[0,1]`、上轨≥下轨、`ATR` 必须用跳空缺口而非当日振幅）。
+
+**顺带修掉一个正确性缺陷**：`formula_compiler` 原先对**未识别的函数名**兜底生成 `NAME(...)` 源码，`compile_formula` **成功返回**，错误直到执行时才以 `NameError` 暴露。现在改为在编译期抛 `UnsupportedOperatorError`，并有测试断言「分类器判定可算 ⟺ 编译器能编译」。
 
 **`GREATER` / `LESS` 的语义已核实（不是猜的）**。它们被 57 条 GTJA191 表达式使用。逐个对照原版公式确认是**两参数逐元素 max/min**，不是 0/1 选择器：
 
@@ -282,34 +296,55 @@ CAP / MARKET_CAP / TOTAL_SHARES / FREE_FLOAT · INDUSTRY
 
 这已经是仓库既有的正确设计（D2 交付的离线运行手册），继续沿用，不要改。
 
-```
-115 服务器 (conda env: rqsdk, rqdatac 3.5.2)
-  │
-  ├─ ① 导出扩展面板  validation_panel.parquet
-  │     date, code, open, high, low, close, pre_close, volume, total_turnover,
-  │     vwap, limit_up, limit_down, circulation_a, total_shares,
-  │     listed_date, de_listed_date, is_st, is_suspended, industry
-  │     + sidecar: source/dataset/data_start/data_end/row_count/sha256/price_basis
-  │     ★ price_basis 必须是 after-adjust(post)，与 config 的 adjust_type 一致
-  │
-  ├─ ② 导出基准            000985 日收益 + 沪深300/中证500/中证1000 成分
-  │
-  ├─ ③ 导出因子值长表      date, code, factor_name, value
-  │     factor_name = <factor_id>  或  <factor_id>|window=<w>（扰动变体）
-  │     ★ 带窗口的因子必须同时给 base 与 0.8×/1.2× 两个扰动变体
-  │
-  └─ ④ 导出 run_manifest.json（代码 commit、各文件哈希、切分、参数快照）
-        │
-        ▼  离线传输（校验 SHA-256）
-本机/CI  → deterministic_validation.py 全量跑
+**导出脚本已就绪：`scripts/export_rqsdk_panel.py`**（本轮新增）。在 115 服务器上：
+
+```bash
+conda activate rqsdk
+# 1) 30 秒 API 体检：3 只票 1 天，把每个 RQData 调用都试一遍，报告哪个字段/权限有问题
+python -X utf8 scripts/export_rqsdk_panel.py --probe
+
+# 2) 正式导出
+python -X utf8 scripts/export_rqsdk_panel.py \
+    --out-dir /data/amr/export --start 2015-01-01 --end 2026-08-31
+
+# 3) 用仓库自己的加载器自检（不联网）
+python -X utf8 scripts/export_rqsdk_panel.py --out-dir /data/amr/export --self-check
 ```
 
-**数据量估算**：全 A ~5400 只 × 2019-01-01~2026-08-31（含预热）约 1900 交易日 ≈ **1030 万** `(date, code)` 行。
-因子值：816 因子 × 1030 万 = **约 84 亿个值**；float32 宽表约 34 GB 原始，Parquet+snappy 约 **12–20 GB**。
+脚本内建三条防呆规则：
+
+1. **不静默降级**：RQData 没返回某个请求字段 → **硬报错**，不是悄悄少一列。（有测试）
+2. **价格口径显式化**：`limit_up`/`limit_down` 只有和 `close` 同口径才有意义。清单里带一个**涨跌停命中率合理性检查**（合理区间约 0.05%–30%）；口径混用会直接判为不合理并**拒绝声明成功**（退出码 2）。（有测试）
+3. **不推断**：列名、单位、复权口径原样写进 sidecar。`vwap` 缺失时用 `total_turnover / volume` 计算（两者同一次复权拉取，比值即复权 VWAP），**并在 sidecar 里写明是算出来的**。
+
+**本轮已做通全链路彩排**（用合成数据，明确标注 `TEST_ONLY_SYNTHETIC`）：
+
+```
+python -X utf8 scripts/dev/make_synthetic_panel_snapshot.py --out-dir .tmp-rehearsal
+python -X utf8 scripts/export_rqsdk_panel.py --out-dir .tmp-rehearsal --self-check
+→ rows=24,328  7 个扩展列齐全  price_basis=post_adjusted  涨跌停合理性检查通过
+```
+
+**唯一没验证的是 RQData 调用本身**（本机没有 `rqdatac`、也不该联网），这正是 `--probe` 存在的理由：拿到凭据后先跑 30 秒体检，再决定是否拉全量。
+
+产出：
+
+```
+validation_panel.parquet   + .json sidecar     全 A 扩展面板（含 OHLC/VWAP/行业/股本）
+benchmark.parquet          + .json sidecar     000985 日收益
+index_membership.parquet   + .json sidecar     沪深300/中证500/中证1000 月末成分
+run_manifest.json                              以上全部 + SHA-256
+```
+
+**一个重要的架构简化（本轮引擎升级带来的）**：引擎可算率到 86.3% 之后，**因子值不再需要服务器导出** —— 本机直接从面板 + 表达式引擎算出来即可。服务器只需要导出「面板 + 基准 + 指数成分」三样。原来那条「预计算因子长表」通道仍然保留（用于扰动变体与真值对照），但**不再是交付的必经路径**，这显著降低了 R1（数据未到）的杀伤力。
+
+**数据量估算**：全 A ~5400 只 × 2015-01-01~2026-08-31（含预热）约 2850 交易日 ≈ **1540 万** `(date, code)` 行。
+因子值：913 因子 × 1540 万 = **约 140 亿个值**；float32 宽表约 56 GB 原始，Parquet+snappy 约 **20–34 GB**。
+（若只保留 train+OOS 需要的窗口，可裁到约 1900 交易日 / 1030 万行，落盘减半。）
 
 **算量结论**：这不是瓶颈。
-- 表达式求值：单因子在 (1900×5400) 矩阵上约 0.3–1 s → 816 因子单线程 5–14 分钟，8 路并行 **1–2 分钟**
-- 逐日截面 rank：约 0.3 s/因子 → ~4 分钟
+- 表达式求值：单因子在 (1900×5400) 矩阵上约 0.3–1 s → 913 因子单线程 5–15 分钟，8 路并行 **1–2 分钟**
+- 逐日截面 rank：约 0.3 s/因子 → ~5 分钟
 - bootstrap CI：IC 序列长约 1900，分钟级
 - **全量验证合计：8 核单机 30–60 分钟**
 

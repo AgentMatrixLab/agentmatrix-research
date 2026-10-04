@@ -27,23 +27,36 @@ import pandas as pd
 
 from research_core.factor_lab.operators import (
     SequenceSpec,
+    bias,
+    bollinger_band_lower,
+    bollinger_band_upper,
+    commodity_channel_index,
     compute_vwap,
     cross_sectional_rank,
     cross_sectional_scale,
     decay_linear,
     indneutralize,
+    relative_strength_index,
     rolling_corr,
     rolling_cov,
+    rolling_idxmax,
+    rolling_idxmin,
+    rolling_quantile,
     rolling_regression_beta,
+    rolling_resi,
+    rolling_rsquare,
+    rolling_slope,
     safe_div,
     signed_power,
     sma,
     sort_panel,
+    true_range,
     ts_argmax,
     ts_argmin,
     ts_decay_linear,
     ts_delay,
     ts_delta,
+    ts_ema,
     ts_max,
     ts_mean,
     ts_min,
@@ -322,6 +335,22 @@ _PANEL_OPERATORS: dict[str, tuple[str, int]] = {
     "DECAY_LINEAR":  ("ts_decay_linear",       1),
     "SCALE":         ("cross_sectional_scale", 1),
     "INDNEUTRALIZE": ("indneutralize",         1),   # (value_expr, group_field_name)
+    # Statistical rolling operators whose semantics were taken from Qlib's own
+    # source rather than guessed; see the tests for the defining properties.
+    "EMA":           ("ts_ema",                1),
+    "SLOPE":         ("rolling_slope",         1),
+    "RSQUARE":       ("rolling_rsquare",       1),
+    "RESI":          ("rolling_resi",          1),
+    "QUANTILE":      ("rolling_quantile",      1),   # (x, window, q)
+    "IDXMAX":        ("rolling_idxmax",        1),
+    "IDXMIN":        ("rolling_idxmin",        1),
+    # Technical indicators with a single universally agreed definition.
+    "BIAS":          ("bias",                  1),
+    "RSI":           ("relative_strength_index", 1),
+    "BOLL_UP":       ("bollinger_band_upper",  1),   # (x, window, num_std)
+    "BOLL_DN":       ("bollinger_band_lower",  1),
+    "ATR":           ("true_range",            3),   # (close, high, low, window)
+    "CCI":           ("commodity_channel_index", 3),
     "CORR":          ("rolling_corr",          2),
     "COV":           ("rolling_cov",           2),
 }
@@ -592,19 +621,22 @@ class CodeGenerator:
                             f"{var} = {py_func}({assign}, \"{col_name}\", \"{group_col_name}\")"
                         )
                     else:
-                        # TS_RANK, DELTA, MEAN, STD, SUM, MAX, MIN, DECAY_LINEAR
-                        window = param_vars[0] if param_vars else "1"
+                        # Everything else is (df, value_col, *params): the window,
+                        # and for QUANTILE / BOLL_* an extra level or width.
+                        params = ", ".join(param_vars) if param_vars else "1"
                         self.statements.append(
-                            f"{var} = {py_func}({assign}, \"{col_name}\", {window})"
+                            f"{var} = {py_func}({assign}, \"{col_name}\", {params})"
                         )
-                elif num_series == 2:
-                    # CORR(x, y, d), COV(x, y, d), INDNEUTRALIZE(x, g)
-                    col_a = f"{var}__a"
-                    col_b = f"{var}__b"
-                    assign = f"df.assign({col_a}={series_vars[0]}, {col_b}={series_vars[1]})"
-                    window = param_vars[0] if param_vars else "1"
+                else:
+                    # N-series operators: CORR/COV (2), ATR/CCI (3).
+                    cols = [f"{var}__{index}" for index in range(num_series)]
+                    assignments = ", ".join(
+                        f"{col}={value}" for col, value in zip(cols, series_vars)
+                    )
+                    col_args = ", ".join(f'"{col}"' for col in cols)
+                    params = ", ".join(param_vars) if param_vars else "1"
                     self.statements.append(
-                        f"{var} = {py_func}({assign}, \"{col_a}\", \"{col_b}\", {window})"
+                        f"{var} = {py_func}(df.assign({assignments}), {col_args}, {params})"
                     )
                 return var
 
@@ -785,6 +817,19 @@ def compile_formula(
         "ts_max": ts_max,
         "rolling_corr": rolling_corr,
         "rolling_cov": rolling_cov,
+        "rolling_quantile": rolling_quantile,
+        "rolling_slope": rolling_slope,
+        "rolling_rsquare": rolling_rsquare,
+        "rolling_resi": rolling_resi,
+        "rolling_idxmax": rolling_idxmax,
+        "rolling_idxmin": rolling_idxmin,
+        "ts_ema": ts_ema,
+        "bias": bias,
+        "bollinger_band_upper": bollinger_band_upper,
+        "bollinger_band_lower": bollinger_band_lower,
+        "true_range": true_range,
+        "commodity_channel_index": commodity_channel_index,
+        "relative_strength_index": relative_strength_index,
         "ts_decay_linear": ts_decay_linear,
         "sma": sma,
         "wma": wma,

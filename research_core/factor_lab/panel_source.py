@@ -23,6 +23,17 @@ DATE_COLUMNS = ("date", "listed_date", "de_listed_date")
 NUMERIC_COLUMNS = ("close", "volume", "total_turnover", "limit_up", "limit_down", "circulation_a")
 BOOLEAN_COLUMNS = ("is_st", "is_suspended")
 REQUIRED_COLUMNS = ("date", "code", *NUMERIC_COLUMNS, *BOOLEAN_COLUMNS, *DATE_COLUMNS[1:])
+
+#: Quote and reference fields the catalog needs but the original contract did
+#: not carry. They stay optional so older panels keep loading, and
+#: `require_extended=True` lets the export self-check insist on them.
+#
+#: Without these, ALPHA158's 122 KBAR/price features, ALPHA360's 240 OHLC
+#: features and most of GTJA191 cannot be computed at all.
+OPTIONAL_NUMERIC_COLUMNS = ("open", "high", "low", "pre_close", "vwap", "total_shares")
+OPTIONAL_STRING_COLUMNS = ("industry",)
+EXTENDED_COLUMNS = (*OPTIONAL_NUMERIC_COLUMNS, *OPTIONAL_STRING_COLUMNS)
+
 _SHA256_PATTERN = re.compile(r"^[0-9a-fA-F]{64}$")
 
 
@@ -134,6 +145,41 @@ class LocalPanel:
     def price_basis(self) -> str:
         return str(self.sidecar["price_basis"])
 
+    @property
+    def extended_columns(self) -> tuple[str, ...]:
+        """Optional quote/reference columns actually present in the panel."""
+        return tuple(c for c in EXTENDED_COLUMNS if c in self.frame.columns)
+
+    def missing_extended_columns(self) -> tuple[str, ...]:
+        return tuple(c for c in EXTENDED_COLUMNS if c not in self.frame.columns)
+
+
+def _validate_optional_columns(frame: pd.DataFrame) -> None:
+    """Validate the extended quote/reference columns, but only if present."""
+    for column in OPTIONAL_NUMERIC_COLUMNS:
+        if column not in frame.columns:
+            continue
+        _validate_numeric(frame, column)
+        if frame[column].isna().all():
+            raise PanelSourceError(
+                f"optional column {column} is present but entirely null; "
+                "omit it rather than shipping an empty column"
+            )
+    for column in OPTIONAL_STRING_COLUMNS:
+        if column not in frame.columns:
+            continue
+        series = frame[column]
+        if not ptypes.is_string_dtype(series.dtype) and not ptypes.is_object_dtype(series.dtype):
+            raise PanelSourceError(f"{column} must have a string type")
+        non_null = series.dropna()
+        if non_null.empty:
+            raise PanelSourceError(
+                f"optional column {column} is present but entirely null; "
+                "omit it rather than shipping an empty column"
+            )
+        if not non_null.map(lambda v: isinstance(v, str) and bool(v.strip())).all():
+            raise PanelSourceError(f"{column} must contain non-empty strings")
+
 
 def load_validation_panel(
     path: str | Path,
@@ -141,12 +187,17 @@ def load_validation_panel(
     sidecar_path: str | Path | None = None,
     expected_start: str | date | None = None,
     expected_end: str | date | None = None,
+    require_extended: bool = False,
 ) -> LocalPanel:
     """Read and validate a local validation-panel Parquet; never accesses a network.
 
     Columns must already use the validation pipeline's own names and price basis. This loader
     performs no renaming and no adjustment arithmetic: whatever price basis the sidecar
     declares is what the pipeline consumes, and it is recorded in the run manifest.
+
+    Set ``require_extended=True`` to demand the optional quote/reference columns
+    (``open``/``high``/``low``/``pre_close``/``vwap``/``total_shares``/``industry``).
+    Without them most of the 1058-factor catalog cannot be computed.
     """
     data_path = _as_path(path, "Parquet")
     metadata = _read_sidecar(_sidecar_path(data_path, sidecar_path))
@@ -192,6 +243,15 @@ def load_validation_panel(
 
     if frame.duplicated(["date", "code"]).any():
         raise PanelSourceError("panel contains duplicate (date, code) keys")
+
+    _validate_optional_columns(frame)
+    if require_extended:
+        absent = [c for c in EXTENDED_COLUMNS if c not in frame.columns]
+        if absent:
+            raise PanelSourceError(
+                "panel is missing extended columns required for the full factor "
+                f"catalog: {', '.join(absent)}"
+            )
 
     actual_start = frame["date"].min().date().isoformat()
     actual_end = frame["date"].max().date().isoformat()

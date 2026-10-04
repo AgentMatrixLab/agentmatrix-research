@@ -58,10 +58,10 @@ def test_correlation_synonym_is_alias_resolvable() -> None:
 
 
 def test_unimplemented_operator_reports_needs_numerics() -> None:
-    result = classify_expression("EMA($close, 12)")
+    result = classify_expression("TRIX($close, 12)")
     assert result.verdict == "needs_numerics"
     assert not result.runnable
-    assert result.unresolved_operators == ("EMA",)
+    assert result.unresolved_operators == ("TRIX",)
 
 
 def test_unknown_operator_is_not_silently_accepted() -> None:
@@ -80,8 +80,11 @@ def test_classifier_and_compiler_agree_on_what_is_computable() -> None:
         "Correlation(rank($close), rank($volume), 6)",
         "Power($close, 2)",
         "IndNeutral($close, industry)",
+        "EMA($close, 12)",
+        "Quantile($close, 20, 0.8)",
+        "ATR($close, $high, $low, 14)",
     ]
-    blocked = ["EMA($close, 12)", "Quantile($close, 0.5, 20)", "Slope($close, 5)"]
+    blocked = ["TRIX($close, 12)", "VPT($close, $volume)", "BBI($close, 6)"]
 
     for expression in runnable:
         assert classify_expression(expression).runnable, expression
@@ -124,8 +127,8 @@ def test_summary_counts_and_ranks_blockers() -> None:
     verdicts = [
         classify_expression("rank($close)"),
         classify_expression("Ref($close, 5)"),
-        classify_expression("EMA($close, 12)"),
-        classify_expression("EMA($close, 26)"),
+        classify_expression("TRIX($close, 12)"),
+        classify_expression("TRIX($close, 24)"),
         classify_expression("(? bad"),
     ]
     summary = readiness_summary(verdicts)
@@ -137,8 +140,8 @@ def test_summary_counts_and_ranks_blockers() -> None:
     assert summary["counts"]["unparsable"] == 1
     assert summary["runnable"] == 2
     assert summary["runnable_ratio"] == 2 / 5
-    # EMA blocks two expressions, so it must rank first.
-    assert next(iter(summary["operator_blockers"])) == "EMA"
+    # TRIX blocks two expressions, so it must rank first.
+    assert next(iter(summary["operator_blockers"])) == "TRIX"
 
 
 def test_alias_keys_are_disjoint_from_registered_operators() -> None:
