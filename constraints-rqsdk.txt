@@ -1,4 +1,4 @@
-# Exact package versions captured from /home/data/conda-envs/rqsdk.
+# Exact package versions captured from the 115 server RQData conda environment (env name: rqsdk).
 # Generated for reproducibility; installed packages were not modified.
 anyio==4.14.1
 blinker==1.9.0
