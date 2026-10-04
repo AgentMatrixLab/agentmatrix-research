@@ -9,6 +9,7 @@ on:
       - 'research_core/backtest_adapter/**'
       - 'registry/factor_registry/**'
       - 'submissions/**'
+      - 'tests/**'
       - 'configs/validation_gates.yaml'
       - 'Makefile'
       - 'contracts/factor_research.py'
