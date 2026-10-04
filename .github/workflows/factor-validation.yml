@@ -87,6 +87,7 @@ jobs:
           python -X utf8 scripts/run_robustness_supplement.py --help > /dev/null
           python -X utf8 scripts/dev/rehearse_full_pipeline.py --help > /dev/null
           python -X utf8 scripts/build_strategy_demos.py --help > /dev/null
+          python -X utf8 scripts/dev/verify_sharded_batch.py --help > /dev/null
           echo "Delivery tooling OK"
 
       - name: "Run submission tests [Layer 1: Formula]"
