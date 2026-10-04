@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
+
+import pytest
 
 from backend.strategy_dashboard_api import create_app
 from research_core.backtest_jobs import BacktestJobService, BacktestJobStore, JobRequestError
@@ -58,6 +61,36 @@ class BacktestJobsTest(unittest.TestCase):
         source = (Path(__file__).parents[1] / "scripts" / "run_backtest_worker.py").read_text(encoding="utf-8")
         self.assertIn("--lock-file", source)
         self.assertIn("LOCK_NB", source)
+
+
+def test_connect_closes_the_connection() -> None:
+    """Regression: `with sqlite3.connect(...)` commits but never closes.
+
+    Leaking one connection per operation is a file-handle leak in a long-running
+    dashboard, and in WAL mode it also keeps the -wal/-shm files open, which on
+    Windows makes the database undeletable. That is what made four of the tests
+    above fail on Windows and look like a platform quirk.
+    """
+    with tempfile.TemporaryDirectory() as directory:
+        store = BacktestJobStore(Path(directory) / "jobs.db")
+        with store.connect() as db:
+            db.execute("SELECT 1")
+        with pytest.raises(sqlite3.ProgrammingError, match="closed"):
+            db.execute("SELECT 1")
+
+
+def test_store_leaves_no_open_handle_on_the_database_file() -> None:
+    """The fixture's TemporaryDirectory cleanup is itself the assertion.
+
+    On Windows, exiting the block raises PermissionError if any handle is still
+    open, so a reintroduced leak fails here without any platform-specific code.
+    """
+    with tempfile.TemporaryDirectory() as directory:
+        db_path = Path(directory) / "jobs.db"
+        store = BacktestJobStore(db_path)
+        store.create("job-1", {"strategy_id": "s1"})
+        store.claim_next()
+        assert db_path.exists()
 
 
 if __name__ == "__main__":

@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 
 def _now() -> str:
@@ -19,12 +20,30 @@ class BacktestJobStore:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._init()
 
-    def connect(self) -> sqlite3.Connection:
+    @contextmanager
+    def connect(self) -> Iterator[sqlite3.Connection]:
+        """Yield a connection, then commit, roll back on error, and close.
+
+        Closing matters twice over. `sqlite3.Connection.__exit__` commits but does
+        *not* close, so `with sqlite3.connect(...) as db` leaks one connection per
+        call -- under a long-running dashboard that is a file-handle leak. And
+        because the database runs in WAL mode, a leaked handle keeps the `-wal`
+        and `-shm` files open, which on Windows makes the database impossible to
+        delete. That is what turned four backtest-job tests red on Windows and
+        looked like a platform quirk; it was a real leak.
+        """
         db = sqlite3.connect(self.path, timeout=10)
         db.row_factory = sqlite3.Row
         db.execute("PRAGMA journal_mode=WAL")
         db.execute("PRAGMA busy_timeout=10000")
-        return db
+        try:
+            yield db
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
+        finally:
+            db.close()
 
     def _init(self) -> None:
         with self.connect() as db:
