@@ -310,6 +310,74 @@ def _per_code_vectorised(
     return pd.Series(result, index=df.index)
 
 
+def _rolling_ols_parts(values: np.ndarray, window: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Slope, r-squared and last-bar residual for every full window.
+
+    Regresses the window (chronological order) on ``t = 1..window``. With that
+    fixed design the normal equations are closed-form constants, so one
+    sliding-window pass yields all three statistics:
+
+        slope     = (w*Sum(ty) - Sum(t)*Sum(y)) / (w*Sum(t^2) - Sum(t)^2)
+        r^2       = (w*Sum(ty) - Sum(t)*Sum(y))^2 / ((w*Sum(t^2) - Sum(t)^2) * (w*Sum(y^2) - Sum(y)^2))
+        residual  = y_last - (slope * window + intercept)
+
+    Replaces three separate ``rolling().apply()`` callbacks, each of which cost a
+    Python call per bar. Windows containing NaN are reported as NaN, matching the
+    full-window behaviour of the callbacks; zeroing the NaNs before summing is
+    safe precisely because those rows are discarded.
+    """
+    n = len(values)
+    slope = np.full(n, np.nan, dtype=float)
+    rsquare = np.full(n, np.nan, dtype=float)
+    residual = np.full(n, np.nan, dtype=float)
+    if window < 2 or n < window:
+        return slope, rsquare, residual
+
+    windows = sliding_window_view(values, window)
+    complete = ~np.isnan(windows).any(axis=1)
+
+    t = np.arange(1, window + 1, dtype=float)
+    sum_t = float(t.sum())
+    sum_tt = float((t * t).sum())
+    denominator_t = window * sum_tt - sum_t * sum_t
+
+    filled = np.where(np.isnan(windows), 0.0, windows)
+    sum_y = filled.sum(axis=1)
+    sum_ty = (filled * t).sum(axis=1)
+    sum_yy = (filled * filled).sum(axis=1)
+
+    numerator = window * sum_ty - sum_t * sum_y
+    slope_all = numerator / denominator_t
+
+    denominator_r = denominator_t * (window * sum_yy - sum_y * sum_y)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        rsquare_all = np.where(denominator_r > 0, (numerator * numerator) / denominator_r, np.nan)
+
+    intercept = sum_y / window - slope_all * (sum_t / window)
+    residual_all = windows[:, -1] - (slope_all * window + intercept)
+
+    slope[window - 1 :] = np.where(complete, slope_all, np.nan)
+    rsquare[window - 1 :] = np.where(complete, rsquare_all, np.nan)
+    residual[window - 1 :] = np.where(complete, residual_all, np.nan)
+    return slope, rsquare, residual
+
+
+def _rolling_ols_statistic(
+    df: pd.DataFrame,
+    value_col: str,
+    code_col: str,
+    window: int,
+    which: int,
+) -> pd.Series:
+    """Pick one of the three OLS statistics, computed in a single pass."""
+    values = df[value_col].to_numpy(dtype=float)
+    result = np.full(len(df), np.nan, dtype=float)
+    for positions in df.groupby(code_col, sort=False).indices.values():
+        parts = _rolling_ols_parts(values[positions], window)
+        result[positions] = parts[which]
+    return pd.Series(result, index=df.index)
+
+
 def ts_argmax(
     df: pd.DataFrame,
     value_col: str | float | int | None = None,
@@ -926,22 +994,24 @@ def rolling_slope(
     window = as_window(window)
     min_obs = window if min_periods is None else min_periods
 
-    def _slope(values: np.ndarray) -> float:
-        y = values.astype(float)
-        mask = ~np.isnan(y)
-        n = int(mask.sum())
-        if n < 2:
-            return np.nan
-        x = np.arange(1, len(y) + 1, dtype=float)[mask]
-        y = y[mask]
-        sxx = n * np.dot(x, x) - x.sum() ** 2
-        if sxx == 0:
-            return np.nan
-        return float((n * np.dot(x, y) - x.sum() * y.sum()) / sxx)
+    if min_obs != window:
+        def _slope(values: np.ndarray) -> float:
+            y = values.astype(float)
+            mask = ~np.isnan(y)
+            n = int(mask.sum())
+            if n < 2:
+                return np.nan
+            x = np.arange(1, len(y) + 1, dtype=float)[mask]
+            y = y[mask]
+            sxx = n * np.dot(x, x) - x.sum() ** 2
+            if sxx == 0:
+                return np.nan
+            return float((n * np.dot(x, y) - x.sum() * y.sum()) / sxx)
 
-    return df.groupby(code_col)[value_col].transform(
-        lambda x: x.rolling(window, min_periods=min_obs).apply(_slope, raw=True)
-    )
+        return df.groupby(code_col)[value_col].transform(
+            lambda x: x.rolling(window, min_periods=min_obs).apply(_slope, raw=True)
+        )
+    return _rolling_ols_statistic(df, value_col, code_col, window, 0)
 
 
 def _ols_diagnostics(values: np.ndarray) -> tuple[float, float, float]:
@@ -981,11 +1051,13 @@ def rolling_rsquare(
     """Rolling coefficient of determination of the series against time ``t = 1..N``."""
     window = as_window(window)
     min_obs = window if min_periods is None else min_periods
-    return df.groupby(code_col)[value_col].transform(
-        lambda x: x.rolling(window, min_periods=min_obs).apply(
-            lambda v: _ols_diagnostics(v)[1], raw=True
+    if min_obs != window:
+        return df.groupby(code_col)[value_col].transform(
+            lambda x: x.rolling(window, min_periods=min_obs).apply(
+                lambda v: _ols_diagnostics(v)[1], raw=True
+            )
         )
-    )
+    return _rolling_ols_statistic(df, value_col, code_col, window, 1)
 
 
 def rolling_resi(
@@ -1003,11 +1075,13 @@ def rolling_resi(
     """
     window = as_window(window)
     min_obs = window if min_periods is None else min_periods
-    return df.groupby(code_col)[value_col].transform(
-        lambda x: x.rolling(window, min_periods=min_obs).apply(
-            lambda v: _ols_diagnostics(v)[2], raw=True
+    if min_obs != window:
+        return df.groupby(code_col)[value_col].transform(
+            lambda x: x.rolling(window, min_periods=min_obs).apply(
+                lambda v: _ols_diagnostics(v)[2], raw=True
+            )
         )
-    )
+    return _rolling_ols_statistic(df, value_col, code_col, window, 2)
 
 
 def rolling_idxmax(
@@ -1026,12 +1100,14 @@ def rolling_idxmax(
     """
     window = as_window(window)
     min_obs = window if min_periods is None else min_periods
-    return df.groupby(code_col)[value_col].transform(
-        lambda x: x.rolling(window, min_periods=min_obs).apply(
-            lambda v: float(np.nanargmax(v) + 1) if not np.all(np.isnan(v)) else np.nan,
-            raw=True,
+    if min_obs != window:
+        return df.groupby(code_col)[value_col].transform(
+            lambda x: x.rolling(window, min_periods=min_obs).apply(
+                lambda v: float(np.nanargmax(v) + 1) if not np.all(np.isnan(v)) else np.nan,
+                raw=True,
+            )
         )
-    )
+    return _per_code_vectorised(df, value_col, code_col, window, find_max=True)
 
 
 def rolling_idxmin(
@@ -1045,12 +1121,14 @@ def rolling_idxmin(
     """1-based position of the window minimum, counted from the window start."""
     window = as_window(window)
     min_obs = window if min_periods is None else min_periods
-    return df.groupby(code_col)[value_col].transform(
-        lambda x: x.rolling(window, min_periods=min_obs).apply(
-            lambda v: float(np.nanargmin(v) + 1) if not np.all(np.isnan(v)) else np.nan,
-            raw=True,
+    if min_obs != window:
+        return df.groupby(code_col)[value_col].transform(
+            lambda x: x.rolling(window, min_periods=min_obs).apply(
+                lambda v: float(np.nanargmin(v) + 1) if not np.all(np.isnan(v)) else np.nan,
+                raw=True,
+            )
         )
-    )
+    return _per_code_vectorised(df, value_col, code_col, window, find_max=False)
 
 
 def ts_ema(
