@@ -83,6 +83,9 @@ jobs:
           echo "--- Factor console dataset rebuild ---"
           python -X utf8 scripts/build_factor_panel.py
           test -s pages/factor-panel/data/panel.json
+          echo "--- Supplement and rehearsal entry points parse ---"
+          python -X utf8 scripts/run_robustness_supplement.py --help > /dev/null
+          python -X utf8 scripts/dev/rehearse_full_pipeline.py --help > /dev/null
           echo "Delivery tooling OK"
 
       - name: "Run submission tests [Layer 1: Formula]"
