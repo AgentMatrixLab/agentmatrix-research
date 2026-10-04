@@ -1,0 +1,89 @@
+{
+  "factor_id": "planted_turnover",
+  "state": "9_rejected",
+  "state_label": "死亡",
+  "passed_all": false,
+  "first_failure": "g8_oos_retention",
+  "executed_order": [
+    "g4_data_quality",
+    "g5_executability",
+    "g6_ic_stability",
+    "g7_multiple_testing",
+    "g8_oos_retention"
+  ],
+  "oos_access_used": 0,
+  "oos_access_remaining": 3,
+  "n_gates_passed": 4,
+  "n_gates_run": 5,
+  "gates": [
+    {
+      "gate": "g4_data_quality",
+      "label": "4 数据质量",
+      "desc": "缺失率<5%、覆盖≥90%、无前视",
+      "passed": true,
+      "evidence": {
+        "missing_rate": 0.0,
+        "coverage": 1.0,
+        "n_rows": 2880
+      },
+      "reason": ""
+    },
+    {
+      "gate": "g5_executability",
+      "label": "5 可执行性",
+      "desc": "涨跌停/停牌/ST/流动性过滤，衰减≤50%",
+      "passed": true,
+      "evidence": {
+        "raw_ic": 0.0474,
+        "filtered_ic": 0.0567,
+        "alpha_decay": -0.1957,
+        "kept_rows": 2445,
+        "dropped_rows": 435
+      },
+      "reason": ""
+    },
+    {
+      "gate": "g6_ic_stability",
+      "label": "6 IC稳定性",
+      "desc": "ICIR>0.3 + bootstrap CI 不含 0",
+      "passed": true,
+      "evidence": {
+        "mean_rank_ic": 0.0567,
+        "icir": 0.326,
+        "bootstrap_ci95": [
+          0.026,
+          0.0855
+        ],
+        "n_months": 96
+      },
+      "reason": ""
+    },
+    {
+      "gate": "g7_multiple_testing",
+      "label": "7 多重检验",
+      "desc": "BH-FDR 校正后 p≤0.05",
+      "passed": true,
+      "evidence": {
+        "n_trials": 38,
+        "self_p": 0.000475,
+        "bh_adjusted_p": 0.003611,
+        "fdr_q": 0.05
+      },
+      "reason": ""
+    },
+    {
+      "gate": "g8_oos_retention",
+      "label": "8 OOS留存",
+      "desc": "封存 holdout 留存≥70%（上限3次）",
+      "passed": false,
+      "evidence": {
+        "is_ic": 0.0909,
+        "oos_ic": 0.0225,
+        "retention": 0.247,
+        "split": "2022-01-01"
+      },
+      "reason": "OOS 留存 24.7% < 70%（IS 0.091 → OOS 0.023）"
+    }
+  ],
+  "timeline": []
+}
