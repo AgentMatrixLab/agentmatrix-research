@@ -57,11 +57,32 @@ def test_correlation_synonym_is_alias_resolvable() -> None:
     assert "CORRELATION" in result.aliased_operators
 
 
+def _unimplemented_operator() -> str:
+    """Pick an operator the engine genuinely does not resolve.
+
+    Derived from the registry rather than hard-coded, so implementing an
+    operator later does not silently turn these tests into no-ops or failures.
+    """
+    from research_core.factor_lab.formula_compiler import (
+        _OPERATOR_INDEX,
+        resolve_operator_name,
+    )
+
+    for candidate in (
+        "VPT", "ADX", "ADXR", "MASS", "PDI", "MDI", "WR", "OBV",
+        "DPO", "ULTOSC", "SAR", "NOTAREALOPERATOR",
+    ):
+        if resolve_operator_name(candidate) not in _OPERATOR_INDEX.values():
+            return candidate
+    raise AssertionError("every candidate is now implemented; extend the list")
+
+
 def test_unimplemented_operator_reports_needs_numerics() -> None:
-    result = classify_expression("TRIX($close, 12)")
+    name = _unimplemented_operator()
+    result = classify_expression(f"{name}($close, 12)")
     assert result.verdict == "needs_numerics"
     assert not result.runnable
-    assert result.unresolved_operators == ("TRIX",)
+    assert result.unresolved_operators == (name,)
 
 
 def test_unknown_operator_is_not_silently_accepted() -> None:
@@ -84,7 +105,7 @@ def test_classifier_and_compiler_agree_on_what_is_computable() -> None:
         "Quantile($close, 20, 0.8)",
         "ATR($close, $high, $low, 14)",
     ]
-    blocked = ["TRIX($close, 12)", "VPT($close, $volume)", "BBI($close, 6)"]
+    blocked = [f"{_unimplemented_operator()}($close, 12)", "NotARealOperator($close, 5)"]
 
     for expression in runnable:
         assert classify_expression(expression).runnable, expression
@@ -124,11 +145,12 @@ def test_open_high_low_are_derived_not_missing() -> None:
 
 
 def test_summary_counts_and_ranks_blockers() -> None:
+    name = _unimplemented_operator()
     verdicts = [
         classify_expression("rank($close)"),
         classify_expression("Ref($close, 5)"),
-        classify_expression("TRIX($close, 12)"),
-        classify_expression("TRIX($close, 24)"),
+        classify_expression(f"{name}($close, 12)"),
+        classify_expression(f"{name}($close, 24)"),
         classify_expression("(? bad"),
     ]
     summary = readiness_summary(verdicts)
@@ -140,8 +162,8 @@ def test_summary_counts_and_ranks_blockers() -> None:
     assert summary["counts"]["unparsable"] == 1
     assert summary["runnable"] == 2
     assert summary["runnable_ratio"] == 2 / 5
-    # TRIX blocks two expressions, so it must rank first.
-    assert next(iter(summary["operator_blockers"])) == "TRIX"
+    # The blocker appears in two expressions, so it must rank first.
+    assert next(iter(summary["operator_blockers"])) == name
 
 
 def test_alias_keys_are_disjoint_from_registered_operators() -> None:

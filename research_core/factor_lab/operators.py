@@ -1089,6 +1089,325 @@ def relative_strength_index(
     return working.groupby(code_col)[value_col].transform(lambda x: _rsi(x))
 
 
+def rolling_variance(
+    df: pd.DataFrame,
+    value_col: str,
+    window: int,
+    *,
+    code_col: str = "code",
+    min_periods: int | None = None,
+) -> pd.Series:
+    """Rolling population variance (``ddof=0``)."""
+    window = as_window(window)
+    min_obs = window if min_periods is None else min_periods
+    return df.groupby(code_col)[value_col].transform(
+        lambda x: x.rolling(window, min_periods=min_obs).var(ddof=0)
+    )
+
+
+def rolling_skewness(
+    df: pd.DataFrame,
+    value_col: str,
+    window: int,
+    *,
+    code_col: str = "code",
+    min_periods: int | None = None,
+) -> pd.Series:
+    """Rolling sample skewness (Fisher-Pearson, ``bias=False``)."""
+    window = as_window(window)
+    min_obs = window if min_periods is None else min_periods
+    return df.groupby(code_col)[value_col].transform(
+        lambda x: x.rolling(window, min_periods=min_obs).skew()
+    )
+
+
+def rolling_kurtosis(
+    df: pd.DataFrame,
+    value_col: str,
+    window: int,
+    *,
+    code_col: str = "code",
+    min_periods: int | None = None,
+) -> pd.Series:
+    """Rolling sample excess kurtosis (Fisher, ``bias=False``)."""
+    window = as_window(window)
+    min_obs = window if min_periods is None else min_periods
+    return df.groupby(code_col)[value_col].transform(
+        lambda x: x.rolling(window, min_periods=min_obs).kurt()
+    )
+
+
+def rolling_sharpe_ratio(
+    df: pd.DataFrame,
+    value_col: str,
+    window: int,
+    *,
+    code_col: str = "code",
+    min_periods: int | None = None,
+) -> pd.Series:
+    """Rolling mean over rolling standard deviation of simple returns.
+
+    Sharpe ratio 通达信公式：``SHARPERATIO = MA(CLOSE/N, N) / STD(CLOSE/N, N)`` where
+    ``CLOSE/N`` is the simple return series, so this operates on returns and
+    returns NaN where the local volatility is zero rather than dividing by it.
+    """
+    window = as_window(window)
+    min_obs = window if min_periods is None else min_periods
+    returns = df.groupby(code_col)[value_col].pct_change()
+    working = df.assign(_sharpe_returns=returns)
+
+    def _ratio(x: pd.Series) -> pd.Series:
+        mean = x.rolling(window, min_periods=min_obs).mean()
+        std = x.rolling(window, min_periods=min_obs).std(ddof=1)
+        return mean / std.replace(0, np.nan)
+
+    return working.groupby(code_col)["_sharpe_returns"].transform(_ratio)
+
+
+def psychological_line(
+    df: pd.DataFrame,
+    value_col: str,
+    window: int,
+    *,
+    code_col: str = "code",
+    min_periods: int | None = None,
+) -> pd.Series:
+    """PSY: percentage of bars in the window that closed up.
+
+    通达信公式：``PSY = COUNT(CLOSE > REF(CLOSE,1), N) / N * 100``
+    """
+    window = as_window(window)
+    min_obs = window if min_periods is None else min_periods
+    up = (df.groupby(code_col)[value_col].diff() > 0).astype(float)
+    working = df.assign(_psy_up=up)
+    return (
+        working.groupby(code_col)["_psy_up"]
+        .transform(lambda x: x.rolling(window, min_periods=min_obs).mean())
+        * 100.0
+    )
+
+
+def triple_exponential_rate(
+    df: pd.DataFrame,
+    value_col: str,
+    window: int,
+    *,
+    code_col: str = "code",
+    min_periods: int | None = None,
+) -> pd.Series:
+    """TRIX: percentage rate of change of a triply smoothed EMA.
+
+    通达信公式：``TR = EMA(EMA(EMA(CLOSE,N),N),N); TRIX = (TR - REF(TR,1)) / REF(TR,1) * 100``
+    """
+    window = as_window(window)
+    min_obs = window if min_periods is None else min_periods
+
+    def _trix(x: pd.Series) -> pd.Series:
+        smoothed = x
+        for _ in range(3):
+            smoothed = smoothed.ewm(span=window, min_periods=min_obs).mean()
+        previous = smoothed.shift(1)
+        return (smoothed - previous) / previous.replace(0, np.nan) * 100.0
+
+    return df.groupby(code_col)[value_col].transform(_trix)
+
+
+def bull_bear_index(
+    df: pd.DataFrame,
+    value_col: str,
+    short: int,
+    mid: int,
+    long: int,
+    longer: int,
+    *,
+    code_col: str = "code",
+    min_periods: int | None = None,
+) -> pd.Series:
+    """BBI: the average of four moving averages.
+
+    通达信公式：``BBI = (MA(CLOSE,3) + MA(CLOSE,6) + MA(CLOSE,12) + MA(CLOSE,24)) / 4``
+    Each average uses the full window (``min_periods`` defaults to the window).
+    """
+    spans = [as_window(short), as_window(mid), as_window(long), as_window(longer)]
+
+    def _bbi(x: pd.Series) -> pd.Series:
+        total = None
+        for span in spans:
+            obs = span if min_periods is None else min_periods
+            average = x.rolling(span, min_periods=obs).mean()
+            total = average if total is None else total + average
+        return total / len(spans)
+
+    return df.groupby(code_col)[value_col].transform(_bbi)
+
+
+def _previous(df: pd.DataFrame, column: str, code_col: str) -> pd.Series:
+    return df.groupby(code_col)[column].shift(1)
+
+
+def money_flow_index(
+    df: pd.DataFrame,
+    close_col: str,
+    high_col: str,
+    low_col: str,
+    volume_col: str,
+    window: int,
+    *,
+    code_col: str = "code",
+    min_periods: int | None = None,
+) -> pd.Series:
+    """MFI: volume-weighted RSI on typical price.
+
+    ``TP = (H + L + C) / 3``; money flow is ``TP * VOL``, split into positive and
+    negative by whether ``TP`` rose or fell against the previous bar. Standard
+    definition, 通达信 ``MFI``.
+    """
+    window = as_window(window)
+    min_obs = window if min_periods is None else min_periods
+    typical = (df[high_col] + df[low_col] + df[close_col]) / 3.0
+    flow = typical * df[volume_col]
+    change = typical - _previous(df.assign(_tp=typical), "_tp", code_col)
+    positive = flow.where(change > 0, 0.0)
+    negative = flow.where(change < 0, 0.0)
+    working = df.assign(_mfi_pos=positive, _mfi_neg=negative)
+
+    def _mfi(x: pd.Series) -> pd.Series:
+        group = working.loc[x.index]
+        up = group["_mfi_pos"].rolling(window, min_periods=min_obs).sum()
+        down = group["_mfi_neg"].rolling(window, min_periods=min_obs).sum()
+        ratio = up / down.replace(0, np.nan)
+        value = 100.0 - 100.0 / (1.0 + ratio)
+        # With no negative flow in the window the index saturates at 100.
+        return value.where(down != 0, 100.0).where(up.notna())
+
+    return working.groupby(code_col)[close_col].transform(_mfi)
+
+
+def volume_ratio(
+    df: pd.DataFrame,
+    close_col: str,
+    volume_col: str,
+    window: int,
+    *,
+    code_col: str = "code",
+    min_periods: int | None = None,
+) -> pd.Series:
+    """VR: up-volume over down-volume, in percent.
+
+    通达信公式：``VR = SUM(VOL, up bars) / SUM(VOL, down bars) * 100`` where a bar
+    counts as up when its close rose against the previous close. Flat bars are
+    counted in neither sum.
+    """
+    window = as_window(window)
+    min_obs = window if min_periods is None else min_periods
+    change = df.groupby(code_col)[close_col].diff()
+    up = df[volume_col].where(change > 0, 0.0)
+    down = df[volume_col].where(change < 0, 0.0)
+    working = df.assign(_vr_up=up, _vr_down=down)
+
+    def _vr(x: pd.Series) -> pd.Series:
+        group = working.loc[x.index]
+        up_sum = group["_vr_up"].rolling(window, min_periods=min_obs).sum()
+        down_sum = group["_vr_down"].rolling(window, min_periods=min_obs).sum()
+        return up_sum / down_sum.replace(0, np.nan) * 100.0
+
+    return working.groupby(code_col)[close_col].transform(_vr)
+
+
+def capability_ratio(
+    df: pd.DataFrame,
+    close_col: str,
+    high_col: str,
+    low_col: str,
+    window: int,
+    *,
+    code_col: str = "code",
+    min_periods: int | None = None,
+) -> pd.Series:
+    """CR: willingness to buy against willingness to sell, around the mid price.
+
+    ``MID = (H + L + C) / 3`` on the *previous* bar, then
+    ``CR = SUM(MAX(0, H - MID), N) / SUM(MAX(0, MID - L), N) * 100``.
+    通达信 ``CR`` 公式口径。
+    """
+    window = as_window(window)
+    min_obs = window if min_periods is None else min_periods
+    mid = ((df[high_col] + df[low_col] + df[close_col]) / 3.0).groupby(df[code_col]).shift(1)
+    upward = (df[high_col] - mid).clip(lower=0.0)
+    downward = (mid - df[low_col]).clip(lower=0.0)
+    working = df.assign(_cr_up=upward, _cr_down=downward)
+
+    def _cr(x: pd.Series) -> pd.Series:
+        group = working.loc[x.index]
+        up_sum = group["_cr_up"].rolling(window, min_periods=min_obs).sum()
+        down_sum = group["_cr_down"].rolling(window, min_periods=min_obs).sum()
+        return up_sum / down_sum.replace(0, np.nan) * 100.0
+
+    return working.groupby(code_col)[close_col].transform(_cr)
+
+
+def popularity_index(
+    df: pd.DataFrame,
+    open_col: str,
+    close_col: str,
+    high_col: str,
+    low_col: str,
+    window: int,
+    *,
+    code_col: str = "code",
+    min_periods: int | None = None,
+) -> pd.Series:
+    """AR: intraday strength of the open, in percent.
+
+    通达信公式：``AR = SUM(HIGH - OPEN, N) / SUM(OPEN - LOW, N) * 100``
+    """
+    window = as_window(window)
+    min_obs = window if min_periods is None else min_periods
+    upward = df[high_col] - df[open_col]
+    downward = df[open_col] - df[low_col]
+    working = df.assign(_ar_up=upward, _ar_down=downward)
+
+    def _ar(x: pd.Series) -> pd.Series:
+        group = working.loc[x.index]
+        up_sum = group["_ar_up"].rolling(window, min_periods=min_obs).sum()
+        down_sum = group["_ar_down"].rolling(window, min_periods=min_obs).sum()
+        return up_sum / down_sum.replace(0, np.nan) * 100.0
+
+    return working.groupby(code_col)[close_col].transform(_ar)
+
+
+def willingness_index(
+    df: pd.DataFrame,
+    open_col: str,
+    close_col: str,
+    high_col: str,
+    low_col: str,
+    window: int,
+    *,
+    code_col: str = "code",
+    min_periods: int | None = None,
+) -> pd.Series:
+    """BR: willingness to trade away from the previous close, in percent.
+
+    通达信公式：
+    ``BR = SUM(MAX(0, HIGH - REF(CLOSE,1)), N) / SUM(MAX(0, REF(CLOSE,1) - LOW), N) * 100``
+    """
+    window = as_window(window)
+    min_obs = window if min_periods is None else min_periods
+    previous_close = _previous(df, close_col, code_col)
+    upward = (df[high_col] - previous_close).clip(lower=0.0)
+    downward = (previous_close - df[low_col]).clip(lower=0.0)
+    working = df.assign(_br_up=upward, _br_down=downward)
+
+    def _br(x: pd.Series) -> pd.Series:
+        group = working.loc[x.index]
+        up_sum = group["_br_up"].rolling(window, min_periods=min_obs).sum()
+        down_sum = group["_br_down"].rolling(window, min_periods=min_obs).sum()
+        return up_sum / down_sum.replace(0, np.nan) * 100.0
+
+    return working.groupby(code_col)[close_col].transform(_br)
+
+
 __all__ = [
     "SequenceSpec",
     "align_sort",
@@ -1097,6 +1416,8 @@ __all__ = [
     "bollinger_band",
     "bollinger_band_lower",
     "bollinger_band_upper",
+    "bull_bear_index",
+    "capability_ratio",
     "commodity_channel_index",
     "compute_vwap",
     "cross_sectional_rank",
@@ -1108,7 +1429,10 @@ __all__ = [
     "indneutralize",
     "industry_neutralize",
     "lowday",
+    "money_flow_index",
     "panel_to_wide",
+    "popularity_index",
+    "psychological_line",
     "returns_from_close",
     "relative_strength_index",
     "rolling_corr",
@@ -1116,6 +1440,7 @@ __all__ = [
     "rolling_cov",
     "rolling_idxmax",
     "rolling_idxmin",
+    "rolling_kurtosis",
     "rolling_max",
     "rolling_mean",
     "rolling_min",
@@ -1125,16 +1450,20 @@ __all__ = [
     "rolling_regression_residual",
     "rolling_resi",
     "rolling_rsquare",
+    "rolling_sharpe_ratio",
+    "rolling_skewness",
     "rolling_slope",
     "rolling_std",
     "rolling_sum",
     "rolling_sumif",
+    "rolling_variance",
     "safe_div",
     "signed_power",
     "sma",
     "sort_panel",
     "sumac",
     "time_series_rank",
+    "triple_exponential_rate",
     "true_range",
     "ts_argmax",
     "ts_argmin",
@@ -1149,5 +1478,7 @@ __all__ = [
     "ts_rank",
     "ts_std",
     "ts_sum",
+    "volume_ratio",
+    "willingness_index",
     "wma",
 ]
