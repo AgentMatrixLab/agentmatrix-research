@@ -14,8 +14,11 @@
 | 真实验证运行 | **0 份** | `data/factor_lab/validation_runs/` 不存在 |
 | 端到端链路 | ✅ **已彩排通过** | `scripts/dev/rehearse_full_pipeline.py` |
 | 分片并行 | ✅ **已验证（含两条拒绝路径）** | `scripts/dev/verify_sharded_batch.py` |
+| 打包 + 交叉核对 | ✅ **已验证（含篡改检测）** | `scripts/dev/verify_delivery_packaging.py` |
 | 验证器吞吐 | ⚠️ **27 秒/因子**（实测） | `scripts/dev/benchmark_validator_throughput.py` |
 | 测试 | ✅ **434 passed / 0 failed** | `python -m pytest tests -q` |
+
+> **除「真实数据」与「口径签字」外，全链路每一段都已端到端验证过。**
 
 ---
 
@@ -145,9 +148,43 @@ python -X utf8 scripts/build_strategy_demos.py \
 ### 1.4 交叉核对与打包
 
 ```bash
-python -X utf8 scripts/cross_check_delivery.py    # 独立重算全哈希逐项对齐
-python -X utf8 scripts/package_delivery.py        # 只收 validated；空包退出码 4
+# ① 打包：只收 status == "validated" 的因子
+python -X utf8 scripts/package_delivery.py \
+    --batch-manifest data/factor_lab/batches/merged/batch_manifest.json \
+    --candidates data/factor_lab/candidate_list.csv \
+    --output-dir data/factor_lab/package
+
+# ② 交叉核对：独立重算全哈希，不信 manifest
+python -X utf8 scripts/cross_check_delivery.py \
+    --batch-manifest data/factor_lab/batches/merged/batch_manifest.json \
+    --panel-file data/factor_lab/panel.parquet \
+    --factor-file data/factor_lab/factors.parquet \
+    --candidates data/factor_lab/candidate_list.csv \
+    --config configs/validation_gates.yaml \
+    --package-manifest data/factor_lab/package/package_manifest.json \
+    --output data/factor_lab/cross_check.json
 ```
+
+**退出码含义**（不要忽略）：
+
+| 脚本 | 码 | 含义 |
+|---|---|---|
+| `package_delivery.py` | 0 | 出包成功 |
+| | **4** | **一个因子都没通过 → 拒绝出空包**。这是正确行为，不是故障 |
+| `cross_check_delivery.py` | 0 | 无不一致 |
+| | **5** | **发现不一致** —— 停下来查，不要签收 |
+| | 2 | 输入有问题，无法核对 |
+
+**这条路径已端到端验证**（`scripts/dev/verify_delivery_packaging.py`）：
+
+| 检查 | 结果 |
+|---|---|
+| 分片 → 合并 → 打包 | ✅ included=2 / excluded=10 |
+| 打包内容**恰好等于** validated 集合 | ✅ |
+| **每一条被排除的因子都带原因** | ✅ |
+| `factor_catalog.csv` 行数 = 批次因子数 | ✅ |
+| 干净包上跑交叉核对 | ✅ 退出码 0 |
+| **篡改包内证据后再核对** | ✅ **退出码 5，并指名具体因子与检查项** |
 
 ---
 
