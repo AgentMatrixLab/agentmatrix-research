@@ -4,8 +4,20 @@
 import os
 
 # ========== 雷菱 API ==========
-API_BASE = "http://115.159.73.134:8765"
-API_TOKEN = "sk-admin-pNxt77hQYi4druTaMnmJz8GxN5rw49I7"
+# 不在此处内置任何地址或令牌：请通过环境变量提供
+#   QUANT_API_BASE  例如 http://<host>:8765
+#   QUANT_API_TOKEN
+API_BASE = os.environ.get("QUANT_API_BASE", "").rstrip("/")
+API_TOKEN = os.environ.get("QUANT_API_TOKEN", "")
+
+
+def require_api() -> tuple[str, str]:
+    """返回 (API_BASE, API_TOKEN)；未配置时直接报错，避免静默打到错误地址。"""
+    if not API_BASE or not API_TOKEN:
+        raise RuntimeError(
+            "QUANT_API_BASE / QUANT_API_TOKEN 未设置；本仓库不内置服务器地址与令牌"
+        )
+    return API_BASE, API_TOKEN
 
 # ========== 本地数据路径 ==========
 BASE_DIR = r"D:/bigquant/custom_engine"

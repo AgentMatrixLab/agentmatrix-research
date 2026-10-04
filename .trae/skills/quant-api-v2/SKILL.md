@@ -5,7 +5,7 @@ description: "通过 HTTP API 查询/拉取 A 股量化数据. 25 张 CH 表 (33
 
 # Quant API v2 — 完整 SKILL (给 AI 用的工作手册)
 
-> **API**: `http://115.159.73.134:8765`
+> **API**: `http://<QUANT_API_HOST>:8765`
 > **Token**: 用户提供, `sk-xxx` 格式, Bearer header
 > **数据规模**: 25 张 CH 表 + 4 个 parquet + 33 因子月度 (41.9 万行)
 > **版本**: v2.3.0 (2026-06-22)
@@ -45,7 +45,7 @@ description: "通过 HTTP API 查询/拉取 A 股量化数据. 25 张 CH 表 (33
 import requests
 TOK = "<用户提供>"  # 必须是 sk-xxx 格式
 H = {"Authorization": f"Bearer {TOK}"}
-BASE = "http://115.159.73.134:8765"
+BASE = "http://<QUANT_API_HOST>:8765"
 
 def call(path, params=None):
     r = requests.get(f"{BASE}{path}", params=params, headers=H, timeout=30)
@@ -644,7 +644,7 @@ df['out_date'] = pd.to_datetime(df['out_date'], unit='D', origin='unix')
    import pandas as pd
    TOK = "<用户提供>"
    H = {"Authorization": f"Bearer {TOK}"}
-   BASE = "http://115.159.73.134:8765"
+   BASE = "http://<QUANT_API_HOST>:8765"
 
    def call(path, params=None):
        r = requests.get(f"{BASE}{path}", params=params, headers=H, timeout=30)
@@ -665,8 +665,8 @@ df['out_date'] = pd.to_datetime(df['out_date'], unit='D', origin='unix')
 
 ## 9. 部署信息 (内部, admin 用)
 
-- **API 公网地址**: `http://115.159.73.134:8765`
-- **服务器**: Ubuntu 24.04, `115.159.73.134`
+- **API 公网地址**: `http://<QUANT_API_HOST>:8765`
+- **服务器**: Ubuntu 24.04, `<QUANT_API_HOST>`
 - **部署目录**: `<quant_api_deploy_root>/`
 - **数据目录**: `<server_data_root>/RQdata_files/` (因子 parquet)
 - **本地项目**: `<local_quant_api_repo>/`

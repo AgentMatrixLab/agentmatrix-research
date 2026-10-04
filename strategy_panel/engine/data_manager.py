@@ -8,9 +8,13 @@ from config import *
 import pandas as pd
 import numpy as np
 
-H = {"Authorization": f"Bearer {API_TOKEN}"}
+H = {"Authorization": f"Bearer {API_TOKEN}"} if (API_BASE and API_TOKEN) else {}
 
 def _api_call(path, params=None, stream=False, timeout=120):
+    if not API_BASE or not API_TOKEN:
+        raise RuntimeError(
+            "QUANT_API_BASE / QUANT_API_TOKEN 未设置；本仓库不内置服务器地址与令牌"
+        )
     r = requests.get(f"{API_BASE}{path}", params=params, headers=H,
                      stream=stream, timeout=timeout)
     r.raise_for_status()
