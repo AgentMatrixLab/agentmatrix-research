@@ -16,7 +16,7 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 
-DEFAULT_BASE_URL = "http://115.159.73.134:8765"
+DEFAULT_BASE_URL = ""  # no host is baked in: set FACTOR_LAB_QUANT_API_BASE_URL or QUANT_API_BASE_URL
 
 
 class QuantApiError(RuntimeError):
@@ -36,12 +36,18 @@ class QuantApiConfig:
 
     @classmethod
     def from_env(cls) -> "QuantApiConfig":
+        base_url = (
+            os.getenv("FACTOR_LAB_QUANT_API_BASE_URL")
+            or os.getenv("QUANT_API_BASE_URL")
+            or DEFAULT_BASE_URL
+        ).rstrip("/")
+        if not base_url:
+            raise QuantApiError(
+                "Quant API base URL is not configured; set FACTOR_LAB_QUANT_API_BASE_URL "
+                "or QUANT_API_BASE_URL (no host is baked into this repository)"
+            )
         return cls(
-            base_url=(
-                os.getenv("FACTOR_LAB_QUANT_API_BASE_URL")
-                or os.getenv("QUANT_API_BASE_URL")
-                or DEFAULT_BASE_URL
-            ).rstrip("/"),
+            base_url=base_url,
             token=os.getenv("FACTOR_LAB_QUANT_API_TOKEN") or os.getenv("QUANT_API_TOKEN"),
             timeout_seconds=int(os.getenv("FACTOR_LAB_QUANT_API_TIMEOUT", "30")),
         )
