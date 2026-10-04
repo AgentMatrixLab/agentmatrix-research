@@ -33,6 +33,7 @@ from research_core.factor_lab.operators import (
     bull_bear_index,
     capability_ratio,
     commodity_channel_index,
+    compute_adv,
     compute_vwap,
     cross_sectional_rank,
     cross_sectional_scale,
@@ -149,8 +150,9 @@ Expr = Field | Literal | BinOp | UnaryOp | FuncCall | IfExpr
 _TOKEN_RE = re.compile(r"""
     \s*(?:
         (\$?[A-Za-z_][A-Za-z0-9_]*)             |  # identifier, optional $-prefixed field
-        ([0-9]*\.?[0-9]+(?:[eE][+-]?[0-9]+)?) |  # number
-        (>=|<=|!=|==|[+\-*/^(),<>])            |  # operator / paren / comma / comparison
+        ([0-9]+\.(?![0-9])                      |  # trailing-dot number, as in SignedPower(x, 2.)
+         [0-9]*\.?[0-9]+(?:[eE][+-]?[0-9]+)?)   |  # ordinary number
+        (\|\||&&|>=|<=|!=|==|[+\-*/^(),<>?:.]) |  # operator / paren / comma / ternary / dot
         (.+)                                      # error
     )
 """, re.VERBOSE)
@@ -188,13 +190,20 @@ class Parser:
 
     Grammar (loose):
         expr        → if_expr
-        if_expr     → 'IF' '(' expr ',' expr ',' expr ')' | add_sub
+        if_expr     → 'IF' '(' expr ',' expr ',' expr ')' | ternary
+        ternary     → or_expr ('?' ternary ':' ternary)?
+        or_expr     → and_expr ('||' and_expr)*
+        and_expr    → comparison ('&&' comparison)*
+        comparison  → add_sub (('<'|'>'|'<='|'>='|'=='|'!=') add_sub)*
         add_sub     → mul_div (('+' | '-') mul_div)*
         mul_div     → power (('*' | '/') power)*
         power       → unary ('^' unary)?
         unary       → '-' unary | primary
         primary     → NUMBER | IDENT ('(' args ')')? | '(' expr ')'
         args        → expr (',' expr)*
+
+    The WorldQuant ternary ``cond ? a : b`` is supported because 45 ALPHA101
+    catalog entries use it; it lowers to the same node as ``IF(cond, a, b)``.
     """
 
     def __init__(self, tokens: list[tuple[str, str]]) -> None:
@@ -232,7 +241,34 @@ class Parser:
             false_val = self._if_expr()
             self.expect(")")
             return IfExpr(cond, true_val, false_val)
-        return self._comparison()
+        return self._ternary()
+
+    def _ternary(self) -> Expr:
+        """WorldQuant's ``cond ? a : b``, lowering to the same node as IF()."""
+        condition = self._or_expr()
+        if self.peek()[1] == "?":
+            self.consume()
+            true_val = self._ternary()
+            self.expect(":")
+            false_val = self._ternary()
+            return IfExpr(condition, true_val, false_val)
+        return condition
+
+    def _or_expr(self) -> Expr:
+        left = self._and_expr()
+        while self.peek()[1] == "||":
+            self.consume()
+            right = self._and_expr()
+            left = BinOp("||", left, right)
+        return left
+
+    def _and_expr(self) -> Expr:
+        left = self._comparison()
+        while self.peek()[1] == "&&":
+            self.consume()
+            right = self._comparison()
+            left = BinOp("&&", left, right)
+        return left
 
     def _comparison(self) -> Expr:
         left = self._add_sub()
@@ -280,6 +316,11 @@ class Parser:
             return Literal(float(val))
         if tok[0] == "IDENT":
             name = self.consume()[1]
+            # `IndClass.industry` names the industry field through a namespace
+            # prefix; the field is the part after the dot.
+            if self.peek()[1] == "." and self.tokens[self.pos + 1][0] == "IDENT":
+                self.consume()  # the dot
+                name = self.consume()[1]
             if self.peek()[1] == "(":
                 # Function call
                 self.consume()
@@ -312,7 +353,14 @@ DEFAULT_FIELD_MAP: dict[str, str] = {
     "AMOUNT": "amount",
     "VWAP": "vwap",
     "RETURNS": "returns",
+    "INDUSTRY": "industry",
+    "SECTOR": "industry",
+    "SUBINDUSTRY": "industry",
 }
+
+
+#: WorldQuant's `adv{N}` average-dollar-volume field.
+_ADV_FIELD_RE = re.compile(r"^adv(\d+)$", re.IGNORECASE)
 
 
 def _extract_field_name(node: Expr) -> str:
@@ -545,6 +593,15 @@ class CodeGenerator:
                 var = self._next_var()
                 self.statements.append(f"{var} = compute_vwap(df)")
                 return var
+            # `advN` is WorldQuant's average daily dollar volume. ALPHA101 leans
+            # on it heavily and the panel does not carry it, so synthesise it
+            # from total_turnover rather than emitting df["adv20"] and failing
+            # at call time.
+            adv = _ADV_FIELD_RE.match(col)
+            if adv is not None:
+                var = self._next_var()
+                self.statements.append(f"{var} = compute_adv(df, {int(adv.group(1))})")
+                return var
             return f'df["{col}"]'
 
         # ── unary ───────────────────────────────────────────────────
@@ -564,6 +621,12 @@ class CodeGenerator:
                 self.statements.append(f"{var} = safe_div({left}, {right})")
             elif node.op == "^":
                 self.statements.append(f"{var} = signed_power({left}, {right})")
+            elif node.op == "||":
+                # Python's `or` on Series raises "truth value is ambiguous";
+                # logical_or is the element-wise operation the formula means.
+                self.statements.append(f"{var} = np.logical_or({left}, {right})")
+            elif node.op == "&&":
+                self.statements.append(f"{var} = np.logical_and({left}, {right})")
             elif node.op in ("<", ">", "<=", ">=", "==", "!="):
                 # Comparison operators → boolean Series
                 self.statements.append(f"{var} = {left} {node.op} {right}")
@@ -874,6 +937,7 @@ def compile_formula(
         "rolling_regression_beta": rolling_regression_beta,
         "indneutralize": indneutralize,
         "compute_vwap": compute_vwap,
+        "compute_adv": compute_adv,
         "SequenceSpec": SequenceSpec,
         "_sma_long_panel": _sma_long_panel,
         "_wma_long_panel": _wma_long_panel,

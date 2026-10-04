@@ -12,7 +12,8 @@ classifier cannot drift away from what the engine can really execute.
 Verdicts
 --------
 ``runnable_now``
-    Parses and every function call resolves to an operator already registered.
+    Parses and every function call resolves to an operator already registered,
+    and every field it references is one the panel can actually supply.
 ``alias_only``
     Same, except some calls use a verified synonym of a registered operator
     (``Ref`` for ``ts_delay``, ``Correlation`` for ``rolling_corr``, ...).
@@ -20,6 +21,12 @@ Verdicts
 ``needs_numerics``
     At least one call names an operator with no implementation and no verified
     synonym.
+``needs_fields``
+    Every operator resolves, but the expression reads a field the panel cannot
+    supply (``adv20``, ``returns``, ...). Counting these as runnable would
+    overstate the candidate pool: the compiler would emit ``df["adv20"]`` and
+    raise at call time, which is the same silent-overstatement defect the
+    operator check exists to prevent.
 ``unparsable``
     The expression does not parse at all.
 
@@ -69,7 +76,11 @@ def resolve_operator(name: str) -> str:
 
 # ── Field vocabulary ────────────────────────────────────────────────────
 
-#: Fields the current offline panel contract (runbook_hermes.md §2) provides.
+#: Fields the export contract supplies, plus what the compiler computes for
+#: itself. Anything outside this set is a genuine gap, not a spelling variant.
+#:
+#: The OHLC/VWAP/pre-close group moved here once `scripts/export_rqsdk_panel.py`
+#: began exporting them: they used to be aspirational, now they are real.
 PANEL_FIELDS: frozenset[str] = frozenset(
     {
         "CLOSE",
@@ -82,18 +93,48 @@ PANEL_FIELDS: frozenset[str] = frozenset(
         "DE_LISTED_DATE",
         "IS_ST",
         "IS_SUSPENDED",
+        "OPEN",
+        "HIGH",
+        "LOW",
+        "VWAP",
+        "PRE_CLOSE",
+        "INDUSTRY",
     }
 )
 
-#: Fields the catalog references that the panel export must add before the
-#: factor is computable. These are derivable from RQData's daily quote feed.
+#: Fields the catalog references that nothing supplies yet. Deriving them is a
+#: concrete, bounded engine task. Until it lands they are gaps, and counting them
+#: as available would overstate the candidate pool.
 DERIVED_FIELDS: frozenset[str] = frozenset(
-    {"OPEN", "HIGH", "LOW", "VWAP", "PRE_CLOSE", "RETURNS", "DAILY_RETURN"}
+    {
+        # `advN` is synthesised by the compiler from total_turnover; listed here
+        # as available only for the N the compiler can build, which is any.
+        *(f"ADV{n}" for n in range(1, 501)),
+    }
 )
 
-#: Fields needing a separate RQData feed (reference data or financials).
+#: Fields needing a separate RQData reference-data or financials feed.
 RQDATA_ONLY_FIELDS: frozenset[str] = frozenset(
-    {"CAP", "MARKET_CAP", "TOTAL_SHARES", "FREE_FLOAT", "INDUSTRY", "SECTOR"}
+    {
+        "CAP",
+        "MARKET_CAP",
+        "TOTAL_SHARES",
+        "FREE_FLOAT",
+        "SECTOR",
+        "SUBINDUSTRY",
+        "RETURNS",
+        "DAILY_RETURN",
+        "STOCK_RETURN",
+        "MARKET_RETURN",
+        "ASSETS",
+        "EQUITY",
+        "LIABILITIES",
+        "NET_PROFIT_TTM",
+        "REVENUE_TTM",
+        "EPS_YOY",
+        "PROFIT_YOY",
+        "REVENUE_YOY",
+    }
 )
 
 
@@ -189,15 +230,20 @@ def classify_expression(expression: str) -> FactorReadiness:
         else:
             unresolved.append(raw)
 
+    known_universe = PANEL_FIELDS | DERIVED_FIELDS | RQDATA_ONLY_FIELDS
+    missing = tuple(sorted(f for f in fields if f not in known_universe))
+
+    # A field the panel cannot supply is as blocking as a missing operator: the
+    # compiler would emit df["adv20"] and fail at call time. Folding it into the
+    # verdict keeps "runnable" meaning "the engine can actually compute this".
     if unresolved:
         verdict = "needs_numerics"
+    elif missing:
+        verdict = "needs_fields"
     elif aliased:
         verdict = "alias_only"
     else:
         verdict = "runnable_now"
-
-    known_universe = PANEL_FIELDS | DERIVED_FIELDS | RQDATA_ONLY_FIELDS
-    missing = tuple(sorted(f for f in fields if f not in known_universe))
 
     return FactorReadiness(
         verdict=verdict,
@@ -215,6 +261,7 @@ def readiness_summary(verdicts) -> dict[str, object]:
         "runnable_now": 0,
         "alias_only": 0,
         "needs_numerics": 0,
+        "needs_fields": 0,
         "unparsable": 0,
     }
     blockers: dict[str, int] = {}

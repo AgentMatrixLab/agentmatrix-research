@@ -259,12 +259,36 @@
 | 阶段 | 动作 | 可算因子 | 占比 | 状态 |
 |---|---|---:|---:|---|
 | 原始 | — | 111 | 10.5% | 基线 |
-| +1 | 词法器接受 `$` 前缀 + 补 `TS_DELAY`/`TS_PRODUCT`/`TS_ARGMAX`/`TS_ARGMIN`/`POWER`/`SIGNED_POWER`/`GREATER`/`LESS` | 255 | 24.1% | ✅ **已完成** |
-| +2 | 加算子别名表（`Ref`/`Delay`/`Ts_*`/`Correlation`/`StdDev` 等，**语义逐条核对**） | 816 | 77.1% | ✅ **已完成** |
-| +3 | 补统计与指标算子（EMA / SLOPE / RSQUARE / RESI / QUANTILE / IDXMAX / IDXMIN / BIAS / RSI / BOLL / ATR / CCI） | **913** | **86.3%** | ✅ **已完成** |
-| +4 | 剩余 100 条：TRIX / VPT / BBI / VR / CR / AR / BR / MFI / PSY / ADX 族等 + 财务字段 | ~1013 | ~96% | 待做 |
+| +1 | 词法器接受 `$` 前缀 + 补 `TS_DELAY`/`TS_PRODUCT`/`TS_ARGMAX`/`TS_ARGMIN`/`POWER`/`SIGNED_POWER`/`GREATER`/`LESS` | 255 | 24.1% | ✅ |
+| +2 | 加算子别名表（`Ref`/`Delay`/`Ts_*`/`Correlation`/`StdDev` 等，**语义逐条核对**） | 816 | 77.1% | ✅ |
+| +3 | 补统计与指标算子（EMA / SLOPE / RSQUARE / RESI / QUANTILE / IDXMAX / IDXMIN / BIAS / RSI / BOLL / ATR / CCI / TRIX / BBI / PSY / MFI / AR / BR / VR / CR / VARIANCE / SKEWNESS / KURTOSIS / SHARPERATIO） | 913 | 86.3% | ✅ |
+| +4 | **词法/文法扩展**：WorldQuant 三元 `?:`、`IndClass.industry` 点号命名空间、尾点数字 `2.`、`\|\|`/`&&` | 962 | 90.9% | ✅ |
+| +5 | **`advN` 字段合成**（用 `total_turnover`，不是 复权价×成交量） | **971** | **91.8%** | ✅ |
+| +6 | 剩余 87 条：缺算子 61（VPT / ADX 族 / TAQ_* / STD_TDX …）+ 缺字段 9 + 语法不通 17（**源公式本身损坏**） | ~1000 | ~95% | 收益递减，暂缓 |
 
-**目录可算率 10.5% → 86.3%**，`needs_numerics` 从 197 降到 **100**。
+**目录可算率 10.5% → 91.8%（971/1058）。**
+
+### ⚠️ 一个我自己犯过的「虚报」错误，值得记下来
+
+中途面板一度显示 **92.6%（980）**，比现在看起来还高 —— 但那是**虚报**。
+
+原因：分类器只把**算子**纳入判定，**字段**只作附注。于是引用了 `adv20` 的因子被判为「现成可算」，而编译器实际会生成 `df["adv20"]`，运行时报错。**980 里有 51 个是假的。**
+
+修正方式：字段可用性纳入判定，新增 `needs_fields` 档；诚实数字当时是 **87.8%（929）**。随后把 `advN` 真正实现（`compute_adv`，用 `total_turnover` 而非复权价×成交量），再到 **91.8%（971）**。
+
+> 这和最初那个「未识别函数被原样生成、`compile_formula` 却成功返回」是**同一类缺陷**：判定标准比实际能力宽松。教训是 —— **「可算」必须由「真的算得出来」定义，而不是由「解析通过」定义。** 现在有测试断言这一点。
+
+**ALPHA101 从 53/101 升到 95/101** —— 这是客户最可能拿去和公开实现对照的旗舰族。
+
+**新文法能力（全部有测试）**：
+
+| 能力 | 为什么需要 | 例子 |
+|---|---|---|
+| 三元 `?:` | 45 条 ALPHA101 用它；降级为与 `IF()` 同一个 AST 节点 | `(returns < 0) ? stddev(returns,20) : close` |
+| `IndClass.industry` | ALPHA101 用点号命名空间引用行业 | `indneutralize(close, IndClass.industry)` |
+| 尾点数字 `2.` | `SignedPower(x, 2.)` | 注意不能把 `1.25` 截成 `1.` |
+| `\|\|` / `&&` | alpha24 等用逻辑或；Python 的 `or` 对 Series 会报 ambiguous | 编译成 `np.logical_or` / `np.logical_and` |
+| `advN` 合成 | ALPHA101 重度依赖；用**成交额**而非 复权价×成交量 | `compute_adv(df, 20)` |
 
 **新算子的语义全部来自 Qlib 源码，不是猜的**（本机 `D:\Qlibexample\qlib` 有完整 checkout）：
 

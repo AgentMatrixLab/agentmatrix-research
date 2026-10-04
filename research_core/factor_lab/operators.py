@@ -1408,6 +1408,43 @@ def willingness_index(
     return working.groupby(code_col)[close_col].transform(_br)
 
 
+def compute_adv(
+    df: pd.DataFrame,
+    window: int,
+    *,
+    turnover_col: str = "total_turnover",
+    price_col: str = "close",
+    volume_col: str = "volume",
+    code_col: str = "code",
+    min_periods: int | None = None,
+) -> pd.Series:
+    """Average daily dollar volume over ``window`` bars, as WorldQuant's ``advN``.
+
+    Dollar volume is taken from ``total_turnover`` (成交额), which *is* the traded
+    cash amount. The tempting ``close * volume`` is wrong here because the panel's
+    close is post-adjusted: multiplying an adjusted price by an unadjusted share
+    count gives a number that is neither the traded amount nor a clean ratio.
+    ``close * volume`` is used only when no turnover column is present, and the
+    caller should treat that as a degraded substitute.
+    """
+    window = as_window(window)
+    min_obs = window if min_periods is None else min_periods
+
+    if turnover_col in df.columns:
+        dollars = df[turnover_col].astype(float)
+    elif price_col in df.columns and volume_col in df.columns:
+        dollars = df[price_col].astype(float) * df[volume_col].astype(float)
+    else:
+        raise KeyError(
+            f"compute_adv needs either {turnover_col!r} or both {price_col!r} and {volume_col!r}"
+        )
+
+    working = df.assign(_adv_dollars=dollars)
+    return working.groupby(code_col)["_adv_dollars"].transform(
+        lambda x: x.rolling(window, min_periods=min_obs).mean()
+    )
+
+
 __all__ = [
     "SequenceSpec",
     "align_sort",
@@ -1419,6 +1456,7 @@ __all__ = [
     "bull_bear_index",
     "capability_ratio",
     "commodity_channel_index",
+    "compute_adv",
     "compute_vwap",
     "cross_sectional_rank",
     "cross_sectional_scale",

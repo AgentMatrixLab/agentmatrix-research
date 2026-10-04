@@ -21,12 +21,14 @@
     runnable_now: "现成可算",
     alias_only: "别名可算",
     needs_numerics: "缺算子",
+    needs_fields: "缺字段",
     unparsable: "语法不通"
   };
   var READINESS_CLASS = {
     runnable_now: "ok",
     alias_only: "blue",
     needs_numerics: "warn",
+    needs_fields: "warn",
     unparsable: "bad"
   };
   var STATUS_LABEL = {
@@ -101,12 +103,13 @@
   function renderReadiness() {
     var c = STATE.data.catalog.readiness.counts;
     var total = STATE.data.catalog.readiness.total;
-    var order = ["runnable_now", "alias_only", "needs_numerics", "unparsable"];
+    var order = ["runnable_now", "alias_only", "needs_numerics", "needs_fields", "unparsable"];
     var desc = {
-      runnable_now: "表达式与现有算子完全对齐，可直接计算",
+      runnable_now: "表达式、算子、字段全齐，可直接计算",
       alias_only: "只差算子别名映射（如 Ref→时序平移），无需新数值实现",
       needs_numerics: "引用了未实现的算子，需先补数值实现",
-      unparsable: "语法不在当前文法内（如 WorldQuant 的 ?: 三元式）"
+      needs_fields: "算子都能解析，但引用了面板供不出的字段（如 adv20）",
+      unparsable: "语法不在当前文法内"
     };
     el("readiness").innerHTML = order.map(function (key) {
       return '<div class="rcard ' + READINESS_CLASS[key] + '">' +
@@ -155,7 +158,7 @@
 
     var rd = el("f-readiness");
     rd.innerHTML = '<option value="">引擎可算（全部）</option>' +
-      ["runnable_now", "alias_only", "needs_numerics", "unparsable"].map(function (k) {
+      ["runnable_now", "alias_only", "needs_numerics", "needs_fields", "unparsable"].map(function (k) {
         return '<option value="' + k + '">' + esc(READINESS_LABEL[k]) + "</option>";
       }).join("");
 
@@ -185,7 +188,7 @@
 
     var key = STATE.sortKey;
     var dir = STATE.sortDir === "asc" ? 1 : -1;
-    var rank = { runnable_now: 0, alias_only: 1, needs_numerics: 2, unparsable: 3 };
+    var rank = { runnable_now: 0, alias_only: 1, needs_numerics: 2, needs_fields: 3, unparsable: 4 };
     rows.sort(function (a, b) {
       var av = key === "readiness" ? rank[a.readiness] : a[key];
       var bv = key === "readiness" ? rank[b.readiness] : b[key];

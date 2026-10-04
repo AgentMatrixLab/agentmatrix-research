@@ -17,7 +17,13 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 from build_factor_panel import TARGET_FACTORS, build_payload  # noqa: E402
 
-VALID_READINESS = {"runnable_now", "alias_only", "needs_numerics", "unparsable"}
+VALID_READINESS = {
+    "runnable_now",
+    "alias_only",
+    "needs_numerics",
+    "needs_fields",
+    "unparsable",
+}
 VALID_STATUS = {"real", "computed", "not_run", "placeholder", "not_implemented"}
 
 

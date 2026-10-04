@@ -120,11 +120,115 @@ def test_classifier_and_compiler_agree_on_what_is_computable() -> None:
         raise AssertionError(f"{expression} compiled but was classified as blocked")
 
 
-def test_ternary_question_mark_syntax_is_unparsable() -> None:
-    """WorldQuant's `?:` is not in the grammar; it must be reported, not guessed."""
+def test_ternary_is_supported_and_stays_runnable() -> None:
+    """WorldQuant's `?:` was added because 45 ALPHA101 entries use it."""
     result = classify_expression("(returns < 0) ? stddev(returns, 20) : close")
-    assert result.verdict == "unparsable"
-    assert result.parse_error is not None
+    assert result.verdict != "unparsable"
+    assert result.parse_error is None
+
+
+def test_ternary_lowers_to_the_same_node_as_if() -> None:
+    from research_core.factor_lab.formula_compiler import IfExpr, Parser, tokenize
+
+    ternary = Parser(tokenize("(a > 0) ? b : c")).parse()
+    call = Parser(tokenize("If(a > 0, b, c)")).parse()
+    assert isinstance(ternary, IfExpr) and isinstance(call, IfExpr)
+    assert type(ternary.cond) is type(call.cond)
+    assert type(ternary.true_val) is type(call.true_val)
+
+
+def test_nested_ternaries_parse() -> None:
+    """ALPHA101 alpha9 nests a ternary inside its own else branch."""
+    expression = "((0 < ts_min(delta(close, 1), 5)) ? delta(close, 1) : ((ts_max(delta(close, 1), 5) < 0) ? delta(close, 1) : (-1 * delta(close, 1))))"
+    assert classify_expression(expression).parse_error is None
+
+
+def test_dotted_indclass_fields_resolve_to_the_bare_field() -> None:
+    """`IndClass.industry` names the industry field through a namespace prefix."""
+    result = classify_expression("indneutralize(close, IndClass.industry)")
+    assert result.runnable
+    assert "INDUSTRY" in result.fields_used
+    assert "INDCLASS" not in result.fields_used
+
+
+def test_all_three_indclass_levels_map_to_the_industry_column() -> None:
+    from research_core.factor_lab.formula_compiler import DEFAULT_FIELD_MAP
+
+    for name in ("INDUSTRY", "SECTOR", "SUBINDUSTRY"):
+        assert DEFAULT_FIELD_MAP[name] == "industry"
+
+
+def test_trailing_dot_number_literal_parses() -> None:
+    """`SignedPower(x, 2.)` appears in ALPHA101 alpha1."""
+    result = classify_expression("SignedPower(close, 2.)")
+    assert result.parse_error is None
+
+
+def test_a_trailing_dot_does_not_swallow_a_decimal() -> None:
+    from research_core.factor_lab.formula_compiler import Parser, tokenize
+
+    parsed = Parser(tokenize("1.25 + 3.")).parse()
+    assert parsed.left.value == 1.25
+    assert parsed.right.value == 3.0
+
+
+def test_logical_operators_parse() -> None:
+    for expression in ("(a > 0) || (b > 0)", "(a > 0) && (b > 0)"):
+        assert classify_expression(expression).parse_error is None
+
+
+def test_logical_operators_compile_to_elementwise_operations() -> None:
+    """Python's `or` on a Series raises; the emitted code must use logical_or."""
+    import numpy as np
+    import pandas as pd
+
+    from research_core.factor_lab.formula_compiler import compile_formula
+
+    frame = pd.DataFrame(
+        {
+            "date": pd.bdate_range("2024-01-01", periods=3),
+            "code": ["A"] * 3,
+            "close": [1.0, -1.0, 1.0],
+            "open": [0.0, 0.0, 2.0],
+        }
+    )
+    values = pd.Series(compile_formula("(close > 0) || (open > 0)")(frame))
+    assert list(values) == [True, False, True]
+
+
+# ── field-aware verdicts ────────────────────────────────────────────────
+
+def test_adv_fields_are_synthesised_so_they_do_not_block() -> None:
+    """`advN` is built from total_turnover, so ALPHA101 is no longer blocked on it."""
+    result = classify_expression("(adv20 < volume)")
+    assert result.runnable
+    assert result.missing_fields == ()
+
+
+def test_an_unavailable_field_makes_the_factor_needs_fields() -> None:
+    """Running this would emit df["book_value"] and raise; say so up front."""
+    result = classify_expression("close / book_value")
+    assert result.verdict == "needs_fields"
+    assert not result.runnable
+    assert "BOOK_VALUE" in result.missing_fields
+
+
+def test_a_missing_operator_outranks_a_missing_field() -> None:
+    """Both are blocking; an unimplemented operator is the harder blocker."""
+    result = classify_expression("VPT(close, book_value)")
+    assert result.verdict == "needs_numerics"
+
+
+def test_needs_fields_is_counted_in_the_summary() -> None:
+    verdicts = [
+        classify_expression("rank(close)"),
+        classify_expression("close / book_value"),
+        classify_expression("(? bad"),
+    ]
+    summary = readiness_summary(verdicts)
+    assert summary["counts"]["needs_fields"] == 1
+    assert summary["counts"]["runnable_now"] == 1
+    assert summary["runnable"] == 1, "a needs_fields factor must not count as runnable"
 
 
 def test_unsupported_field_is_surfaced() -> None:
