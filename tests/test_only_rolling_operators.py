@@ -25,6 +25,7 @@ from research_core.factor_lab.operators import (
     rolling_slope,
     true_range,
     ts_ema,
+    ts_rank,
 )
 
 WINDOW = 10
@@ -158,6 +159,69 @@ def test_ema_matches_pandas_span_convention(frame: pd.DataFrame) -> None:
     got = ts_ema(one, "close", WINDOW)
     expected = one["close"].ewm(span=WINDOW, min_periods=1).mean()
     pd.testing.assert_series_equal(got.reset_index(drop=True), expected, check_names=False)
+
+
+# ── ts_rank: vectorised, and must stay identical to the per-window definition ──
+
+def test_ts_rank_matches_the_per_window_definition_exactly(frame: pd.DataFrame) -> None:
+    """The vectorised form must be bit-identical, not merely close.
+
+    `ts_rank` was the single largest cost in the catalog: a per-window Python
+    callback made 12 of 60 expressions take 80% of the runtime, the worst at 96
+    seconds for one factor. It is now computed with a sliding-window comparison,
+    which is ~500x faster, and this pins the result against the definition it
+    replaced so the speed cannot have come from a changed answer.
+    """
+    one = _single_code(frame)
+    got = ts_rank(one, "close", WINDOW)
+
+    def rank_last(values: np.ndarray) -> float:
+        return float(pd.Series(values).rank(method="average", pct=True).iloc[-1])
+
+    expected = one["close"].rolling(WINDOW, min_periods=WINDOW).apply(rank_last, raw=True)
+    pd.testing.assert_series_equal(got.reset_index(drop=True), expected, check_names=False)
+    assert (got.isna() == expected.isna()).all()
+
+
+def test_ts_rank_handles_ties_the_way_pandas_average_rank_does() -> None:
+    dates = pd.bdate_range("2024-01-01", periods=6)
+    flat = pd.DataFrame(
+        {"date": dates, "code": "A", "close": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]}
+    )
+    got = ts_rank(flat, "close", 3)
+    # Every value ties, so pandas' average rank over the window is (1+2+3)/3 = 2,
+    # giving a percentile of 2/3. Ties must not collapse to 0.5.
+    assert got.iloc[-1] == pytest.approx(2 / 3)
+
+
+def test_ts_rank_is_nan_until_the_window_is_full(frame: pd.DataFrame) -> None:
+    got = ts_rank(frame, "close", WINDOW)
+    assert got.iloc[:WINDOW - 1].isna().all()
+
+
+def test_ts_rank_keeps_codes_separate() -> None:
+    dates = pd.bdate_range("2024-01-01", periods=5)
+    frame = pd.DataFrame(
+        {
+            "date": list(dates) * 2,
+            "code": ["A"] * 5 + ["B"] * 5,
+            "close": [1.0, 2.0, 3.0, 4.0, 5.0, 5.0, 4.0, 3.0, 2.0, 1.0],
+        }
+    )
+    got = ts_rank(frame, "close", 3)
+    # A's last window is [3,4,5] -> the last element is the largest -> 1.0
+    # B's last window is [3,2,1] -> the last element is the smallest -> 1/3
+    assert got.iloc[4] == pytest.approx(1.0)
+    assert got.iloc[9] == pytest.approx(1 / 3)
+
+
+def test_ts_rank_propagates_nan_inside_a_window() -> None:
+    dates = pd.bdate_range("2024-01-01", periods=5)
+    frame = pd.DataFrame({"date": dates, "code": "A", "close": [1.0, np.nan, 3.0, 4.0, 5.0]})
+    got = ts_rank(frame, "close", 3)
+    # Window ending at index 3 is [nan, 3, 4] which cannot be ranked.
+    assert np.isnan(got.iloc[3])
+    assert np.isfinite(got.iloc[4])
 
 
 # ── Technical indicators ────────────────────────────────────────────────

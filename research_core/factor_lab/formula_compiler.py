@@ -34,6 +34,7 @@ from research_core.factor_lab.operators import (
     capability_ratio,
     commodity_channel_index,
     compute_adv,
+    compute_returns,
     compute_vwap,
     cross_sectional_rank,
     cross_sectional_scale,
@@ -350,9 +351,13 @@ DEFAULT_FIELD_MAP: dict[str, str] = {
     "LOW": "low",
     "CLOSE": "close",
     "VOLUME": "volume",
-    "AMOUNT": "amount",
+    # The panel contract names 成交额 `total_turnover`; emitting df["amount"]
+    # would raise KeyError on every panel the export script produces.
+    "AMOUNT": "total_turnover",
+    "TURNOVER": "total_turnover",
     "VWAP": "vwap",
     "RETURNS": "returns",
+    "SHARES": "circulation_a",
     "INDUSTRY": "industry",
     "SECTOR": "industry",
     "SUBINDUSTRY": "industry",
@@ -602,6 +607,12 @@ class CodeGenerator:
                 var = self._next_var()
                 self.statements.append(f"{var} = compute_adv(df, {int(adv.group(1))})")
                 return var
+            # `returns` / `daily_return` are close-to-close, derivable from the
+            # panel's own close so they inherit its adjustment basis.
+            if col in ("returns", "daily_return"):
+                var = self._next_var()
+                self.statements.append(f"{var} = compute_returns(df)")
+                return var
             return f'df["{col}"]'
 
         # ── unary ───────────────────────────────────────────────────
@@ -677,6 +688,18 @@ class CodeGenerator:
                     )
                 else:
                     self.statements.append(f"{var} = {py_func}({', '.join(arg_vars)})")
+                return var
+
+            # `max(a, b)` / `min(a, b)` with two *expressions* is the element-wise
+            # operation ALPHA101 means. The registry's MAX/MIN are rolling-window
+            # operators taking (series, window), and a window is always a literal,
+            # so the second argument's shape disambiguates the two readings.
+            if func_name in ("MAX", "MIN") and len(node.args) == 2 and not isinstance(node.args[1], Literal):
+                left = self._gen(node.args[0])
+                right = self._gen(node.args[1])
+                var = self._next_var()
+                fn = "np.maximum" if func_name == "MAX" else "np.minimum"
+                self.statements.append(f"{var} = {fn}({left}, {right})")
                 return var
 
             # Long-panel operators that need df.assign
@@ -938,6 +961,7 @@ def compile_formula(
         "indneutralize": indneutralize,
         "compute_vwap": compute_vwap,
         "compute_adv": compute_adv,
+        "compute_returns": compute_returns,
         "SequenceSpec": SequenceSpec,
         "_sma_long_panel": _sma_long_panel,
         "_wma_long_panel": _wma_long_panel,

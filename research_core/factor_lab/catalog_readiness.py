@@ -105,16 +105,39 @@ PANEL_FIELDS: frozenset[str] = frozenset(
 #: Fields the catalog references that nothing supplies yet. Deriving them is a
 #: concrete, bounded engine task. Until it lands they are gaps, and counting them
 #: as available would overstate the candidate pool.
-DERIVED_FIELDS: frozenset[str] = frozenset(
+DERIVED_FIELDS: frozenset[str] = frozenset()
+
+#: Fields the compiler builds on demand from panel columns, so an expression
+#: referencing them really does compute. Keep this in lockstep with the
+#: synthesis branches in `formula_compiler.CodeGenerator._gen`; a test asserts
+#: the two agree, because the whole point of this module is that "runnable"
+#: means the engine can evaluate it.
+SYNTHESISED_FIELDS: frozenset[str] = frozenset(
     {
-        # `advN` is synthesised by the compiler from total_turnover; listed here
-        # as available only for the N the compiler can build, which is any.
+        "VWAP",
+        "RETURNS",
+        "DAILY_RETURN",
         *(f"ADV{n}" for n in range(1, 501)),
     }
 )
 
-#: Fields needing a separate RQData reference-data or financials feed.
-RQDATA_ONLY_FIELDS: frozenset[str] = frozenset(
+#: Field spellings the compiler folds onto another column before lookup
+#: (`IndClass.sector` -> `industry`). Applied here too, so the classifier sees
+#: the same field the engine will actually read.
+FIELD_ALIASES: dict[str, str] = {
+    "SECTOR": "INDUSTRY",
+    "SUBINDUSTRY": "INDUSTRY",
+}
+
+#: Everything the pipeline can actually put in front of the engine.
+AVAILABLE_FIELDS: frozenset[str] = PANEL_FIELDS | SYNTHESISED_FIELDS
+
+#: Field names we recognise but cannot supply: they need a separate RQData
+#: reference-data or financials feed. Recognising a name is not the same as
+#: being able to produce it, and conflating the two is what made an earlier
+#: version of this module report 33 QAPI33 factors as runnable when the compiler
+#: would raise KeyError on `net_profit_ttm`.
+EXTERNAL_FIELDS: frozenset[str] = frozenset(
     {
         "CAP",
         "MARKET_CAP",
@@ -122,20 +145,35 @@ RQDATA_ONLY_FIELDS: frozenset[str] = frozenset(
         "FREE_FLOAT",
         "SECTOR",
         "SUBINDUSTRY",
-        "RETURNS",
-        "DAILY_RETURN",
         "STOCK_RETURN",
         "MARKET_RETURN",
         "ASSETS",
         "EQUITY",
+        "TOTAL_EQUITY",
         "LIABILITIES",
+        "BOOK_VALUE",
         "NET_PROFIT_TTM",
         "REVENUE_TTM",
         "EPS_YOY",
         "PROFIT_YOY",
         "REVENUE_YOY",
+        "DOWN_MOVE",
+        "UP_MOVE",
+        "AVG_AMOUNT_1M",
+        "AVG_TURNOVER_21D",
+        "AVG_TURNOVER_60D",
+        "AVG_TURNOVER_252D",
+        "RET_1M",
+        "RET_3M",
+        "VOLATILITY_1M",
+        "VOLATILITY_3M",
+        "BOLLINGER_UPPER_20_2",
+        "BOLLINGER_LOWER_20_2",
     }
 )
+
+#: Retained under the old name for callers that only want the "known" union.
+RQDATA_ONLY_FIELDS: frozenset[str] = EXTERNAL_FIELDS
 
 
 # ── Result types ────────────────────────────────────────────────────────
@@ -230,8 +268,13 @@ def classify_expression(expression: str) -> FactorReadiness:
         else:
             unresolved.append(raw)
 
-    known_universe = PANEL_FIELDS | DERIVED_FIELDS | RQDATA_ONLY_FIELDS
-    missing = tuple(sorted(f for f in fields if f not in known_universe))
+    missing = tuple(
+        sorted(
+            f
+            for f in fields
+            if FIELD_ALIASES.get(f, f) not in AVAILABLE_FIELDS
+        )
+    )
 
     # A field the panel cannot supply is as blocking as a missing operator: the
     # compiler would emit df["adv20"] and fail at call time. Folding it into the
