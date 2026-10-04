@@ -294,9 +294,17 @@ def update_market_cap():
     data = r.json()
     records = data.get("data", [])
     if not records:
-        # 尝试直接下载 parquet 文件
-        r2 = _api_call("/files/home/data/RQdata_files/rq_factor_market_cap_latest.parquet",
-                       stream=True, timeout=300)
+        # 尝试直接下载 parquet 文件；服务器文件路由的根路径不内置，用 QUANT_FILES_ROOT 提供
+        files_root = os.environ.get("QUANT_FILES_ROOT", "").rstrip("/")
+        if not files_root:
+            raise RuntimeError(
+                "QUANT_FILES_ROOT 未设置；本仓库不内置服务器文件路径，请先设置该环境变量"
+            )
+        r2 = _api_call(
+            f"{files_root}/RQdata_files/rq_factor_market_cap_latest.parquet",
+            stream=True,
+            timeout=300,
+        )
         with open(tmp_path, "wb") as f:
             for chunk in r2.iter_content(1024*1024):
                 f.write(chunk)
