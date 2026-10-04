@@ -224,6 +224,92 @@ def test_ts_rank_propagates_nan_inside_a_window() -> None:
     assert np.isfinite(got.iloc[4])
 
 
+# ── the same treatment for argmax / argmin / decay_linear ───────────────
+
+def _per_code(frame: pd.DataFrame, window: int, callback) -> pd.Series:  # noqa: ANN001
+    return frame.groupby("code")["close"].transform(
+        lambda x: x.rolling(window, min_periods=window).apply(callback, raw=True)
+    )
+
+
+def test_argmax_matches_the_per_window_definition(frame: pd.DataFrame) -> None:
+    from research_core.factor_lab.operators import ts_argmax
+
+    window = 12
+    got = ts_argmax(frame, "close", window)
+    expected = _per_code(
+        frame, window,
+        lambda v: np.nan if np.isnan(v).any() else float(np.argmax(v) + 1),
+    )
+    pd.testing.assert_series_equal(got.reset_index(drop=True), expected.reset_index(drop=True), check_names=False)
+
+
+def test_argmin_matches_the_per_window_definition(frame: pd.DataFrame) -> None:
+    from research_core.factor_lab.operators import ts_argmin
+
+    window = 12
+    got = ts_argmin(frame, "close", window)
+    expected = _per_code(
+        frame, window,
+        lambda v: np.nan if np.isnan(v).any() else float(np.argmin(v) + 1),
+    )
+    pd.testing.assert_series_equal(got.reset_index(drop=True), expected.reset_index(drop=True), check_names=False)
+
+
+def test_decay_linear_matches_the_per_window_definition(frame: pd.DataFrame) -> None:
+    """Equal to the reference within floating-point associativity.
+
+    The vectorised sum accumulates in a different order from ``np.dot``, so the
+    result can differ by one unit in the last place -- 2.2e-16 on the fixture.
+    That is a rounding difference, not a definitional one, and nan patterns match
+    exactly. Both channels of the pipeline use this same implementation, so the
+    two-channel result_hash equivalence is unaffected.
+    """
+    from research_core.factor_lab.operators import ts_decay_linear
+
+    window = 12
+
+    def reference(values: np.ndarray) -> float:
+        mask = ~np.isnan(values)
+        if not mask.any():
+            return np.nan
+        valid = values[mask]
+        weights = np.arange(1, len(values) + 1, dtype=float)[mask]
+        return float(np.dot(valid, weights) / weights.sum())
+
+    got = ts_decay_linear(frame, "close", window).reset_index(drop=True)
+    expected = _per_code(frame, window, reference).reset_index(drop=True)
+    assert (got.isna() == expected.isna()).all()
+    both = pd.concat([got, expected], axis=1).dropna()
+    assert np.allclose(both.iloc[:, 0], both.iloc[:, 1], rtol=0, atol=1e-12)
+
+
+def test_argmax_returns_nan_when_the_window_contains_nan() -> None:
+    from research_core.factor_lab.operators import ts_argmax
+
+    dates = pd.bdate_range("2024-01-01", periods=5)
+    frame = pd.DataFrame({"date": dates, "code": "A", "close": [1.0, np.nan, 3.0, 4.0, 5.0]})
+    got = ts_argmax(frame, "close", 3)
+    assert np.isnan(got.iloc[3]), "a window containing NaN must not report the NaN's position"
+    assert got.iloc[4] == pytest.approx(3.0)  # [3, 4, 5] -> the max is the 3rd
+
+
+def test_argmax_keeps_codes_separate() -> None:
+    from research_core.factor_lab.operators import ts_argmax
+
+    dates = pd.bdate_range("2024-01-01", periods=4)
+    frame = pd.DataFrame(
+        {
+            "date": list(dates) * 2,
+            "code": ["A"] * 4 + ["B"] * 4,
+            "close": [1.0, 2.0, 3.0, 4.0, 4.0, 3.0, 2.0, 1.0],
+        }
+    )
+    got = ts_argmax(frame, "close", 3)
+    assert got.iloc[3] == pytest.approx(3.0)  # A: [2,3,4] -> max is 3rd
+    assert got.iloc[7] == pytest.approx(1.0)  # B: [3,2,1] -> max is 1st
+
+
 # ── Technical indicators ────────────────────────────────────────────────
 
 def test_rsi_stays_within_zero_and_one_hundred(frame: pd.DataFrame) -> None:

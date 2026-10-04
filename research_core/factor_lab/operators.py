@@ -253,6 +253,63 @@ def ts_rank(
     return pd.Series(result, index=df.index)
 
 
+def _rolling_extreme_position(values: np.ndarray, window: int, *, find_max: bool) -> np.ndarray:
+    """1-based position of the extreme in each full trailing window.
+
+    Vectorised replacement for ``rolling(w).apply(np.argmax)``, which costs a
+    Python call per bar. ``np.argmax`` returns the first occurrence of the
+    maximum, matching the callback it replaces; windows containing NaN are
+    reported as NaN rather than silently returning the NaN's position.
+    """
+    n = len(values)
+    result = np.full(n, np.nan, dtype=float)
+    if n < window:
+        return result
+    windows = sliding_window_view(values, window)
+    has_nan = np.isnan(windows).any(axis=1)
+    index = np.argmax(windows, axis=1) if find_max else np.argmin(windows, axis=1)
+    result[window - 1 :] = np.where(has_nan, np.nan, (index + 1).astype(float))
+    return result
+
+
+def _rolling_decay_last(values: np.ndarray, window: int) -> np.ndarray:
+    """Weighted mean of each full window, newest bar weighted highest.
+
+    Weights are 1..window applied oldest-to-newest, i.e. the newest bar carries
+    weight ``window``. That is exactly a fixed-weight sum over the window, so it
+    is computed as ``sum_j j * x[t - (window - j)]`` rather than calling a Python
+    callback once per bar.
+    """
+    n = len(values)
+    result = np.full(n, np.nan, dtype=float)
+    if n < window:
+        return result
+    windows = sliding_window_view(values, window)
+    has_nan = np.isnan(windows).any(axis=1)
+    weights = np.arange(1, window + 1, dtype=float)
+    weighted = (windows * weights).sum(axis=1) / weights.sum()
+    result[window - 1 :] = np.where(has_nan, np.nan, weighted)
+    return result
+
+
+def _per_code_vectorised(
+    df: pd.DataFrame,
+    value_col: str,
+    code_col: str,
+    window: int,
+    *,
+    find_max: bool,
+) -> pd.Series:
+    """Apply a per-code rolling kernel without a Python call per window."""
+    values = df[value_col].to_numpy(dtype=float)
+    result = np.full(len(df), np.nan, dtype=float)
+    for positions in df.groupby(code_col, sort=False).indices.values():
+        result[positions] = _rolling_extreme_position(
+            values[positions], window, find_max=find_max
+        )
+    return pd.Series(result, index=df.index)
+
+
 def ts_argmax(
     df: pd.DataFrame,
     value_col: str | float | int | None = None,
@@ -268,16 +325,26 @@ def ts_argmax(
     window = as_window(window)
     min_obs = window if min_periods is None else min_periods
 
-    def _argmax_1based(values: np.ndarray) -> float:
-        if np.isnan(values).any():
-            return np.nan
-        return float(np.argmax(values) + 1)
+    if min_obs != window:
+        def _argmax_1based(values: np.ndarray) -> float:
+            if np.isnan(values).any():
+                return np.nan
+            return float(np.argmax(values) + 1)
+
+        if value_col is None:
+            return df.rolling(window, min_periods=min_obs).apply(_argmax_1based, raw=True)
+        return df.groupby(code_col)[str(value_col)].transform(
+            lambda x: x.rolling(window, min_periods=min_obs).apply(_argmax_1based, raw=True)
+        )
 
     if value_col is None:
-        return df.rolling(window, min_periods=min_obs).apply(_argmax_1based, raw=True)
-    return df.groupby(code_col)[str(value_col)].transform(
-        lambda x: x.rolling(window, min_periods=min_obs).apply(_argmax_1based, raw=True)
-    )
+        frames = {
+            column: _rolling_extreme_position(df[column].to_numpy(dtype=float), window, find_max=True)
+            for column in df.columns
+            if pd.api.types.is_numeric_dtype(df[column])
+        }
+        return pd.DataFrame(frames, index=df.index)
+    return _per_code_vectorised(df, str(value_col), code_col, window, find_max=True)
 
 
 def ts_argmin(
@@ -295,16 +362,26 @@ def ts_argmin(
     window = as_window(window)
     min_obs = window if min_periods is None else min_periods
 
-    def _argmin_1based(values: np.ndarray) -> float:
-        if np.isnan(values).any():
-            return np.nan
-        return float(np.argmin(values) + 1)
+    if min_obs != window:
+        def _argmin_1based(values: np.ndarray) -> float:
+            if np.isnan(values).any():
+                return np.nan
+            return float(np.argmin(values) + 1)
+
+        if value_col is None:
+            return df.rolling(window, min_periods=min_obs).apply(_argmin_1based, raw=True)
+        return df.groupby(code_col)[str(value_col)].transform(
+            lambda x: x.rolling(window, min_periods=min_obs).apply(_argmin_1based, raw=True)
+        )
 
     if value_col is None:
-        return df.rolling(window, min_periods=min_obs).apply(_argmin_1based, raw=True)
-    return df.groupby(code_col)[str(value_col)].transform(
-        lambda x: x.rolling(window, min_periods=min_obs).apply(_argmin_1based, raw=True)
-    )
+        frames = {
+            column: _rolling_extreme_position(df[column].to_numpy(dtype=float), window, find_max=False)
+            for column in df.columns
+            if pd.api.types.is_numeric_dtype(df[column])
+        }
+        return pd.DataFrame(frames, index=df.index)
+    return _per_code_vectorised(df, str(value_col), code_col, window, find_max=False)
 
 
 def ts_product(
@@ -395,17 +472,24 @@ def ts_decay_linear(
     window = as_window(window)
     min_obs = window if min_periods is None else min_periods
 
-    def _decay(values: np.ndarray) -> float:
-        mask = ~np.isnan(values)
-        if not mask.any():
-            return np.nan
-        valid_values = values[mask]
-        valid_weights = np.arange(1, len(values) + 1, dtype=float)[mask]
-        return float(np.dot(valid_values, valid_weights) / valid_weights.sum())
+    if min_obs != window:
+        def _decay(values: np.ndarray) -> float:
+            mask = ~np.isnan(values)
+            if not mask.any():
+                return np.nan
+            valid_values = values[mask]
+            valid_weights = np.arange(1, len(values) + 1, dtype=float)[mask]
+            return float(np.dot(valid_values, valid_weights) / valid_weights.sum())
 
-    return df.groupby(code_col)[value_col].transform(
-        lambda x: x.rolling(window, min_periods=min_obs).apply(_decay, raw=True)
-    )
+        return df.groupby(code_col)[value_col].transform(
+            lambda x: x.rolling(window, min_periods=min_obs).apply(_decay, raw=True)
+        )
+
+    values = df[value_col].to_numpy(dtype=float)
+    result = np.full(len(df), np.nan, dtype=float)
+    for positions in df.groupby(code_col, sort=False).indices.values():
+        result[positions] = _rolling_decay_last(values[positions], window)
+    return pd.Series(result, index=df.index)
 
 
 def cross_sectional_scale(
