@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>因子作战面板 · Factor Console · AgentMatrix</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark">AM</span>
+    <div class="brand-text">
+      <h1>因子作战面板 <span class="en">Factor Console</span></h1>
+      <p class="tagline">2026-10-07 交付 · 因子从目录到实盘的全动态过程</p>
+    </div>
+  </div>
+  <div class="meta">
+    <div class="meta-item"><span class="meta-k">commit</span><span class="meta-v" id="m-commit">—</span></div>
+    <div class="meta-item"><span class="meta-k">生成于</span><span class="meta-v" id="m-generated">—</span></div>
+    <div class="meta-item countdown"><span class="meta-k">距交付</span><span class="meta-v" id="m-countdown">—</span></div>
+  </div>
+</header>
+
+<div id="honesty" class="honesty"></div>
+
+<nav class="tabs" id="tabs">
+  <button class="tab is-active" data-view="funnel">交付漏斗</button>
+  <button class="tab" data-view="matrix">因子矩阵</button>
+  <button class="tab" data-view="lifecycle">生命周期</button>
+  <button class="tab" data-view="gates">验证器 / 打分器</button>
+  <button class="tab" data-view="live">策略与实盘</button>
+</nav>
+
+<main id="main">
+
+  <!-- ── KPI strip ─────────────────────────────────────────────── -->
+  <section class="kpis" id="kpis"></section>
+
+  <!-- ── Funnel ────────────────────────────────────────────────── -->
+  <section class="view is-active" id="view-funnel">
+    <div class="panel">
+      <div class="panel-head">
+        <h2>因子交付漏斗</h2>
+        <p class="panel-sub">每一级的计数都指向一个真实文件；未运行的生产环节保持为 0，不做填充。</p>
+      </div>
+      <div id="funnel" class="funnel"></div>
+    </div>
+    <div class="panel">
+      <div class="panel-head">
+        <h2>引擎可算性拆解</h2>
+        <p class="panel-sub">目录里的表达式离「能被本仓库引擎算出来」还差多少。这是 300 因子目标的第一道真实约束。</p>
+      </div>
+      <div id="readiness" class="readiness"></div>
+    </div>
+    <div class="panel">
+      <div class="panel-head">
+        <h2>阻塞项排行</h2>
+        <p class="panel-sub">补齐这些算子/字段，能解锁目录里剩余因子的绝大部分。</p>
+      </div>
+      <div class="grid-2">
+        <div><h3 class="mini">缺失算子（按阻塞因子数）</h3><table class="dense" id="op-blockers"></table></div>
+        <div><h3 class="mini">缺失字段（按阻塞因子数）</h3><table class="dense" id="field-blockers"></table></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Matrix ────────────────────────────────────────────────── -->
+  <section class="view" id="view-matrix">
+    <div class="panel">
+      <div class="panel-head">
+        <h2>因子矩阵</h2>
+        <p class="panel-sub">目录全量因子，按来源、信任分层、引擎可算性、生命周期状态筛选。</p>
+      </div>
+      <div class="filters">
+        <input type="search" id="q" placeholder="搜索因子 ID / 中文名 / 公式…" />
+        <select id="f-source"></select>
+        <select id="f-tier"></select>
+        <select id="f-readiness"></select>
+        <select id="f-state"></select>
+        <button id="f-reset" class="ghost">重置</button>
+      </div>
+      <div class="table-meta" id="matrix-meta"></div>
+      <div class="table-wrap">
+        <table class="matrix" id="matrix">
+          <thead>
+            <tr>
+              <th class="sortable" data-key="factor_id">因子</th>
+              <th class="sortable" data-key="source">来源</th>
+              <th class="sortable" data-key="category">大类</th>
+              <th class="sortable" data-key="tier">分层</th>
+              <th class="sortable" data-key="readiness">引擎可算</th>
+              <th class="sortable" data-key="state">状态</th>
+              <th>阻塞项</th>
+            </tr>
+          </thead>
+          <tbody id="matrix-body"></tbody>
+        </table>
+      </div>
+      <div class="pager" id="pager"></div>
+    </div>
+  </section>
+
+  <!-- ── Lifecycle ─────────────────────────────────────────────── -->
+  <section class="view" id="view-lifecycle">
+    <div class="panel">
+      <div class="panel-head">
+        <h2>因子生命周期状态机</h2>
+        <p class="panel-sub">因子从「设想」到「退休」的十个状态与迁移条件。当前各状态的因子数如实标注。</p>
+      </div>
+      <div id="states" class="states"></div>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><h2>状态迁移规则</h2></div>
+      <div class="table-wrap"><table class="dense" id="transitions"></table></div>
+    </div>
+    <div class="panel">
+      <div class="panel-head">
+        <h2>动态过程事件流</h2>
+        <p class="panel-sub">因子上线过程中的每一次状态跃迁都会落到这里。</p>
+      </div>
+      <div id="events" class="events"></div>
+    </div>
+  </section>
+
+  <!-- ── Gates ─────────────────────────────────────────────────── -->
+  <section class="view" id="view-gates">
+    <div class="panel">
+      <div class="panel-head">
+        <h2>验证器 · 八道门槛</h2>
+        <p class="panel-sub">冻结于 <code>configs/validation_gates.yaml</code>。任一门槛不过即淘汰，死因回注目录。</p>
+      </div>
+      <div id="gates" class="gates"></div>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><h2>口径与成本假设</h2></div>
+      <div id="gate-meta" class="gate-meta"></div>
+    </div>
+    <div class="panel">
+      <div class="panel-head">
+        <h2>打分器</h2>
+        <p class="panel-sub">综合分与 S/A/B/C 分层的规则尚未定稿 —— 这是本期需要客户侧确认的核心口径之一。</p>
+      </div>
+      <div class="callout warn">
+        <strong>未实现。</strong>
+        当前仓库有验证器（八道门槛、批量、分片、打包、交叉核对），但把门槛结果折算成
+        「一个可排序的综合分 + 交付分层」的打分器还没有落地。300 因子目标需要先冻结打分口径，
+        否则「过闸」与「可上线」之间没有可解释的桥梁。
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Live ──────────────────────────────────────────────────── -->
+  <section class="view" id="view-live">
+    <div class="panel">
+      <div class="panel-head">
+        <h2>策略台账</h2>
+        <p class="panel-sub">来自 <code>pages/strategy-dashboard/data/strategies.json</code>。</p>
+      </div>
+      <div id="strategies" class="strategies"></div>
+    </div>
+    <div class="panel">
+      <div class="panel-head">
+        <h2>实盘信号链路</h2>
+        <p class="panel-sub">信号文件 → Supabase → 本地 QMT / 掘金量化执行 → 成交回传对账。</p>
+      </div>
+      <div id="pipeline" class="pipeline"></div>
+    </div>
+  </section>
+
+</main>
+
+<aside class="drawer" id="drawer" aria-hidden="true">
+  <button class="drawer-close" id="drawer-close" aria-label="关闭">×</button>
+  <div id="drawer-body"></div>
+</aside>
+<div class="scrim" id="scrim" hidden></div>
+
+<footer class="foot">
+  <span>AgentMatrixLab · 因子作战面板</span>
+  <span id="foot-note"></span>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>

@@ -17,8 +17,7 @@
       .wrap { max-width: 1200px; width: 100%; }
       h1 { font-size: 28px; font-weight: 700; margin-bottom: 6px; }
       .sub { color: #94a3b8; margin-bottom: 32px; font-size: 14px; }
-      .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
-      @media (max-width: 960px) { .grid { grid-template-columns: repeat(2, 1fr); } }
+      .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(268px, 1fr)); gap: 16px; }
       @media (max-width: 560px) { .grid { grid-template-columns: 1fr; } }
       .card {
         background: #111827;
@@ -44,6 +43,12 @@
       <h1>AgentMatrix Research · 研究面板门户</h1>
       <p class="sub">7×24 自动化因子挖掘机 · 内部研究基座</p>
       <div class="grid">
+        <a class="card live" href="./factor-panel/">
+          <div class="tag">Delivery · Console</div>
+          <div class="title">因子作战面板</div>
+          <div class="desc">2026-10-07 交付总览：交付漏斗 · 引擎可算性 · 因子矩阵 · 生命周期与上线事件流 · 验证器与实盘信号链路</div>
+          <span class="badge">真实产物驱动 · 未运行环节如实标注</span>
+        </a>
         <a class="card live" href="./factor-lab-dashboard/">
           <div class="tag">Factor Lab</div>
           <div class="title">Factor Lab 看板</div>
@@ -54,18 +59,18 @@
           <div class="tag">Lifecycle · Trust</div>
           <div class="title">因子生命周期监控</div>
           <div class="desc">从出生到死亡全流程 · 九道验真闸门 · 证据链 · OOS 封存 · 信任分级总览（S/A/B/C/D）</div>
-          <span class="badge">静态快照 · 最新跑批</span>
+          <span class="badge">静态快照 · 含合成夹具</span>
         </a>
         <a class="card live" href="./strategy-dashboard/">
           <div class="tag">Strategy</div>
           <div class="title">策略面板</div>
-          <div class="desc">单因子策略配置 · 因子验证证据 · 闸门状态（5 策略起步）</div>
+          <div class="desc">单因子策略配置 · 因子验证证据 · 闸门状态 · 当前为占位数据（data_status=placeholder）</div>
           <span class="badge">静态快照 · 5 策略</span>
         </a>
         <a class="card live" href="./factor-db-dashboard/">
           <div class="tag">Factor DB · Trust</div>
           <div class="title">因子库目录</div>
-          <div class="desc">1058 因子检索 · 公式与分布 · 信任分级维度（S/A/B/C/D）· 九源合一</div>
+          <div class="desc"><strong>目录规模</strong>：1058 条历史因子检索 · 公式与信任分级（S/A/B/C/D）· 九源合一。<br><em>注意：目录数 ≠ 本期交付数，交付口径见「因子作战面板」。</em></div>
           <span class="badge">静态快照 · 1058 因子</span>
         </a>
       </div>
