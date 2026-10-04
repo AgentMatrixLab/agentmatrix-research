@@ -27,6 +27,11 @@ from research_core.factor_lab.robustness import (
     benjamini_hochberg,
     industry_neutral_ic,
 )
+from research_core.factor_lab.validation_result import (
+    ValidationResultError,
+    extract_rank_ic_statistic,
+    resolve_primary_horizon,
+)
 
 __all__ = [
     "SupplementaryError",
@@ -47,18 +52,25 @@ def p_value_from_t(t_stat: float, degrees_of_freedom: int) -> float:
     A factor with too few daily observations to define a t-statistic has no
     p-value: it returns NaN, and `benjamini_hochberg` then treats it as
     untestable rather than as evidence.
+
+    scipy is a declared dependency (`requirements-factor-lab.txt`). If it is
+    missing we raise rather than fall back to a normal approximation: the
+    approximation is anti-conservative in the tail (0.0473 against an exact
+    0.0500 at t=1.984, dof=100), which would inflate every discovery count.
     """
     if degrees_of_freedom < 1:
         return float("nan")
     if not math.isfinite(t_stat):
         return float("nan")
     try:
-        from scipy import stats  # noqa: PLC0415 - optional at import time
-
-        return float(2.0 * stats.t.sf(abs(t_stat), degrees_of_freedom))
-    except ImportError:  # pragma: no cover - scipy is a declared dependency
-        # Normal approximation, only reached if scipy is missing.
-        return float(math.erfc(abs(t_stat) / math.sqrt(2.0)))
+        from scipy import stats  # noqa: PLC0415 - imported lazily for speed
+    except ImportError as exc:  # pragma: no cover - scipy is a declared dependency
+        raise SupplementaryError(
+            "scipy is required for exact Student-t p-values but is not installed. "
+            "Install it (pip install 'scipy>=1.14') rather than accepting a normal "
+            "approximation, which would overstate significance."
+        ) from exc
+    return float(2.0 * stats.t.sf(abs(t_stat), degrees_of_freedom))
 
 
 def rank_ic_t_stat(
@@ -66,29 +78,20 @@ def rank_ic_t_stat(
     *,
     primary_horizon: int | None = None,
 ) -> tuple[float, int]:
-    """Pull (t_stat, days) for the primary horizon out of a validation result."""
-    table = result.get("rank_ic")
-    if not isinstance(table, Mapping) or not table:
-        raise SupplementaryError(
-            f"{result.get('factor_id', '<unknown>')}: validation result carries no rank_ic table"
-        )
+    """Pull (t_stat, days) for the primary horizon out of a validation result.
 
-    if primary_horizon is None:
-        primary_horizon = int(result.get("primary_horizon") or 10)
-    key = str(primary_horizon)
-    entry = table.get(key) or table.get(primary_horizon)
-    if entry is None:
-        # Fall back to the only horizon present rather than guessing silently.
-        if len(table) != 1:
-            raise SupplementaryError(
-                f"{result.get('factor_id', '<unknown>')}: no rank_ic entry for horizon "
-                f"{primary_horizon} and the table is ambiguous"
-            )
-        entry = next(iter(table.values()))
-
-    t_stat = float(entry.get("t_stat", float("nan")))
-    days = int(entry.get("days", 0) or 0)
-    return t_stat, days
+    The frozen validator keys rank-IC statistics as ``"10d"``; the resolution
+    lives in `validation_result` so this module cannot drift from it.
+    """
+    horizon = (
+        resolve_primary_horizon(result)
+        if primary_horizon is None
+        else primary_horizon
+    )
+    try:
+        return extract_rank_ic_statistic(result, horizon)
+    except ValidationResultError as exc:
+        raise SupplementaryError(str(exc)) from exc
 
 
 def industry_neutral_retention(
@@ -104,21 +107,37 @@ def industry_neutral_retention(
 ) -> dict[str, Any] | None:
     """Industry-neutral IC summary for one factor, or None if it cannot be run.
 
-    ``factor_values`` is joined onto the panel by the panel's own index when
-    supplied; otherwise the panel is assumed to already carry ``factor_col``.
+    Returns None -- never a confident-looking number -- when the inputs cannot
+    actually support the calculation. Three cases are refused explicitly:
+
+    * the panel carries no industry column;
+    * the factor values do not line up with the panel index (a misaligned join
+      silently produces all-NaN or a plausible result computed on a subset);
+    * neutralisation removed every usable cross-section, which happens when each
+      (date, industry) cell holds too few names to rank.
     """
     if industry_col not in panel.columns:
         return None
 
     working = panel
     if factor_values is not None:
+        supplied = pd.Series(factor_values)
+        shared = supplied.index.intersection(panel.index)
+        if len(shared) < len(panel) * 0.99:
+            # A partial overlap would be scored on a subset the caller did not
+            # intend, and a disjoint one would be all NaN. Refuse both.
+            return None
         working = panel.copy()
-        working[factor_col] = pd.Series(factor_values).reindex(panel.index).to_numpy()
+        working[factor_col] = supplied.reindex(panel.index).to_numpy()
     elif factor_col not in panel.columns:
         return None
 
+    working[return_col] = pd.to_numeric(working[return_col], errors="coerce")
+    if working[return_col].notna().sum() == 0:
+        return None
+
     try:
-        return industry_neutral_ic(
+        result = industry_neutral_ic(
             working,
             factor_col=factor_col,
             return_col=return_col,
@@ -130,6 +149,12 @@ def industry_neutral_retention(
     except (KeyError, ValueError):
         # A factor we cannot neutralise gains no evidence; it must not crash a batch.
         return None
+
+    # Neutralisation that never produced a usable cross-section has not been
+    # applied at all; reporting a retention from it would be misleading.
+    if int(result["neutral"]["days"]) == 0:
+        return None
+    return result
 
 
 def build_supplementary_report(

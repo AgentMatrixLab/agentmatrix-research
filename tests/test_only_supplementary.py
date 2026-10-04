@@ -72,10 +72,25 @@ def test_rank_ic_t_stat_falls_back_when_only_one_horizon_exists() -> None:
 def test_rank_ic_t_stat_refuses_to_guess_an_ambiguous_horizon() -> None:
     result = {
         "factor_id": "f",
-        "rank_ic": {"5": {"t_stat": 1.0, "days": 10}, "20": {"t_stat": 3.0, "days": 400}},
+        "rank_ic": {"5d": {"t_stat": 1.0, "days": 10}, "20d": {"t_stat": 3.0, "days": 400}},
     }
-    with pytest.raises(SupplementaryError, match="ambiguous"):
+    # The message must name the keys it did find, so a key-shape mismatch is
+    # diagnosable from the failure alone.
+    with pytest.raises(SupplementaryError, match="5d"):
         rank_ic_t_stat(result, primary_horizon=10)
+
+
+def test_rank_ic_t_stat_reads_the_validators_d_key_shape() -> None:
+    """Regression: the validator writes "10d", not "10"."""
+    result = {
+        "factor_id": "f",
+        "rank_ic": {
+            "5d": {"t_stat": 1.0, "days": 420},
+            "10d": {"t_stat": 3.0, "days": 420},
+            "20d": {"t_stat": 4.0, "days": 420},
+        },
+    }
+    assert rank_ic_t_stat(result) == (3.0, 420)
 
 
 def test_rank_ic_t_stat_rejects_a_result_without_rank_ic() -> None:

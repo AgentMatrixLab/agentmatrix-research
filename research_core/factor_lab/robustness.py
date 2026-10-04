@@ -126,9 +126,18 @@ def benjamini_hochberg(p_values: Iterable[float], q: float = 0.05) -> BenjaminiH
     scaled = ranked * n_tested / ranks
     # Enforce monotonicity from the largest p-value downwards.
     monotone = np.minimum.accumulate(scaled[::-1])[::-1]
-
     adjusted[order] = np.clip(monotone, 0.0, 1.0)
-    accepted[order] = ranked <= q * ranks / n_tested
+
+    # Benjamini-Hochberg is a STEP-UP procedure: find the largest k whose
+    # p-value clears k*q/m, then reject every hypothesis ranked at or below k.
+    # Testing each rank independently is not the same rule -- it can accept a
+    # rank while rejecting a lower-ranked hypothesis with an identical p-value,
+    # producing a mask that is not even a prefix of the sorted p-values.
+    thresholds = q * ranks / n_tested
+    clearing = np.flatnonzero(ranked <= thresholds)
+    if clearing.size:
+        k_star = int(clearing[-1]) + 1
+        accepted[order[:k_star]] = True
 
     return BenjaminiHochbergResult(
         accepted=tuple(bool(v) for v in accepted),

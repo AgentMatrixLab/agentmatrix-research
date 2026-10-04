@@ -34,6 +34,67 @@ def test_bh_accepts_everything_when_all_are_tiny() -> None:
     assert result.n_accepted == 3
 
 
+def test_bh_is_a_step_up_procedure_not_a_per_rank_test() -> None:
+    """Regression: testing each rank independently is NOT Benjamini-Hochberg.
+
+    With p = [0.02, 0.04, 0.045, 0.07, 0.12, 0.9] at q = 0.10 the largest k with
+    p_(k) <= k*q/m is k = 3 (0.045 <= 0.05), so BH rejects the first three. A
+    per-rank test accepts only p_(3) = 0.045 and wrongly rejects two hypotheses
+    that are at least as significant.
+    """
+    p = [0.02, 0.04, 0.045, 0.07, 0.12, 0.9]
+    result = benjamini_hochberg(p, q=0.10)
+    assert result.accepted == (True, True, True, False, False, False)
+    assert result.n_accepted == 3
+
+
+def test_bh_identical_p_values_are_accepted_together() -> None:
+    """Regression: equal p-values must get equal verdicts."""
+    result = benjamini_hochberg([0.01] * 6, q=0.05)
+    assert len(set(result.accepted)) == 1, "identical evidence produced different verdicts"
+
+
+def test_bh_accepted_set_is_a_prefix_of_the_sorted_p_values() -> None:
+    rng = np.random.default_rng(20261005)
+    for _ in range(300):
+        size = int(rng.integers(2, 60))
+        p = rng.uniform(0.0, 1.0, size)
+        result = benjamini_hochberg(p, q=0.05)
+        accepted = np.asarray(result.accepted)
+        order = np.argsort(p, kind="stable")
+        prefix = accepted[order]
+        # Once a hypothesis is accepted, everything more significant must be too.
+        if prefix.any():
+            k = int(np.flatnonzero(prefix)[-1]) + 1
+            assert prefix[:k].all(), "accepted set is not a prefix of the sorted p-values"
+
+
+def test_bh_acceptance_agrees_with_the_adjusted_p_values() -> None:
+    """`accepted` must mean the same thing as `adjusted <= q`."""
+    rng = np.random.default_rng(11)
+    for _ in range(300):
+        size = int(rng.integers(1, 80))
+        p = rng.uniform(0.0, 1.0, size)
+        result = benjamini_hochberg(p, q=0.05)
+        for accepted, adjusted in zip(result.accepted, result.adjusted):
+            assert accepted == (adjusted <= result.q + 1e-12)
+
+
+def test_bh_matches_a_hand_computed_reference_table() -> None:
+    """n = 8, q = 0.25, so the rank-k threshold is k * 0.25 / 8 = 0.03125 * k.
+
+    p_(1)=0.01 <= 0.03125  ok      p_(5)=0.06 <= 0.15625  ok
+    p_(2)=0.02 <= 0.06250  ok      p_(6)=0.20 >  0.18750  stop
+    p_(3)=0.03 <= 0.09375  ok
+    p_(4)=0.05 <= 0.12500  ok
+    Largest clearing rank is 5, so BH rejects the first five.
+    """
+    p = [0.01, 0.02, 0.03, 0.05, 0.06, 0.20, 0.50, 0.90]
+    result = benjamini_hochberg(p, q=0.25)
+    assert result.accepted == (True, True, True, True, True, False, False, False)
+    assert result.n_accepted == 5
+
+
 def test_bh_known_worked_example() -> None:
     """Hand-computed textbook case.
 
@@ -100,14 +161,19 @@ def test_bh_preserves_input_order() -> None:
     assert result.accepted[2] is False
 
 
-def test_bh_is_stricter_than_uncorrected_significance() -> None:
-    """The point of the correction: 50 marginal p-values must not all survive."""
-    rng = np.random.default_rng(7)
-    p = rng.uniform(0.001, 0.05, 50).tolist()
+def test_bh_is_stricter_than_uncorrected_significance_on_pure_noise() -> None:
+    """The point of the correction, stated honestly.
+
+    Drawing 120 p-values from a uniform null gives around six that clear p<0.05
+    by chance alone. Uncorrected screening would call all of them discoveries;
+    BH at q=0.05 should call essentially none of them discoveries.
+    """
+    rng = np.random.default_rng(20261005)
+    p = rng.uniform(0.0, 1.0, 120).tolist()
     uncorrected = sum(1 for value in p if value < 0.05)
     corrected = benjamini_hochberg(p, q=0.05).n_accepted
-    assert uncorrected == 50
-    assert corrected < uncorrected
+    assert uncorrected >= 3, "the null draw should produce some chance hits"
+    assert corrected == 0, "BH must not call chance hits discoveries"
 
 
 def test_bh_handles_the_empty_batch() -> None:

@@ -33,19 +33,21 @@ def main() -> int:
     for factor_id, t_stat, days in CASES:
         target = runs / factor_id
         target.mkdir(parents=True, exist_ok=True)
+        # Key shape copied from the frozen validator: "10d", not "10".
         (target / "validation_result.json").write_text(
             json.dumps(
                 {
                     "factor_id": factor_id,
-                    "primary_horizon": 10,
                     "rank_ic": {
-                        "10": {
+                        "5d": {"mean": 0.01, "ic_ir": 0.2, "t_stat": t_stat / 2, "days": days, "yearly": {}},
+                        "10d": {
                             "mean": 0.02,
                             "ic_ir": 0.3,
                             "t_stat": t_stat,
                             "days": days,
                             "yearly": {},
-                        }
+                        },
+                        "20d": {"mean": 0.02, "ic_ir": 0.3, "t_stat": t_stat / 1.5, "days": days, "yearly": {}},
                     },
                 }
             ),
