@@ -39,12 +39,15 @@ from research_core.factor_lab.operators import (
     signed_power,
     sma,
     sort_panel,
+    ts_argmax,
+    ts_argmin,
     ts_decay_linear,
     ts_delay,
     ts_delta,
     ts_max,
     ts_mean,
     ts_min,
+    ts_product,
     ts_rank,
     ts_std,
     ts_sum,
@@ -52,6 +55,24 @@ from research_core.factor_lab.operators import (
 )
 
 # ── AST node types ──────────────────────────────────────────────────────
+
+
+class UnsupportedOperatorError(ValueError):
+    """Raised when a formula calls an operator the engine has no implementation for.
+
+    Kept distinct from a parse error: the expression is syntactically valid, it
+    simply cannot be evaluated. Callers that want to *classify* rather than
+    compile should use ``catalog_readiness.classify_expression``.
+    """
+
+    def __init__(self, operator: str) -> None:
+        self.operator = operator
+        super().__init__(
+            f"Unsupported operator {operator!r}: it is not implemented and is not a "
+            f"known synonym of an implemented one. Add an implementation, or add a "
+            f"verified alias to _OPERATOR_ALIASES."
+        )
+
 
 @dataclass
 class Field:
@@ -102,7 +123,7 @@ Expr = Field | Literal | BinOp | UnaryOp | FuncCall | IfExpr
 
 _TOKEN_RE = re.compile(r"""
     \s*(?:
-        ([A-Za-z_][A-Za-z0-9_]*)               |  # identifier
+        (\$?[A-Za-z_][A-Za-z0-9_]*)             |  # identifier, optional $-prefixed field
         ([0-9]*\.?[0-9]+(?:[eE][+-]?[0-9]+)?) |  # number
         (>=|<=|!=|==|[+\-*/^(),<>])            |  # operator / paren / comma / comparison
         (.+)                                      # error
@@ -111,7 +132,11 @@ _TOKEN_RE = re.compile(r"""
 
 
 def tokenize(expr: str) -> list[tuple[str, str]]:
-    """Tokenize a formula string into (type, value) pairs."""
+    """Tokenize a formula string into (type, value) pairs.
+
+    A leading ``$`` on an identifier is the Qlib/WorldQuant field sigil
+    (``$close``) and is stripped: the parser sees a plain identifier either way.
+    """
     tokens: list[tuple[str, str]] = []
     pos = 0
     while pos < len(expr):
@@ -120,7 +145,7 @@ def tokenize(expr: str) -> list[tuple[str, str]]:
             raise ValueError(f"Unexpected character at position {pos}: {expr[pos:]!r}")
         pos = m.end()
         if m.group(1):
-            tokens.append(("IDENT", m.group(1)))
+            tokens.append(("IDENT", m.group(1).lstrip("$")))
         elif m.group(2):
             tokens.append(("NUMBER", m.group(2)))
         elif m.group(3):
@@ -284,6 +309,10 @@ def _extract_field_name(node: Expr) -> str:
 _PANEL_OPERATORS: dict[str, tuple[str, int]] = {
     "RANK":          ("cross_sectional_rank", 1),
     "TS_RANK":       ("ts_rank",               1),
+    "TS_DELAY":      ("ts_delay",              1),
+    "TS_PRODUCT":    ("ts_product",            1),
+    "TS_ARGMAX":     ("ts_argmax",             1),
+    "TS_ARGMIN":     ("ts_argmin",             1),
     "DELTA":         ("ts_delta",              1),
     "MEAN":          ("ts_mean",               1),
     "STD":           ("ts_std",                1),
@@ -301,15 +330,114 @@ _SERIES_OPERATORS: dict[str, str] = {
     "LOG":  "np.log",
     "ABS":  "np.abs",
     "SIGN": "np.sign",
+    # Element-wise binary helpers used by the GTJA191 / 通达信 families.
+    #
+    # POWER is the ordinary power; SIGNED_POWER is WorldQuant's
+    # sign(x)*|x|**a. They differ for negative bases and must stay distinct.
+    "POWER":        "np.power",
+    "SIGNED_POWER": "signed_power",
+    #
+    # GREATER/LESS are the *two-argument element-wise* max/min, not boolean
+    # selectors. Verified against four independent GTJA191 contexts in the
+    # catalog, all of which only make sense as max/min:
+    #   GTJA003  CLOSE - Less(LOW, DELAY(CLOSE,1))            -> MIN(LOW, prev close)
+    #   GTJA003  CLOSE - Greater(HIGH, DELAY(CLOSE,1))        -> MAX(HIGH, prev close)
+    #   GTJA052  Greater(HIGH - DELAY(TP,1), 0)               -> MAX(x, 0)
+    #   GTJA077  Less(RANK(...), RANK(...))                   -> MIN(rank, rank)
+    # Note this is *not* the engine's MAX/MIN, which are rolling-window ops.
+    "GREATER":      "np.maximum",
+    "LESS":         "np.minimum",
 }
 
-# Wide-form operators (operate on date × symbol DataFrames — used here via
-# groupby + transform for the long-panel path).
+#: Wide-form operators (operate on date × symbol DataFrames — used here via
+#: groupby + transform for the long-panel path).
 _WIDE_OPERATORS: dict[str, str] = {
     "SMA":      "sma",
     "WMA":      "wma",
     "REGBETA":  "rolling_regression_beta",
 }
+
+# ── Spelling resolution ─────────────────────────────────────────────────
+#
+# The catalog mixes naming conventions freely: `Ref` / `Delay`, `Ts_Mean` /
+# `TS_MEAN`, `Correlation` / `Corr`, `Ts_DecayLinear` / `DecayLinear`. Case and
+# underscores carry no meaning, so both are folded away before lookup.
+#
+# Only *exact synonyms* of an operator we already implement may appear in
+# _OPERATOR_ALIASES. A spelling whose semantics have not been verified stays
+# unresolved on purpose: an unresolved call is reported as a blocker by
+# `catalog_readiness`, whereas a wrong guess would silently produce a factor
+# that validates on numbers nobody can defend.
+
+
+def _normalise_operator(name: str) -> str:
+    """Fold case and underscores so spelling variants compare equal."""
+    return name.upper().replace("_", "")
+
+
+#: Normalised spelling -> canonical registry key. Keys must be disjoint from the
+#: normalised registry keys; the import-time check below enforces that.
+_OPERATOR_ALIASES: dict[str, str] = {
+    "REF": "TS_DELAY",
+    "DELAY": "TS_DELAY",
+    "DIFF": "DELTA",
+    "TSSUM": "SUM",
+    "TSMEAN": "MEAN",
+    "TSSTD": "STD",
+    "STDDEV": "STD",
+    "TSMIN": "MIN",
+    "TSMAX": "MAX",
+    "TSDECAYLINEAR": "DECAY_LINEAR",
+    "CORRELATION": "CORR",
+    "COVARIANCE": "COV",
+    "CSRANK": "RANK",
+    "CSSCALE": "SCALE",
+    "INDNEUTRAL": "INDNEUTRALIZE",
+}
+
+
+#: Grammar-level keywords the code generator handles before registry lookup.
+_GENERIC_OPERATORS: frozenset[str] = frozenset({"IF", "SEQUENCE"})
+
+
+def _build_operator_index() -> dict[str, str]:
+    index: dict[str, str] = {}
+    for registry in (_PANEL_OPERATORS, _SERIES_OPERATORS, _WIDE_OPERATORS):
+        for name in registry:
+            key = _normalise_operator(name)
+            existing = index.get(key)
+            if existing is not None and existing != name:
+                raise RuntimeError(
+                    f"operator spellings {existing!r} and {name!r} normalise to the "
+                    f"same key {key!r}; rename one of them"
+                )
+            index[key] = name
+
+    for alias, target in _OPERATOR_ALIASES.items():
+        if alias in index:
+            raise RuntimeError(
+                f"operator alias {alias!r} shadows the registered operator "
+                f"{index[alias]!r}; drop the alias"
+            )
+        if target not in {name for name in index.values()} and target not in _GENERIC_OPERATORS:
+            raise RuntimeError(
+                f"operator alias {alias!r} targets unknown registry key {target!r}"
+            )
+        index[alias] = target
+    return index
+
+
+_OPERATOR_INDEX: dict[str, str] = _build_operator_index()
+
+
+def resolve_operator_name(name: str) -> str:
+    """Map a catalog spelling onto its canonical registry key.
+
+    Returns the uppercased input unchanged when nothing resolves, so that an
+    unknown operator still reaches the code generator's fallback and is reported
+    as a blocker by `catalog_readiness` rather than being silently dropped.
+    """
+    return _OPERATOR_INDEX.get(_normalise_operator(name), name.upper())
 
 
 # ── Code generator ──────────────────────────────────────────────────────
@@ -404,7 +532,9 @@ class CodeGenerator:
 
         # ── function calls ──────────────────────────────────────────
         if isinstance(node, FuncCall):
-            func_name = node.func.upper()
+            # Fold catalog spelling variants onto the canonical registry key
+            # before any dispatch, so `Ts_Rank` and `TS_RANK` take one path.
+            func_name = resolve_operator_name(node.func)
 
             # SEQUENCE(n)
             if func_name == "SEQUENCE":
@@ -505,11 +635,11 @@ class CodeGenerator:
                     )
                 return var
 
-            # Fallback: treat as a generic call
-            arg_vars = [self._gen(a) for a in node.args]
-            var = self._next_var()
-            self.statements.append(f"{var} = {func_name}({', '.join(arg_vars)})")
-            return var
+            # Unresolved operator. The exec namespace below is a closed set, so
+            # emitting `NAME(...)` verbatim could only ever raise NameError at
+            # call time -- long after the caller believed compilation succeeded.
+            # Fail here instead, where the message can name the operator.
+            raise UnsupportedOperatorError(node.func.upper())
 
         raise TypeError(f"Unknown AST node type: {type(node).__name__}")
 
@@ -645,6 +775,9 @@ def compile_formula(
         "ts_rank": ts_rank,
         "ts_delta": ts_delta,
         "ts_delay": ts_delay,
+        "ts_product": ts_product,
+        "ts_argmax": ts_argmax,
+        "ts_argmin": ts_argmin,
         "ts_mean": ts_mean,
         "ts_std": ts_std,
         "ts_sum": ts_sum,

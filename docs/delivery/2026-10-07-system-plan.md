@@ -230,25 +230,43 @@
 
 **分级闭合路径（实测数字）**：
 
-| 阶段 | 动作 | 可算因子 | 占比 |
-|---|---|---:|---:|
-| 现在 | — | 111 | 10.5% |
-| +1 | 词法器接受 `$` 前缀 | 238 | 22.5% |
-| +2 | 加算子别名表（`Ref`→时序平移等，**不改语义**） | **816** | **77.1%** |
-| +3 | 补 top 算子 | ~1013 | ~96% |
+| 阶段 | 动作 | 可算因子 | 占比 | 状态 |
+|---|---|---:|---:|---|
+| 原始 | — | 111 | 10.5% | 基线 |
+| +1 | 词法器接受 `$` 前缀 + 补 `TS_DELAY`/`TS_PRODUCT`/`TS_ARGMAX`/`TS_ARGMIN`/`POWER`/`SIGNED_POWER`/`GREATER`/`LESS` | 255 | 24.1% | ✅ **本机已完成** |
+| +2 | 加算子别名表（`Ref`/`Delay`/`Ts_*`/`Correlation`/`StdDev` 等，**语义逐条核对**） | **816** | **77.1%** | ✅ **本机已完成** |
+| +3 | 补 top 算子（EMA / SLOPE / IDXMAX / IDXMIN / QUANTILE / ATR / CCI / RSI / BOLL / TRIX …） | ~1013 | ~96% | 待做 |
 
-**阶段 +3 需要补的算子（按阻塞因子数排序）**：
+**本轮已完成 `$` 词法与别名表两项**（commit 见分支 `feat/factor-console-and-1007-plan`），实测目录可算率 **10.5% → 77.1%**。
+
+**同时修掉一个正确性缺陷**：`formula_compiler` 原先对**未识别的函数名**兜底生成 `NAME(...)` 源码，`compile_formula` **成功返回**，错误直到执行时才以 `NameError` 暴露。现在改为在编译期抛 `UnsupportedOperatorError`，并新增测试断言「分类器判定可算 ⟺ 编译器能编译」，杜绝两者再次分叉。
+
+**`GREATER` / `LESS` 的语义已核实（不是猜的）**。它们被 57 条 GTJA191 表达式使用。逐个对照原版公式确认是**两参数逐元素 max/min**，不是 0/1 选择器：
+
+| 表达式 | 上下文 | 只能是 |
+|---|---|---|
+| GTJA003 | `CLOSE - Less(LOW, DELAY(CLOSE,1))` | `MIN(LOW, 昨收)` |
+| GTJA003 | `CLOSE - Greater(HIGH, DELAY(CLOSE,1))` | `MAX(HIGH, 昨收)` |
+| GTJA052 | `Greater(HIGH - DELAY(TP,1), 0)` | `MAX(x, 0)` 截断 |
+| GTJA077 | `Less(RANK(a), RANK(b))` | 两个 rank 取小 |
+
+> 注意：这**不是**引擎里已有的 `MAX`/`MIN`（那两个是滚动窗口算子），所以映射到 `np.maximum`/`np.minimum`。有测试守住这个区分。
+
+**仍然刻意不做的映射**：任何语义存在多种约定、无法用上下文唯一确定的拼写，**一律保持为阻塞项**，不做猜测。理由：未解析的调用会被如实报成 blocker，而猜错会静默产出一个「数字上通过、但没人能解释」的因子。
+
+**阶段 +3 需要补的算子（按阻塞因子数排序，实测）**：
 
 ```
 EMA×22  SLOPE×13  IDXMAX×10  IDXMIN×10  QUANTILE×10  ATR×8  CCI×6
 RESI×5  RSQUARE×5  RSI×4  BOLL_UP×4  BOLL_DN×4  TRIX×4  VPT×4
-VARIANCE×3  SKEWNESS×3  KURTOSIS×3  ADX×2  PDI×2  MDI×2  MFI×3  PSY×3  VR×3 …
+VARIANCE×3  SKEWNESS×3  KURTOSIS×3  MFI×3  PSY×3  VR×3  CR×3  AR×3  BR×3
+BIAS×3  BBI×3  ADX×2  PDI×2  MDI×2  WR×2  …
 ```
 
-**还需要补的面板字段**（目录引用了但面板没有）：
+**还需要补的面板字段**（目录引用了但面板没有，实测）：
 
 ```
-ADV5/10/15/20/30/40/50/60/120/180（滚动成交额） · RETURNS/DAILY_RETURN
+ADV5/10/15/20/30/40/50/60/120/180（滚动成交额） · RETURNS / DAILY_RETURN
 CAP / MARKET_CAP / TOTAL_SHARES / FREE_FLOAT · INDUSTRY
 ```
 

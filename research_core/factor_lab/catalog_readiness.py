@@ -5,125 +5,71 @@ factor definitions written in Qlib/WorldQuant expression syntax. Before any of
 them can enter the validation pipeline we must know, per factor, whether the
 repository's own expression engine can evaluate it.
 
-This module answers that question mechanically and returns one of four
-readiness verdicts. It exists because `formula_compiler.compile_formula` is not
-a sufficient test: an unrecognised function name is emitted verbatim as Python
-source (`CORRELATION(...)`), so the compile succeeds and the failure only
-surfaces as a `NameError` at execution time.
+This module classifies each expression mechanically. It deliberately holds **no
+operator table of its own**: the authority is `formula_compiler`, so the
+classifier cannot drift away from what the engine can really execute.
 
 Verdicts
 --------
 ``runnable_now``
-    Parses once the tokenizer accepts the ``$field`` sigil, and every function
-    call resolves to an operator already registered in ``formula_compiler``.
+    Parses and every function call resolves to an operator already registered.
 ``alias_only``
-    Same, except some calls use a known synonym of a registered operator
+    Same, except some calls use a verified synonym of a registered operator
     (``Ref`` for ``ts_delay``, ``Correlation`` for ``rolling_corr``, ...).
-    Resolvable by an alias table alone; no new numerics required.
+    Resolvable by the spelling table alone; no new numerics required.
 ``needs_numerics``
-    At least one call names an operator with no implementation and no synonym.
+    At least one call names an operator with no implementation and no verified
+    synonym.
 ``unparsable``
-    The expression does not parse even after the ``$`` sigil is removed.
+    The expression does not parse at all.
 
 Read-only: this module never writes to disk and never touches the network.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Iterable
+from dataclasses import dataclass
 
 from . import formula_compiler as fc
 
 __all__ = [
     "ALIAS_MAP",
+    "SUPPORTED_OPERATORS",
     "PANEL_FIELDS",
     "DERIVED_FIELDS",
+    "RQDATA_ONLY_FIELDS",
     "FactorReadiness",
     "classify_expression",
     "readiness_summary",
 ]
 
-# ── Operator vocabulary ─────────────────────────────────────────────────
+# ── Operator vocabulary (derived from the engine, never restated) ───────
 
 #: Operators the engine implements today.
 SUPPORTED_OPERATORS: frozenset[str] = frozenset(
     set(fc._PANEL_OPERATORS)
     | set(fc._SERIES_OPERATORS)
     | set(fc._WIDE_OPERATORS)
-    | {"IF", "SEQUENCE"}
+    | set(fc._GENERIC_OPERATORS)
 )
 
-#: Catalog spellings that map 1:1 onto an operator the engine already has.
-#: Every entry must be numerically faithful; synonyms that would change the
-#: result (e.g. ``Ref`` -> ``Delta``, which differences instead of shifting)
-#: are deliberately routed through their correct primitive instead.
-#:
-#: Keys must be disjoint from :data:`SUPPORTED_OPERATORS` — a spelling the
-#: registry already implements needs no alias, and listing it here would let a
-#: later registry rename silently change what the factor computes.
-ALIAS_MAP: dict[str, str] = {
-    # level shifts / differences
-    "REF": "ts_delay",
-    "DELAY": "ts_delay",
-    "TS_DELAY": "ts_delay",
-    "TS_DELTA": "ts_delta",
-    "DIFF": "ts_delta",
-    # rolling statistics under their long-form catalog spellings
-    "TS_SUM": "ts_sum",
-    "TS_MEAN": "ts_mean",
-    "TS_STD": "ts_std",
-    "TS_MIN": "ts_min",
-    "TS_MAX": "ts_max",
-    "TS_PRODUCT": "ts_product",
-    "STDDEV": "ts_std",
-    "TS_ARGMAX": "ts_argmax",
-    "TS_ARGMIN": "ts_argmin",
-    "TS_DECAY_LINEAR": "ts_decay_linear",
-    # correlation family
-    "CORRELATION": "rolling_corr",
-    "COVARIANCE": "rolling_cov",
-    # cross-sectional
-    "CS_RANK": "cross_sectional_rank",
-    "CS_SCALE": "cross_sectional_scale",
-    "INDNEUTRAL": "indneutralize",
-    # conditional selection: Greater/Less are binary comparators, not window ops
-    "GREATER": "np.where",
-    "LESS": "np.where",
-    "MAX2": "np.maximum",
-    "MIN2": "np.minimum",
-    "POWER": "signed_power",
-    "SIGNEDPOWER": "signed_power",
-    "SIGNED_POWER": "signed_power",
-}
+#: Verified spelling synonyms, normalised spelling -> canonical registry key.
+ALIAS_MAP: dict[str, str] = dict(fc._OPERATOR_ALIASES)
 
 
 def normalise_operator(name: str) -> str:
-    """Fold a catalog operator spelling to a comparison key.
-
-    The catalog mixes conventions freely — ``Ts_DecayLinear``,
-    ``TS_DECAY_LINEAR`` and ``DecayLinear`` all occur — so case and underscores
-    are removed before lookup. Original spellings are always what gets reported
-    back to the caller; this key is only used for resolution.
-    """
-    return name.upper().replace("_", "")
+    """Fold case and underscores, matching the engine's own resolution rule."""
+    return fc._normalise_operator(name)
 
 
-#: Registry keys and alias keys, both in normalised form.
-_SUPPORTED_NORMALISED: frozenset[str] = frozenset(
-    normalise_operator(name) for name in SUPPORTED_OPERATORS
-)
-_ALIAS_NORMALISED: dict[str, str] = {
-    normalise_operator(k): v for k, v in ALIAS_MAP.items()
-}
+def resolve_operator(name: str) -> str:
+    """Resolve a catalog spelling to a canonical registry key (or unchanged)."""
+    return fc.resolve_operator_name(name)
 
-#: A normalised key may resolve as registered *or* as an alias, never both.
-_AMBIGUOUS = sorted(set(_SUPPORTED_NORMALISED) & set(_ALIAS_NORMALISED))
-if _AMBIGUOUS:  # pragma: no cover - import-time invariant
-    raise RuntimeError(
-        f"operator spellings resolve ambiguously: {_AMBIGUOUS}; "
-        "an alias must not shadow a registered operator"
-    )
+
+# ── Field vocabulary ────────────────────────────────────────────────────
+
+#: Fields the current offline panel contract (runbook_hermes.md §2) provides.
 PANEL_FIELDS: frozenset[str] = frozenset(
     {
         "CLOSE",
@@ -139,11 +85,13 @@ PANEL_FIELDS: frozenset[str] = frozenset(
     }
 )
 
-#: Fields the catalog references that the panel must add before the factor is
-#: computable. Split into "derive from the panel" vs "needs an RQData feed".
+#: Fields the catalog references that the panel export must add before the
+#: factor is computable. These are derivable from RQData's daily quote feed.
 DERIVED_FIELDS: frozenset[str] = frozenset(
     {"OPEN", "HIGH", "LOW", "VWAP", "PRE_CLOSE", "RETURNS", "DAILY_RETURN"}
 )
+
+#: Fields needing a separate RQData feed (reference data or financials).
 RQDATA_ONLY_FIELDS: frozenset[str] = frozenset(
     {"CAP", "MARKET_CAP", "TOTAL_SHARES", "FREE_FLOAT", "INDUSTRY", "SECTOR"}
 )
@@ -215,20 +163,10 @@ def _walk_fields(node: object, out: set[str]) -> None:
         _walk_fields(node.false_val, out)
 
 
-#: The sigil Qlib/WorldQuant expressions use for a raw data field.
-FIELD_SIGIL = "$"
-
-
 def classify_expression(expression: str) -> FactorReadiness:
-    """Classify one catalog expression into a readiness verdict.
-
-    The ``$`` sigil is stripped before parsing because the tokenizer does not
-    accept it yet; teaching the tokenizer the sigil is a prerequisite the
-    verdict implicitly assumes.
-    """
-    normalised = expression.replace(FIELD_SIGIL, "")
+    """Classify one catalog expression into a readiness verdict."""
     try:
-        ast = fc.Parser(fc.tokenize(normalised)).parse()
+        ast = fc.Parser(fc.tokenize(expression)).parse()
     except Exception as exc:  # noqa: BLE001 - any parse failure is a verdict
         return FactorReadiness(
             verdict="unparsable",
@@ -240,9 +178,16 @@ def classify_expression(expression: str) -> FactorReadiness:
     fields: set[str] = set()
     _walk_fields(ast, fields)
 
-    unknown = sorted({name for name in calls if normalise_operator(name) not in _SUPPORTED_NORMALISED})
-    unresolved = tuple(n for n in unknown if normalise_operator(n) not in _ALIAS_NORMALISED)
-    aliased = tuple(n for n in unknown if normalise_operator(n) in _ALIAS_NORMALISED)
+    unresolved: list[str] = []
+    aliased: list[str] = []
+    for raw in sorted(set(calls)):
+        resolved = resolve_operator(raw)
+        if resolved in SUPPORTED_OPERATORS:
+            # A resolution that changes the spelling means a synonym was applied.
+            if normalise_operator(resolved) != normalise_operator(raw):
+                aliased.append(raw)
+        else:
+            unresolved.append(raw)
 
     if unresolved:
         verdict = "needs_numerics"
@@ -257,16 +202,14 @@ def classify_expression(expression: str) -> FactorReadiness:
     return FactorReadiness(
         verdict=verdict,
         operators_used=tuple(sorted(set(calls))),
-        unresolved_operators=unresolved,
-        aliased_operators=aliased,
+        unresolved_operators=tuple(unresolved),
+        aliased_operators=tuple(aliased),
         fields_used=tuple(sorted(fields)),
         missing_fields=missing,
     )
 
 
-def readiness_summary(
-    verdicts: Iterable[FactorReadiness],
-) -> dict[str, object]:
+def readiness_summary(verdicts) -> dict[str, object]:
     """Aggregate a stream of verdicts into counts plus operator blockers."""
     counts = {
         "runnable_now": 0,
