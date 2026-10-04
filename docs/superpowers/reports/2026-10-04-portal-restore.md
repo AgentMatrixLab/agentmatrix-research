@@ -32,12 +32,12 @@
 
 - `pages/factor-lab-dashboard/**` —— main 上的版本比 `17ce4bd` 新 5 周（PR #119 的 quant-desk 改版，旧版 CSS 有 5000+ 行差异），用旧版覆盖会回滚真实工作。
 - `pages/assets/**` —— 两版逐字节一致。
-- **`pages/strategy-dashboard/backtest.py` 与 `generate_data.py` 不恢复**：这两个离线脚本里硬编码了 `http://115.159.73.134:8765`（数据服务器地址）。仓库是**公开**的、还要上 Pages，**绝不能把服务器地址发出去**。页面本身只读静态 `data/strategies.json`，删掉这两个脚本不影响展示。
+- **`pages/strategy-dashboard/backtest.py` 与 `generate_data.py` 不恢复**：这两个离线脚本里硬编码了数据服务器的公网地址（`http://<数据服务器>:8765`，具体值不在此复述）。仓库是**公开**的、还要上 Pages，**绝不能把服务器地址发出去**。页面本身只读静态 `data/strategies.json`，删掉这两个脚本不影响展示。
 
 ## 验证证据
 
 - **本地复现 PR Hygiene 两道硬门**（对 55 个变更文件）：机器路径扫描 **0 违规**；变更 Python 文件 **0 编译失败**（本次改动不含任何 `.py`）。
-- **内部地址/凭据扫描**：恢复内容中**无任何内网 IP、无服务器地址**（`115.159.73.134` 已排除）。
+- **内部地址/凭据扫描**：恢复内容中**无任何内网 IP、无服务器地址**（数据服务器地址已排除）。
 - **PR #122**：`hygiene` 检查 **success**；55 文件、+6652/−78；合并提交 `f44c00258b7753f0694ac52d2c37436774cfb45d`。
 - **Pages 部署**：合并后自动部署，deployment id `6840956432`，状态 **success**，`environment_url = https://agentmatrixlab.github.io/agentmatrix-research/`。
 - **四个入口实测**（HTTP HEAD）：
