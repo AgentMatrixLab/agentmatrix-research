@@ -1,0 +1,55 @@
+# 有效因子交付验收清单
+
+状态：**草稿。未勾选项不表示已完成**；本清单目前没有任何真实数据可以勾选（尚无 115 服务器正式运行产物）。
+验收结论须以实际文件、Hermes 回报、`run_manifest.json` / `batch_manifest.json` 与 Sam 确认为准。
+
+## A. 交付范围
+
+- [ ] 冻结本期 `candidate_list.csv` 及 SHA-256；明确它为唯一候选权威来源，不把任何目录数量（如 1058 条 Factor DB）用作交付口径。
+- [ ] **候选数口径已按接龙10 裁定并落文档**：91（= 134 − G2 剔除的 43，含 10 个风险暴露）；有效 Alpha 候选 81；对外只写 91，不写 134。
+- [ ] **风险暴露已隔离**：`risk_exposure=true` 的因子跑出结果但不计入 `validated_effective_alpha`，也不出现在交付包 `included_factors` 里（应在 `excluded_factors` 中并写明原因）。
+- [ ] 候选边界与任务书一致；财务/估值因子仍隔离。
+- [ ] 最终因子目录只包含通过既有准入及 OOS 门槛的因子；因子名、ID、公式与状态和报告一致。
+- [ ] 未通过因子不出现在有效交付清单中；运行记录保留拒绝原因与失败门槛。
+
+## B. 数据文件与口径
+
+- [ ] 全 A 日线面板 Parquet 与 sidecar 齐全，列符合 `runbook_hermes.md` 第 2 节；映射口径（`total_turnover` / `circulation_a` / 涨跌停价 / 复权后 close）已书面记录。
+- [ ] 面板 sidecar 的 `source` / `data_start` / `data_end` / `row_count` / `sha256` / `price_basis` 齐全，且与实际文件一致（读取器已强制校验，不符即报错）。
+- [ ] **复权口径已裁定**：面板 `price_basis` 与 config 的 `adjust_type` 一致；未混用价格基准。
+- [ ] `date` / `code` / 状态标志 / 空值规则 / `(date, code)` 唯一键校验通过。
+- [ ] 000985 基准文件独立提供；代码、日收益单位、价格收益或全收益口径已由 `run_manifest.json` 明确。
+- [ ] **因子值文件符合契约**：正好四列 `date, code, factor_name, value`；`(date, code, factor_name)` 无重复；无 ±inf；区间覆盖 `train_start..oos_end`；sidecar 声明了 `factors` 与 `value_definition`。
+- [ ] **扰动按 A+B 留痕**：有变体的因子门槛实算过；无变体的因子在 `validation_result.json` 里明确写着 `measured: false` + `unmeasured_variants` + `unmeasured_counts_as: not_passed`，且**状态为不通过**。整批未因此中断。
+- [ ] **切分已冻结且一致**：`configs/validation_gates.yaml` 为 train `2020-01-02~2022-12-31` / OOS `2023-01-01~2026-08-31`（commit `146c0d7`），与 Hermes `run_manifest.json` 完全一致；Hermes 已按此重写 manifest 并作废 `b8d740f6`（写明「预先声明的方案 B；尚未看过任何 OOS 结果」）。
+- [ ] **并行分片（如使用）合并合规**：各分片的 commit、面板/因子文件/配置哈希、`data_snapshot_hash`、切分完全一致，因子无重叠，合并只拼接结论未重算判定。
+
+## C. 验证与证据链
+
+- [ ] 真实数据准入与 OOS 报告来自 Hermes A 在授权 RQData FULL 环境的运行。
+- [ ] **门槛未被改动**：`configs/validation_gates.yaml` 的 `gates` / `portfolio.cost` / `statistics` / `split` 与冻结版本逐行一致（以 diff 为证）。
+- [ ] 运行使用既有准入与 OOS 实现；未修改阈值、未为通过而调整数据或切分。
+- [ ] **两条通道等价**：同一份数据、同一因子，内置 transform 与预计算因子文件给出**相同 `result_hash`**。
+- [ ] **批量与单因子一致**：批量入口与单因子入口对同一因子给出**相同 `result_hash`**。
+- [ ] **批量失败隔离**：`batch_manifest.json` 里每个失败因子都有异常类型与原因，且整批未中断。
+- [ ] **选簇只看训练段**：簇代表的选择依据来自 `--segment train` 输出，未使用任何 OOS 指标。
+- [ ] `batch_manifest.json` 记录：代码 commit、候选清单哈希、面板哈希、因子文件哈希、切分、全量参数快照（含成本）、每个因子的 `result_hash` 与产物哈希。
+- [ ] 候选、准入结果、OOS 报告、通过清单与 manifest 的数量及哈希相互一致。
+- [ ] 本地 `test_only` 夹具与单测只作为代码行为验证，**不作为**因子有效性或真实行情证据。
+- [ ] 真实报告、清单与数据文件可按约定路径读取；交付包不含密钥或未授权数据。
+
+## D. 交付包与客户材料
+
+- [ ] `factor_catalog.csv` 由真实运行结果生成；未运行的因子状态为 `not_run`，未通过的有失败门槛与原因。
+- [ ] **打包脚本只收 `validated` 的因子**；淘汰项只列状态与原因，不打包其产物。
+- [ ] 若一个因子都没通过，打包脚本以非零退出码结束并给出 warning，**不得误发空包**。
+- [ ] 方法说明描述实际数据、基准、区间与既有门槛，并与 Hermes 结果及 manifest 一致。
+- [ ] 对外材料只列通过门槛的因子；未通过候选、平台目录数量及未经验证的结果未混入。
+- [ ] 未承诺未来收益、夏普、回撤或容量；指标仅按可复核报告描述历史检验结果。
+- [ ] 交付文件清单、版本/commit、哈希、验收人与验收日期均有记录。
+- [ ] Sam 已确认数据使用/交付授权及本期交付范围。
+- [ ] 客户已按合同范围书面验收；未验收前不标记为已正式签收。
+
+## 阻断规则
+
+出现以下任一情况时暂停因子入包与签收：数据哈希或来源链不一致、列/日期/唯一键校验失败、基准口径不明确、**切分与冻结版本（`146c0d7`）或 manifest 不符**、**价格口径不是后复权或 `price_basis` 未声明**、**候选数与冻结 `candidate_list.csv` 不符**、扰动变体缺失却声称通过 `parameter_perturbation`（必须记「无法测量→不通过」）、**风险暴露被算进有效 Alpha 或进了交付包**、两条通道 `result_hash` 不一致、批量与单因子 `result_hash` 不一致、分片合并时输入哈希不一致、选簇使用了 OOS 结果、阈值或冻结切分被更改、因子清单与报告对不上，或客户授权边界未确认。
