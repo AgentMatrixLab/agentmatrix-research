@@ -10,13 +10,15 @@
 | 环节 | 状态 | 证据 |
 |---|---|---|
 | 因子目录 | 1058 条 | `pages/factor-db-dashboard/data/factors.json` |
-| 引擎可算 | **952 / 1058（90.0%）** | `scripts/build_factor_panel.py` |
+| 引擎可算 | **961 / 1058（90.8%）** | `scripts/dev/readiness_report.py` |
 | 真实验证运行 | **0 份** | `data/factor_lab/validation_runs/` 不存在 |
 | 端到端链路 | ✅ **已彩排通过** | `scripts/dev/rehearse_full_pipeline.py` |
 | 分片并行 | ✅ **已验证（含两条拒绝路径）** | `scripts/dev/verify_sharded_batch.py` |
 | 打包 + 交叉核对 | ✅ **已验证（含篡改检测）** | `scripts/dev/verify_delivery_packaging.py` |
 | 验证器吞吐 | ⚠️ **27 秒/因子**（实测） | `scripts/dev/benchmark_validator_throughput.py` |
-| 测试 | ✅ **434 passed / 0 failed** | `python -m pytest tests -q` |
+| 引擎吞吐 | **0.39 秒/因子**（实测，16.7× 优化后） | `scripts/dev/profile_engine_expressions.py` |
+| 8 核全量预算 | **约 2–5 小时** | 引擎 ≈1.1 h + 验证器 0.9–3.9 h |
+| 测试 | ✅ **462 passed / 0 failed** | `python -m pytest tests -q` |
 
 > **除「真实数据」与「口径签字」外，全链路每一段都已端到端验证过。**
 
