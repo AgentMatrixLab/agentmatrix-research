@@ -1,0 +1,254 @@
+"""Batch-level supplementary evidence for the 2026-10-07 delivery.
+
+`robustness.py` holds the per-factor mathematics; this module turns those into
+the batch-level artefacts the client reads:
+
+* a p-value per factor, taken from the frozen ``rank_ic`` t-statistic,
+* Benjamini-Hochberg FDR control across the whole candidate batch,
+* the industry-neutral IC retention per factor, when a panel is available.
+
+Nothing here writes to the frozen pipeline or to ``validation_result.json``.
+It reads those results and emits a separate supplementary report, so a factor's
+``result_hash`` remains exactly what the frozen validator computed.
+
+Read-only: the functions never mutate their inputs.
+"""
+
+from __future__ import annotations
+
+import math
+from dataclasses import dataclass, field
+from typing import Any, Iterable, Mapping, Sequence
+
+import numpy as np
+import pandas as pd
+
+from research_core.factor_lab.robustness import (
+    benjamini_hochberg,
+    industry_neutral_ic,
+)
+
+__all__ = [
+    "SupplementaryError",
+    "build_supplementary_report",
+    "industry_neutral_retention",
+    "p_value_from_t",
+    "rank_ic_t_stat",
+]
+
+
+class SupplementaryError(ValueError):
+    """Raised when a validation result cannot yield a testable statistic."""
+
+
+def p_value_from_t(t_stat: float, degrees_of_freedom: int) -> float:
+    """Two-sided Student-t p-value.
+
+    A factor with too few daily observations to define a t-statistic has no
+    p-value: it returns NaN, and `benjamini_hochberg` then treats it as
+    untestable rather than as evidence.
+    """
+    if degrees_of_freedom < 1:
+        return float("nan")
+    if not math.isfinite(t_stat):
+        return float("nan")
+    try:
+        from scipy import stats  # noqa: PLC0415 - optional at import time
+
+        return float(2.0 * stats.t.sf(abs(t_stat), degrees_of_freedom))
+    except ImportError:  # pragma: no cover - scipy is a declared dependency
+        # Normal approximation, only reached if scipy is missing.
+        return float(math.erfc(abs(t_stat) / math.sqrt(2.0)))
+
+
+def rank_ic_t_stat(
+    result: Mapping[str, Any],
+    *,
+    primary_horizon: int | None = None,
+) -> tuple[float, int]:
+    """Pull (t_stat, days) for the primary horizon out of a validation result."""
+    table = result.get("rank_ic")
+    if not isinstance(table, Mapping) or not table:
+        raise SupplementaryError(
+            f"{result.get('factor_id', '<unknown>')}: validation result carries no rank_ic table"
+        )
+
+    if primary_horizon is None:
+        primary_horizon = int(result.get("primary_horizon") or 10)
+    key = str(primary_horizon)
+    entry = table.get(key) or table.get(primary_horizon)
+    if entry is None:
+        # Fall back to the only horizon present rather than guessing silently.
+        if len(table) != 1:
+            raise SupplementaryError(
+                f"{result.get('factor_id', '<unknown>')}: no rank_ic entry for horizon "
+                f"{primary_horizon} and the table is ambiguous"
+            )
+        entry = next(iter(table.values()))
+
+    t_stat = float(entry.get("t_stat", float("nan")))
+    days = int(entry.get("days", 0) or 0)
+    return t_stat, days
+
+
+def industry_neutral_retention(
+    panel: pd.DataFrame,
+    *,
+    factor_values: pd.Series | None,
+    factor_col: str,
+    return_col: str,
+    industry_col: str = "industry",
+    date_col: str = "date",
+    neutralize_returns: bool = False,
+    minimum_cross_section: int = 20,
+) -> dict[str, Any] | None:
+    """Industry-neutral IC summary for one factor, or None if it cannot be run.
+
+    ``factor_values`` is joined onto the panel by the panel's own index when
+    supplied; otherwise the panel is assumed to already carry ``factor_col``.
+    """
+    if industry_col not in panel.columns:
+        return None
+
+    working = panel
+    if factor_values is not None:
+        working = panel.copy()
+        working[factor_col] = pd.Series(factor_values).reindex(panel.index).to_numpy()
+    elif factor_col not in panel.columns:
+        return None
+
+    try:
+        return industry_neutral_ic(
+            working,
+            factor_col=factor_col,
+            return_col=return_col,
+            industry_col=industry_col,
+            date_col=date_col,
+            minimum_cross_section=minimum_cross_section,
+            neutralize_returns=neutralize_returns,
+        )
+    except (KeyError, ValueError):
+        # A factor we cannot neutralise gains no evidence; it must not crash a batch.
+        return None
+
+
+def build_supplementary_report(
+    results: Sequence[Mapping[str, Any]],
+    *,
+    q: float = 0.05,
+    primary_horizon: int | None = None,
+    neutral_ic: Mapping[str, Mapping[str, Any] | None] | None = None,
+) -> dict[str, Any]:
+    """Combine FDR control and industry-neutral retention into one report.
+
+    Factors whose t-statistic cannot be computed are reported as untestable and
+    are never counted as discoveries.
+    """
+    ids: list[str] = []
+    t_stats: list[float] = []
+    p_values: list[float] = []
+
+    for result in results:
+        factor_id = str(result.get("factor_id", "<unknown>"))
+        ids.append(factor_id)
+        try:
+            t_stat, days = rank_ic_t_stat(result, primary_horizon=primary_horizon)
+        except SupplementaryError:
+            t_stat, days = float("nan"), 0
+        t_stats.append(t_stat)
+        p_values.append(p_value_from_t(t_stat, days - 1) if days > 1 else float("nan"))
+
+    fdr = benjamini_hochberg(p_values, q=q)
+
+    factors: list[dict[str, Any]] = []
+    for position, factor_id in enumerate(ids):
+        neutral = None if neutral_ic is None else neutral_ic.get(factor_id)
+        factors.append(
+            {
+                "factor_id": factor_id,
+                "t_stat": t_stats[position],
+                "p_value": p_values[position],
+                "p_adjusted": fdr.adjusted[position],
+                "fdr_accepted": fdr.accepted[position],
+                "industry_neutral_ic": neutral,
+            }
+        )
+
+    # Make the cost of the correction explicit. The frozen `rank_ic` gate screens
+    # at |t| >= 1.65, which is a *one-sided* ~5% point; FDR is applied to
+    # two-sided p-values, so a factor sitting just above the gate can still lose
+    # here. Reporting the gap keeps that from looking like a bug.
+    uncorrected = [bool(np.isfinite(p) and p < q) for p in p_values]
+    lost = [
+        factors[i]["factor_id"]
+        for i in range(len(factors))
+        if uncorrected[i] and not factors[i]["fdr_accepted"]
+    ]
+
+    return {
+        "schema_version": 1,
+        "q": fdr.q,
+        "primary_horizon": primary_horizon,
+        "p_value_convention": "two-sided Student-t on the frozen rank_ic t-statistic",
+        "summary": fdr.as_dict(),
+        "marginal_effect": {
+            "passed_uncorrected": int(sum(uncorrected)),
+            "passed_fdr": fdr.n_accepted,
+            "lost_to_correction": len(lost),
+            "lost_factor_ids": lost,
+        },
+        "factors": factors,
+    }
+
+
+def render_markdown(report: Mapping[str, Any], *, limit: int = 40) -> str:
+    """A short human-readable companion to the JSON report."""
+    summary = report["summary"]
+    marginal = report.get("marginal_effect", {})
+    lines = [
+        "# 补充稳健性报告（多重检验 + 行业中性）",
+        "",
+        f"- 多重检验：Benjamini-Hochberg，q = {summary['q']}",
+        f"- 提交因子：{summary['n_submitted']}　可检验：{summary['n_tested']}　"
+        f"通过 FDR：{summary['n_accepted']}　未通过：{summary['n_rejected']}",
+        f"- p 值口径：{report.get('p_value_convention', 'two-sided')}",
+    ]
+    if marginal:
+        lines.extend(
+            [
+                "",
+                f"**校正的代价**：未校正时 p < q 的有 **{marginal['passed_uncorrected']}** 个，"
+                f"经 FDR 校正后剩 **{marginal['passed_fdr']}** 个，"
+                f"**{marginal['lost_to_correction']}** 个被多重检验拦下。",
+                "",
+                "> 注意口径差异：冻结门槛 `rank_ic` 用的是 **单侧** |t| ≥ 1.65（约等于单侧 5%），"
+                "而 FDR 用的是**双侧** p 值。所以一个刚好越过门槛的因子仍可能在这里被拦下 —— "
+                "这是刻意的，不是缺陷。",
+            ]
+        )
+    lines.extend(
+        [
+            "",
+            "> 本报告是**追加证据层**，不修改任何已冻结门槛，也不改动 `validation_result.json`。",
+            "> 通过 FDR 是**必要条件而非充分条件**：因子仍需通过全部八道冻结门槛。",
+            "",
+            "| 因子 | t 值 | p 值 | 校正后 p | FDR | 行业中性留存 |",
+            "|---|---:|---:|---:|:--:|---:|",
+        ]
+    )
+    rows = sorted(
+        report["factors"],
+        key=lambda item: (not item["fdr_accepted"], item["p_adjusted"]),
+    )
+    for item in rows[:limit]:
+        neutral = item.get("industry_neutral_ic")
+        retention = "—" if not neutral else f"{neutral['retention']:.3f}"
+        adjusted = item["p_adjusted"]
+        lines.append(
+            f"| `{item['factor_id']}` | {item['t_stat']:.3f} | {item['p_value']:.3g} | "
+            f"{adjusted:.3g} | {'✅' if item['fdr_accepted'] else '—'} | {retention} |"
+        )
+    if len(rows) > limit:
+        lines.append("")
+        lines.append(f"（共 {len(rows)} 个因子，此处只列前 {limit} 个）")
+    return "\n".join(lines) + "\n"
