@@ -314,9 +314,11 @@ def build_funnel(
             "scored",
             "已评分",
             validated,
-            "打分器（待实现）",
+            "research_core/factor_lab/scoring.py",
             "not_implemented" if not validated else "real",
-            "综合分与分层 S/A/B/C 的规则需先定稿",
+            "打分器已实现；权重与 A 层分数线仍待客户评审定稿"
+            if not validated
+            else "综合分与 S/A/B/C 分层",
         ),
         stage(
             "strategy",
@@ -324,7 +326,8 @@ def build_funnel(
             in_strategy + len(strategies["rows"]),
             "pages/strategy-dashboard/data/strategies.json",
             "placeholder",
-            f"策略台账 data_status={strategies['data_status']}",
+            f"策略台账 data_status={strategies['data_status']}；"
+            "signal_pipeline.py 已能产出文件单/条件单/Supabase 信号",
         ),
         stage(
             "live",
