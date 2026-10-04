@@ -1,0 +1,629 @@
+{
+  "count": 38,
+  "factors": [
+    {
+      "factor_id": "planted_good",
+      "state": "2_validated",
+      "state_label": "成年",
+      "passed_all": true,
+      "first_failure": null,
+      "executed_order": [
+        "g4_data_quality",
+        "g5_executability",
+        "g6_ic_stability",
+        "g7_multiple_testing",
+        "g8_oos_retention",
+        "g9_cost_resilience",
+        "g10_style_neutrality",
+        "g11_market_segments",
+        "g12_redundancy"
+      ],
+      "oos_access_used": 1,
+      "oos_access_remaining": 2,
+      "n_gates_passed": 9,
+      "n_gates_run": 9
+    },
+    {
+      "factor_id": "amplitude_1m",
+      "state": "9_rejected",
+      "state_label": "死亡",
+      "passed_all": false,
+      "first_failure": "g6_ic_stability",
+      "executed_order": [
+        "g4_data_quality",
+        "g5_executability",
+        "g6_ic_stability"
+      ],
+      "oos_access_used": 0,
+      "oos_access_remaining": 3,
+      "n_gates_passed": 2,
+      "n_gates_run": 3
+    },
+    {
+      "factor_id": "asset_turnover",
+      "state": "9_rejected",
+      "state_label": "死亡",
+      "passed_all": false,
+      "first_failure": "g6_ic_stability",
+      "executed_order": [
+        "g4_data_quality",
+        "g5_executability",
+        "g6_ic_stability"
+      ],
+      "oos_access_used": 0,
+      "oos_access_remaining": 3,
+      "n_gates_passed": 2,
+      "n_gates_run": 3
+    },
+    {
+      "factor_id": "avg_amount_1m",
+      "state": "9_rejected",
+      "state_label": "死亡",
+      "passed_all": false,
+      "first_failure": "g6_ic_stability",
+      "executed_order": [
+        "g4_data_quality",
+        "g5_executability",
+        "g6_ic_stability"
+      ],
+      "oos_access_used": 0,
+      "oos_access_remaining": 3,
+      "n_gates_passed": 2,
+      "n_gates_run": 3
+    },
+    {
+      "factor_id": "bb_position",
+      "state": "9_rejected",
+      "state_label": "死亡",
+      "passed_all": false,
+      "first_failure": "g6_ic_stability",
+      "executed_order": [
+        "g4_data_quality",
+        "g5_executability",
+        "g6_ic_stability"
+      ],
+      "oos_access_used": 0,
+      "oos_access_remaining": 3,
+      "n_gates_passed": 2,
+      "n_gates_run": 3
+    },
+    {
+      "factor_id": "debt_to_asset",
+      "state": "9_rejected",
+      "state_label": "死亡",
+      "passed_all": false,
+      "first_failure": "g6_ic_stability",
+      "executed_order": [
+        "g4_data_quality",
+        "g5_executability",
+        "g6_ic_stability"
+      ],
+      "oos_access_used": 0,
+      "oos_access_remaining": 3,
+      "n_gates_passed": 2,
+      "n_gates_run": 3
+    },
+    {
+      "factor_id": "eps_yoy",
+      "state": "9_rejected",
+      "state_label": "死亡",
+      "passed_all": false,
+      "first_failure": "g6_ic_stability",
+      "executed_order": [
+        "g4_data_quality",
+        "g5_executability",
+        "g6_ic_stability"
+      ],
+      "oos_access_used": 0,
+      "oos_access_remaining": 3,
+      "n_gates_passed": 2,
+      "n_gates_run": 3
+    },
+    {
+      "factor_id": "high_low_1m",
+      "state": "9_rejected",
+      "state_label": "死亡",
+      "passed_all": false,
+      "first_failure": "g6_ic_stability",
+      "executed_order": [
+        "g4_data_quality",
+        "g5_executability",
+        "g6_ic_stability"
+      ],
+      "oos_access_used": 0,
+      "oos_access_remaining": 3,
+      "n_gates_passed": 2,
+      "n_gates_run": 3
+    },
+    {
+      "factor_id": "illiquidity",
+      "state": "9_rejected",
+      "state_label": "死亡",
+      "passed_all": false,
+      "first_failure": "g6_ic_stability",
+      "executed_order": [
+        "g4_data_quality",
+        "g5_executability",
+        "g6_ic_stability"
+      ],
+      "oos_access_used": 0,
+      "oos_access_remaining": 3,
+      "n_gates_passed": 2,
+      "n_gates_run": 3
+    },
+    {
+      "factor_id": "log_amount_1m",
+      "state": "9_rejected",
+      "state_label": "死亡",
+      "passed_all": false,
+      "first_failure": "g5_executability",
+      "executed_order": [
+        "g4_data_quality",
+        "g5_executability"
+      ],
+      "oos_access_used": 0,
+      "oos_access_remaining": 3,
+      "n_gates_passed": 1,
+      "n_gates_run": 2
+    },
+    {
+      "factor_id": "log_price",
+      "state": "9_rejected",
+      "state_label": "死亡",
+      "passed_all": false,
+      "first_failure": "g5_executability",
+      "executed_order": [
+        "g4_data_quality",
+        "g5_executability"
+      ],
+      "oos_access_used": 0,
+      "oos_access_remaining": 3,
+      "n_gates_passed": 1,
+      "n_gates_run": 2
+    },
+    {
+      "factor_id": "ma_signal",
+      "state": "9_rejected",
+      "state_label": "死亡",
+      "passed_all": false,
+      "first_failure": "g6_ic_stability",
+      "executed_order": [
+        "g4_data_quality",
+        "g5_executability",
+        "g6_ic_stability"
+      ],
+      "oos_access_used": 0,
+      "oos_access_remaining": 3,
+      "n_gates_passed": 2,
+      "n_gates_run": 3
+    },
+    {
+      "factor_id": "max_ret_1m",
+      "state": "9_rejected",
+      "state_label": "死亡",
+      "passed_all": false,
+      "first_failure": "g6_ic_stability",
+      "executed_order": [
+        "g4_data_quality",
+        "g5_executability",
+        "g6_ic_stability"
+      ],
+      "oos_access_used": 0,
+      "oos_access_remaining": 3,
+      "n_gates_passed": 2,
+      "n_gates_run": 3
+    },
+    {
+      "factor_id": "min_ret_1m",
+      "state": "9_rejected",
+      "state_label": "死亡",
+      "passed_all": false,
+      "first_failure": "g6_ic_stability",
+      "executed_order": [
+        "g4_data_quality",
+        "g5_executability",
+        "g6_ic_stability"
+      ],
+      "oos_access_used": 0,
+      "oos_access_remaining": 3,
+      "n_gates_passed": 2,
+      "n_gates_run": 3
+    },
+    {
+      "factor_id": "momentum_12_1",
+      "state": "9_rejected",
+      "state_label": "死亡",
+      "passed_all": false,
+      "first_failure": "g6_ic_stability",
+      "executed_order": [
+        "g4_data_quality",
+        "g5_executability",
+        "g6_ic_stability"
+      ],
+      "oos_access_used": 0,
+      "oos_access_remaining": 3,
+      "n_gates_passed": 2,
+      "n_gates_run": 3
+    },
+    {
+      "factor_id": "net_margin",
+      "state": "9_rejected",
+      "state_label": "死亡",
+      "passed_all": false,
+      "first_failure": "g6_ic_stability",
+      "executed_order": [
+        "g4_data_quality",
+        "g5_executability",
+        "g6_ic_stability"
+      ],
+      "oos_access_used": 0,
+      "oos_access_remaining": 3,
+      "n_gates_passed": 2,
+      "n_gates_run": 3
+    },
+    {
+      "factor_id": "planted_crowded",
+      "state": "9_rejected",
+      "state_label": "死亡",
+      "passed_all": false,
+      "first_failure": "g12_redundancy",
+      "executed_order": [
+        "g4_data_quality",
+        "g5_executability",
+        "g6_ic_stability",
+        "g7_multiple_testing",
+        "g8_oos_retention",
+        "g9_cost_resilience",
+        "g10_style_neutrality",
+        "g11_market_segments",
+        "g12_redundancy"
+      ],
+      "oos_access_used": 0,
+      "oos_access_remaining": 3,
+      "n_gates_passed": 8,
+      "n_gates_run": 9
+    },
+    {
+      "factor_id": "planted_decay",
+      "state": "9_rejected",
+      "state_label": "死亡",
+      "passed_all": false,
+      "first_failure": "g8_oos_retention",
+      "executed_order": [
+        "g4_data_quality",
+        "g5_executability",
+        "g6_ic_stability",
+        "g7_multiple_testing",
+        "g8_oos_retention"
+      ],
+      "oos_access_used": 0,
+      "oos_access_remaining": 3,
+      "n_gates_passed": 4,
+      "n_gates_run": 5
+    },
+    {
+      "factor_id": "planted_regime",
+      "state": "9_rejected",
+      "state_label": "死亡",
+      "passed_all": false,
+      "first_failure": "g11_market_segments",
+      "executed_order": [
+        "g4_data_quality",
+        "g5_executability",
+        "g6_ic_stability",
+        "g7_multiple_testing",
+        "g8_oos_retention",
+        "g9_cost_resilience",
+        "g10_style_neutrality",
+        "g11_market_segments"
+      ],
+      "oos_access_used": 0,
+      "oos_access_remaining": 3,
+      "n_gates_passed": 7,
+      "n_gates_run": 8
+    },
+    {
+      "factor_id": "planted_turnover",
+      "state": "9_rejected",
+      "state_label": "死亡",
+      "passed_all": false,
+      "first_failure": "g8_oos_retention",
+      "executed_order": [
+        "g4_data_quality",
+        "g5_executability",
+        "g6_ic_stability",
+        "g7_multiple_testing",
+        "g8_oos_retention"
+      ],
+      "oos_access_used": 0,
+      "oos_access_remaining": 3,
+      "n_gates_passed": 4,
+      "n_gates_run": 5
+    },
+    {
+      "factor_id": "profit_yoy",
+      "state": "9_rejected",
+      "state_label": "死亡",
+      "passed_all": false,
+      "first_failure": "g6_ic_stability",
+      "executed_order": [
+        "g4_data_quality",
+        "g5_executability",
+        "g6_ic_stability"
+      ],
+      "oos_access_used": 0,
+      "oos_access_remaining": 3,
+      "n_gates_passed": 2,
+      "n_gates_run": 3
+    },
+    {
+      "factor_id": "ret_12m",
+      "state": "9_rejected",
+      "state_label": "死亡",
+      "passed_all": false,
+      "first_failure": "g5_executability",
+      "executed_order": [
+        "g4_data_quality",
+        "g5_executability"
+      ],
+      "oos_access_used": 0,
+      "oos_access_remaining": 3,
+      "n_gates_passed": 1,
+      "n_gates_run": 2
+    },
+    {
+      "factor_id": "ret_1m",
+      "state": "9_rejected",
+      "state_label": "死亡",
+      "passed_all": false,
+      "first_failure": "g6_ic_stability",
+      "executed_order": [
+        "g4_data_quality",
+        "g5_executability",
+        "g6_ic_stability"
+      ],
+      "oos_access_used": 0,
+      "oos_access_remaining": 3,
+      "n_gates_passed": 2,
+      "n_gates_run": 3
+    },
+    {
+      "factor_id": "ret_3m",
+      "state": "9_rejected",
+      "state_label": "死亡",
+      "passed_all": false,
+      "first_failure": "g6_ic_stability",
+      "executed_order": [
+        "g4_data_quality",
+        "g5_executability",
+        "g6_ic_stability"
+      ],
+      "oos_access_used": 0,
+      "oos_access_remaining": 3,
+      "n_gates_passed": 2,
+      "n_gates_run": 3
+    },
+    {
+      "factor_id": "ret_3m_vol_adj",
+      "state": "9_rejected",
+      "state_label": "死亡",
+      "passed_all": false,
+      "first_failure": "g6_ic_stability",
+      "executed_order": [
+        "g4_data_quality",
+        "g5_executability",
+        "g6_ic_stability"
+      ],
+      "oos_access_used": 0,
+      "oos_access_remaining": 3,
+      "n_gates_passed": 2,
+      "n_gates_run": 3
+    },
+    {
+      "factor_id": "ret_6m",
+      "state": "9_rejected",
+      "state_label": "死亡",
+      "passed_all": false,
+      "first_failure": "g6_ic_stability",
+      "executed_order": [
+        "g4_data_quality",
+        "g5_executability",
+        "g6_ic_stability"
+      ],
+      "oos_access_used": 0,
+      "oos_access_remaining": 3,
+      "n_gates_passed": 2,
+      "n_gates_run": 3
+    },
+    {
+      "factor_id": "revenue_yoy",
+      "state": "9_rejected",
+      "state_label": "死亡",
+      "passed_all": false,
+      "first_failure": "g6_ic_stability",
+      "executed_order": [
+        "g4_data_quality",
+        "g5_executability",
+        "g6_ic_stability"
+      ],
+      "oos_access_used": 0,
+      "oos_access_remaining": 3,
+      "n_gates_passed": 2,
+      "n_gates_run": 3
+    },
+    {
+      "factor_id": "reversal",
+      "state": "9_rejected",
+      "state_label": "死亡",
+      "passed_all": false,
+      "first_failure": "g6_ic_stability",
+      "executed_order": [
+        "g4_data_quality",
+        "g5_executability",
+        "g6_ic_stability"
+      ],
+      "oos_access_used": 0,
+      "oos_access_remaining": 3,
+      "n_gates_passed": 2,
+      "n_gates_run": 3
+    },
+    {
+      "factor_id": "roa_ttm",
+      "state": "9_rejected",
+      "state_label": "死亡",
+      "passed_all": false,
+      "first_failure": "g5_executability",
+      "executed_order": [
+        "g4_data_quality",
+        "g5_executability"
+      ],
+      "oos_access_used": 0,
+      "oos_access_remaining": 3,
+      "n_gates_passed": 1,
+      "n_gates_run": 2
+    },
+    {
+      "factor_id": "roe_ttm",
+      "state": "9_rejected",
+      "state_label": "死亡",
+      "passed_all": false,
+      "first_failure": "g6_ic_stability",
+      "executed_order": [
+        "g4_data_quality",
+        "g5_executability",
+        "g6_ic_stability"
+      ],
+      "oos_access_used": 0,
+      "oos_access_remaining": 3,
+      "n_gates_passed": 2,
+      "n_gates_run": 3
+    },
+    {
+      "factor_id": "rsi_14",
+      "state": "9_rejected",
+      "state_label": "死亡",
+      "passed_all": false,
+      "first_failure": "g6_ic_stability",
+      "executed_order": [
+        "g4_data_quality",
+        "g5_executability",
+        "g6_ic_stability"
+      ],
+      "oos_access_used": 0,
+      "oos_access_remaining": 3,
+      "n_gates_passed": 2,
+      "n_gates_run": 3
+    },
+    {
+      "factor_id": "turnover_proxy",
+      "state": "9_rejected",
+      "state_label": "死亡",
+      "passed_all": false,
+      "first_failure": "g6_ic_stability",
+      "executed_order": [
+        "g4_data_quality",
+        "g5_executability",
+        "g6_ic_stability"
+      ],
+      "oos_access_used": 0,
+      "oos_access_remaining": 3,
+      "n_gates_passed": 2,
+      "n_gates_run": 3
+    },
+    {
+      "factor_id": "up_ratio_1m",
+      "state": "9_rejected",
+      "state_label": "死亡",
+      "passed_all": false,
+      "first_failure": "g6_ic_stability",
+      "executed_order": [
+        "g4_data_quality",
+        "g5_executability",
+        "g6_ic_stability"
+      ],
+      "oos_access_used": 0,
+      "oos_access_remaining": 3,
+      "n_gates_passed": 2,
+      "n_gates_run": 3
+    },
+    {
+      "factor_id": "vol_convergence",
+      "state": "9_rejected",
+      "state_label": "死亡",
+      "passed_all": false,
+      "first_failure": "g5_executability",
+      "executed_order": [
+        "g4_data_quality",
+        "g5_executability"
+      ],
+      "oos_access_used": 0,
+      "oos_access_remaining": 3,
+      "n_gates_passed": 1,
+      "n_gates_run": 2
+    },
+    {
+      "factor_id": "volatility_1m",
+      "state": "9_rejected",
+      "state_label": "死亡",
+      "passed_all": false,
+      "first_failure": "g6_ic_stability",
+      "executed_order": [
+        "g4_data_quality",
+        "g5_executability",
+        "g6_ic_stability"
+      ],
+      "oos_access_used": 0,
+      "oos_access_remaining": 3,
+      "n_gates_passed": 2,
+      "n_gates_run": 3
+    },
+    {
+      "factor_id": "volatility_3m",
+      "state": "9_rejected",
+      "state_label": "死亡",
+      "passed_all": false,
+      "first_failure": "g6_ic_stability",
+      "executed_order": [
+        "g4_data_quality",
+        "g5_executability",
+        "g6_ic_stability"
+      ],
+      "oos_access_used": 0,
+      "oos_access_remaining": 3,
+      "n_gates_passed": 2,
+      "n_gates_run": 3
+    },
+    {
+      "factor_id": "volatility_6m",
+      "state": "9_rejected",
+      "state_label": "死亡",
+      "passed_all": false,
+      "first_failure": "g6_ic_stability",
+      "executed_order": [
+        "g4_data_quality",
+        "g5_executability",
+        "g6_ic_stability"
+      ],
+      "oos_access_used": 0,
+      "oos_access_remaining": 3,
+      "n_gates_passed": 2,
+      "n_gates_run": 3
+    },
+    {
+      "factor_id": "volume_ratio",
+      "state": "9_rejected",
+      "state_label": "死亡",
+      "passed_all": false,
+      "first_failure": "g6_ic_stability",
+      "executed_order": [
+        "g4_data_quality",
+        "g5_executability",
+        "g6_ic_stability"
+      ],
+      "oos_access_used": 0,
+      "oos_access_remaining": 3,
+      "n_gates_passed": 2,
+      "n_gates_run": 3
+    }
+  ]
+}
