@@ -21,7 +21,7 @@
 1. **直推被拒**：`main` 有仓库规则「Changes must be made through a pull request」（`GH013`），直推被 GitHub 拒绝。改为走 PR。
 2. **PR 建好后 CI 不过**：两个必需检查 `hygiene` 与 `validate`。`validate`（Factor Validation）跑通过；`hygiene`（PR Hygiene）失败，原因两条：
    - **PR 正文缺 6 个固定标题**：CI 要求 `# Summary` / `# AI Assistance Record` / `# Prompt / Instruction Record` / `# Validation Evidence` / `# Risk Checklist` / `# Reviewer Focus`。已按模板重写正文。
-   - **仓库里有机器本地路径**：`constraints-rqsdk.txt` 第 1 行写着 `/home/data/conda-envs/rqsdk`（该文件来自 Hermes 的 `cf9c883`），命中 CI 的「禁止机器本地路径」规则。已改为「115 server RQData conda environment (env name: rqsdk)」，**包版本列表一行未动**。
+   - **仓库里有机器本地路径**：`constraints-rqsdk.txt` 第 1 行写着服务器上的 conda 环境绝对路径（`<服务器路径>/conda-envs/rqsdk`，该文件来自 Hermes 的 `cf9c883`），命中 CI 的「禁止机器本地路径」规则。已改为「115 server RQData conda environment (env name: rqsdk)」，**包版本列表一行未动**。
    - 顺带说明：改动该文件会**改变它的 sha256**，因此后续 `run_manifest.json` 里的 `constraints_sha256` 会与旧值不同（旧 manifest `b8d740f6` 已按接龙10 裁定作废）。
 3. **时序坑**：CI 由 push 触发，而修正路径的那次 push 发生在改 PR 正文**之前**，所以那一轮 hygiene 仍读到旧正文并失败。用「关闭 + 重开 PR」触发新运行（没有往分支里塞空提交），第二轮两项检查全绿、`mergeable_state=clean` 后才执行合并。
 
