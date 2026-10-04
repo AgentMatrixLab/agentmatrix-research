@@ -6,10 +6,14 @@ on:
       - 'research_core/factor_lab/**'
       - 'research_core/data_loader/**'
       - 'research_core/strategy_engine/**'
+      - 'research_core/strategy_operations/**'
+      - 'research_core/backtest_jobs/**'
       - 'research_core/backtest_adapter/**'
       - 'registry/factor_registry/**'
       - 'submissions/**'
       - 'tests/**'
+      - 'scripts/**'
+      - 'pages/**'
       - 'configs/validation_gates.yaml'
       - 'Makefile'
       - 'contracts/factor_research.py'
@@ -59,6 +63,27 @@ jobs:
         run: |
           set -o pipefail
           python -m pytest research_core/factor_lab/ tests/ -v --tb=short 2>&1 | tee /tmp/unit_test_output.txt
+
+      - name: "Verify delivery tooling runs [Layer 0: Tooling]"
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The export and supplement scripts talk to a licensed data server and
+          # a populated runs directory, so CI cannot exercise their full path.
+          # It can still prove they import, parse arguments, and reach their
+          # documented dry-run exits -- which is what a syntax-level break would
+          # otherwise take down silently, since py_compile alone does not import.
+          echo "--- RQData export: dry run ---"
+          python -X utf8 scripts/export_rqsdk_panel.py --dry-run --out-dir /tmp/amr-export
+          echo "--- RQData export: self-check on a missing directory must fail cleanly ---"
+          if python -X utf8 scripts/export_rqsdk_panel.py --out-dir /tmp/amr-absent --self-check; then
+            echo "self-check unexpectedly succeeded on a missing directory" >&2
+            exit 1
+          fi
+          echo "--- Factor console dataset rebuild ---"
+          python -X utf8 scripts/build_factor_panel.py
+          test -s pages/factor-panel/data/panel.json
+          echo "Delivery tooling OK"
 
       - name: "Run submission tests [Layer 1: Formula]"
         shell: bash
