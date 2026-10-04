@@ -147,7 +147,60 @@ python -X utf8 scripts/build_strategy_demos.py \
 四个变体：`top_composite` / `cluster_core` / `single_best` / `all_passers`。
 输出 `data_status = real_run`。**若输出写的是 `synthetic_rehearsal`，说明拿错面板了。**
 
-### 1.4 交叉核对与打包
+### 1.4 打包与交叉核对
+
+```bash
+# ① 打包：只收 status == "validated" 的因子
+python -X utf8 scripts/package_delivery.py \
+    --batch-manifest data/factor_lab/batches/merged/batch_manifest.json \
+    --candidates data/factor_lab/candidate_list.csv \
+    --output-dir data/factor_lab/package
+
+# ② 交叉核对：独立重算全哈希，不信 manifest
+python -X utf8 scripts/cross_check_delivery.py \
+    --batch-manifest data/factor_lab/batches/merged/batch_manifest.json \
+    --panel-file data/factor_lab/panel.parquet \
+    --factor-file data/factor_lab/factors.parquet \
+    --candidates data/factor_lab/candidate_list.csv \
+    --config configs/validation_gates.yaml \
+    --package-manifest data/factor_lab/package/package_manifest.json \
+    --output data/factor_lab/cross_check.json
+```
+
+**退出码含义**（不要忽略）：
+
+| 脚本 | 码 | 含义 |
+|---|---|---|
+| `package_delivery.py` | 0 | 出包成功 |
+| | **4** | **一个因子都没通过 → 拒绝出空包**。这是正确行为，不是故障 |
+| `cross_check_delivery.py` | 0 | 无不一致 |
+| | **5** | **发现不一致** —— 停下来查，不要签收 |
+| | 2 | 输入有问题，无法核对 |
+
+**这条路径已端到端验证**（`scripts/dev/verify_delivery_packaging.py`）：分片→合并→打包内容恰好等于 validated 集合、每条排除都带原因、干净包核对退出码 0、**篡改包内证据后被退出码 5 拦下并指名具体检查项**。
+
+### 1.5 交付清单（客户收到的唯一权威表）
+
+```bash
+python -X utf8 scripts/build_delivery_manifest.py \
+    --candidates data/factor_lab/candidate_list.csv \
+    --batch-manifest data/factor_lab/batches/merged/batch_manifest.json \
+    --runs-dir data/factor_lab/validation_runs \
+    --supplementary data/factor_lab/supplementary_report.json \
+    --factor-file data/factor_lab/factors.parquet \
+    --out data/factor_lab/delivery_manifest.csv
+```
+
+把候选、冻结门槛裁决、FDR、行业中性留存、打分分层、相关性簇**拼成一张 25 列的 CSV**（列顺序即契约），并派生出唯一决定交付的字段 `in_delivery_package`。
+
+**两条结构性规则**（不是建议，是代码强制的）：
+
+1. **只有「过了全部冻结门槛」且「计入 alpha」的因子才能进包。** 风险暴露照常跑、照常报状态，但按裁定**永不进包** —— 由程序排除，不依赖读者记得过滤。
+2. **分层只会赋给通过门槛的因子。** 打分器本身拒绝未过闸因子，所以「没有分层」与「被淘汰」总是同时出现；本模块不会从别处补一个分层进来。
+
+输出末尾会打印**排除原因分解**（多少因子死于哪道门槛、多少是分层不够），这样「为什么只有 N 个」当场可答。
+
+> **若 `IN DELIVERY PACKAGE = 0`：那是正确结果，不是故障。** 说明没有一个因子通过全部冻结门槛 —— **不要为了改这个数字去放宽门槛。**
 
 ```bash
 # ① 打包：只收 status == "validated" 的因子
