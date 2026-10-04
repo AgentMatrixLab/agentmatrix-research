@@ -23,8 +23,13 @@ DATA_DIR = r"D:\bigquant\custom_engine\data"
 OUTPUT_DIR = r"D:\bigquant\output"
 ENGINE_DIR = r"D:\bigquant\custom_engine"
 SERVER_DIR = r"D:\bigquant\bt_panel\server"
-API_BASE = "http://<server-ip>:8765"
+API_BASE = os.environ.get("QUANT_API_BASE", "").rstrip("/")
 LOG_FILE = r"D:\bigquant\custom_engine\daily_pipeline.log"
+
+if not API_BASE:
+    raise RuntimeError(
+        "QUANT_API_BASE 未设置；本仓库不内置服务器地址，请先设置环境变量再运行"
+    )
 
 # 引擎目录下已有的脚本
 BUILD_ADJ = os.path.join(ENGINE_DIR, "build_kline_adj_full.py")

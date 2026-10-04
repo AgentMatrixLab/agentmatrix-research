@@ -181,7 +181,7 @@ def get_signals(tradable_df: pd.DataFrame) -> pd.DataFrame:
 
 ## 数据说明
 
-- 数据源：RQData API（`http://<server-ip>:8765`）
+- 数据源：RQData API（`http://<QUANT_API_HOST>:8765`）
 - K 线存储：Parquet 格式（`data/kline_adj.parquet`）
 - 回测输出：JSON 格式（`output/*.json`）
 - 前端数据库：SQLite（`server/bt_panel.db`）
