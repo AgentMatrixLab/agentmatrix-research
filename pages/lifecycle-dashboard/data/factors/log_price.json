@@ -1,0 +1,44 @@
+{
+  "factor_id": "log_price",
+  "state": "9_rejected",
+  "state_label": "死亡",
+  "passed_all": false,
+  "first_failure": "g5_executability",
+  "executed_order": [
+    "g4_data_quality",
+    "g5_executability"
+  ],
+  "oos_access_used": 0,
+  "oos_access_remaining": 3,
+  "n_gates_passed": 1,
+  "n_gates_run": 2,
+  "gates": [
+    {
+      "gate": "g4_data_quality",
+      "label": "4 数据质量",
+      "desc": "缺失率<5%、覆盖≥90%、无前视",
+      "passed": true,
+      "evidence": {
+        "missing_rate": 0.0,
+        "coverage": 1.0,
+        "n_rows": 2880
+      },
+      "reason": ""
+    },
+    {
+      "gate": "g5_executability",
+      "label": "5 可执行性",
+      "desc": "涨跌停/停牌/ST/流动性过滤，衰减≤50%",
+      "passed": false,
+      "evidence": {
+        "raw_ic": -0.0081,
+        "filtered_ic": -0.0,
+        "alpha_decay": 0.9983,
+        "kept_rows": 2445,
+        "dropped_rows": 435
+      },
+      "reason": "过滤前后 alpha 衰减 99.8% > 50%"
+    }
+  ],
+  "timeline": []
+}
