@@ -21,7 +21,7 @@ import pandas as pd
 @dataclass(slots=True)
 class ClickHouseConfig:
     """Connection config — ready for env vars or direct injection."""
-    host: str = field(default_factory=lambda: os.environ.get("CLICKHOUSE_HOST", "<server-ip>"))
+    host: str = field(default_factory=lambda: os.environ.get("CLICKHOUSE_HOST", ""))
     port: int = field(default_factory=lambda: int(os.environ.get("CLICKHOUSE_PORT", "8123")))
     user: str = field(default_factory=lambda: os.environ.get("CLICKHOUSE_USER", "default"))
     password: str = field(default_factory=lambda: os.environ.get("CLICKHOUSE_PASSWORD", ""))
@@ -36,7 +36,7 @@ class ClickHouseBridge:
     """Read-only ClickHouse connector for factor research.
 
     Usage:
-        bridge = ClickHouseBridge(ClickHouseConfig(host="<server-ip>"))
+        bridge = ClickHouseBridge(ClickHouseConfig(host="<CLICKHOUSE_HOST>"))
         df = bridge.fetch_kline(
             symbols=["000001.SZ", "000002.SZ"],
             start="2024-01-01",
@@ -46,6 +46,11 @@ class ClickHouseBridge:
 
     def __init__(self, config: ClickHouseConfig | None = None):
         self.config = config or ClickHouseConfig()
+        if not self.config.host:
+            raise ValueError(
+                "ClickHouse host is not configured; set CLICKHOUSE_HOST or pass "
+                "ClickHouseConfig(host=...) (no host is baked into this repository)"
+            )
         self._connected = False
         self._cache: dict[str, pd.DataFrame] = {}
 

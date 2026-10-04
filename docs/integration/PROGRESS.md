@@ -21,7 +21,7 @@ would invalidate comparison with existing results.
 
 ## Real-data bridge milestone
 
-- Located the approved source files on `<server-ip>` and prepared a minimal
+- Located the approved source files on `<QUANT_API_HOST>` and prepared a minimal
   compatibility package from existing Parquet sources without changing source
   data.
 - Downloaded 14 files (roughly 400 MB) with SFTP resume support.

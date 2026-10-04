@@ -16,14 +16,14 @@
 
 ```powershell
 $env:FACTOR_LAB_QUANT_API_TOKEN="sk-..."
-$env:FACTOR_LAB_QUANT_API_BASE_URL="http://<server-ip>:8765"
+$env:FACTOR_LAB_QUANT_API_BASE_URL="http://<QUANT_API_HOST>:8765"
 ```
 
 兼容变量：
 
 ```powershell
 $env:QUANT_API_TOKEN="sk-..."
-$env:QUANT_API_BASE_URL="http://<server-ip>:8765"
+$env:QUANT_API_BASE_URL="http://<QUANT_API_HOST>:8765"
 ```
 
 如果未配置 token，状态接口仍可访问，但数据接口会返回 401。
