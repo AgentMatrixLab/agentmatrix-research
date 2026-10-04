@@ -33,9 +33,9 @@ data:
   active_status: Active
 
 split:
-  train_start: "2016-01-01"
-  train_end: "2023-12-31"
-  oos_start: "2024-01-01"
+  train_start: "2020-01-02"
+  train_end: "2022-12-31"
+  oos_start: "2023-01-01"
   oos_end: "2026-08-31"
 
 factor:
@@ -46,6 +46,27 @@ factor:
       source_field: turnover_rate
       transform: rolling_mean
       window: 20
+      minimum_period_ratio: 1.0
+    reversal_1m:
+      factor_id: reversal_1m
+      name_en: One-Month Reversal
+      name_zh: 一月反转
+      category: price_momentum
+      formula: "-(close_t / close_{t-22} - 1)"
+      dependencies:
+        - close
+        - date
+        - code
+        - is_suspended
+      expected_direction: negative_reversal
+      economic_logic: "近期一个月跌幅较大的股票，预期未来相对收益较高。"
+      source_class: market_data
+      coverage_class: full_a_daily_adjusted_close
+      status: research
+      version: 1
+      source_field: close
+      transform: negative_pct_change
+      window: 22
       minimum_period_ratio: 1.0
     avg_amount_log:
       source_field: total_turnover
