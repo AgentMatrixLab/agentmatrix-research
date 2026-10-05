@@ -26,9 +26,11 @@ if str(ROOT) not in sys.path:
 
 from research_core.factor_lab.streaming_supplement import (  # noqa: E402
     StreamingSupplementError,
+    composite_scores,
     cross_sectional_correlation,
     neutral_retention_by_factor,
     prepare_panel,
+    ranked_block,
 )
 
 VARIANT = "|window="
@@ -169,7 +171,48 @@ def test_only_refuses_a_factor_file_missing_the_contract_columns(tmp_path: Path)
         cross_sectional_correlation(bad, factor_ids=["f_a", "f_b"])
 
 
-def test_only_prepare_panel_builds_the_forward_return(tmp_path: Path) -> None:
+def test_only_composite_scores_match_the_in_memory_demo_helper(tmp_path: Path) -> None:
+    """The streaming composite must equal `build_strategy_demos.composite_stock_scores`.
+
+    That function is kept as the reference implementation precisely so this comparison is
+    possible: the demo no longer calls it (it needs the whole table in memory), and if the
+    streaming arithmetic ever drifts this test is what catches it.
+    """
+    sys.path.insert(0, str(ROOT / "scripts"))
+    from build_strategy_demos import composite_stock_scores  # noqa: E402
+
+    ids = ["f_a", "f_b", "f_c"]
+    _write_long_table(tmp_path / "values.parquet", ids, with_variants=False)
+    table = pq.read_table(tmp_path / "values.parquet").to_pandas()
+
+    block = ranked_block(tmp_path / "values.parquet", factor_ids=ids)
+    weights = {"f_a": 2.0, "f_b": 1.0, "f_c": 0.5}
+
+    for columns, weight_map in (
+        (ids, None),
+        (ids, weights),
+        (["f_a", "f_c"], None),
+    ):
+        streamed = composite_scores(block, weight_map, columns=columns)
+        reference = composite_stock_scores(table, columns, weights=weight_map)
+        reference = reference.dropna(subset=["score"]).reset_index(drop=True)
+        merged = streamed.merge(reference, on=["date", "code"], suffixes=("_s", "_r"))
+        assert len(merged) == len(reference), (columns, weight_map)
+        np.testing.assert_allclose(
+            merged["score_s"].to_numpy(), merged["score_r"].to_numpy(), atol=1e-6
+        )
+
+
+def test_only_ranked_block_reports_missing_factors(tmp_path: Path) -> None:
+    _write_long_table(tmp_path / "values.parquet", ["f_a", "f_b"])
+    block = ranked_block(tmp_path / "values.parquet", factor_ids=["f_a", "f_b", "f_absent"])
+    assert block.factor_ids == ["f_a", "f_b", "f_absent"]
+    assert block.factors_missing == ["f_absent"]
+    assert block.ranks.shape[1] == 3
+    assert np.isnan(block.ranks[:, 2]).all()
+
+
+
     frames = []
     rng = np.random.default_rng(7)
     for code in CODES:

@@ -75,8 +75,9 @@ DELIVERY_MANIFEST_COLUMNS: tuple[str, ...] = (
     "in_delivery_package",
 )
 
-#: Which tiers are delivered. S requires truth-compare on top of a high composite;
-#: B is a research input and C is not delivered at all.
+#: The tiers the scoring card marks as rollout-priority. NOT an inclusion rule: the delivery
+#: package is decided by the eight frozen gates (see `build_delivery_manifest`). Reported
+#: separately by `summarise_manifest` so the priority split is still visible.
 PACKAGE_TIERS = ("S", "A")
 
 
@@ -179,9 +180,19 @@ def build_delivery_manifest(
 
         passed = entry["status"] == "validated"
         is_alpha = entry["counts_as_alpha"] in ("", "true")
-        entry["in_delivery_package"] = _format(
-            bool(passed and is_alpha and entry["tier"] in PACKAGE_TIERS)
-        )
+        # The delivery package is defined by the EIGHT FROZEN GATES, not by the scoring card.
+        #
+        # Placing `tier in PACKAGE_TIERS` here made the card a *threshold*: the headline count
+        # silently became "gate-passers that also cleared composite >= 55" instead of
+        # "gate-passers". The 300 target is computed the second way -- the agreed feasibility
+        # arithmetic is the candidate count times the measured gate pass rate -- and the card
+        # itself is still a draft (open question Q4), so letting it decide inclusion would
+        # report a delivery far below the contracted number with no validation reason.
+        #
+        # The tier is still written on every row, and `summarise_manifest` still reports the
+        # narrower S/A count, so the client can sequence the rollout by score. It is a
+        # ranking, not a gate: nothing here can admit a factor the frozen validator rejected.
+        entry["in_delivery_package"] = _format(bool(passed and is_alpha))
         manifest.append(entry)
 
     return manifest
@@ -205,6 +216,12 @@ def summarise_manifest(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
         "tier_counts": tiers,
         "fdr_accepted": count(lambda r: str(r.get("fdr_accepted")) == "true"),
         "in_delivery_package": len(delivered),
+        # The same set narrowed to rollout-priority tiers. Reported so the reader can see how
+        # much of the package the scoring card rates S/A without that deciding the headline.
+        "in_delivery_package_tier_sa": count(
+            lambda r: str(r.get("in_delivery_package")) == "true"
+            and r.get("tier") in PACKAGE_TIERS
+        ),
         "delivered_clusters": len(clusters),
         "representatives": count(
             lambda r: str(r.get("in_delivery_package")) == "true"

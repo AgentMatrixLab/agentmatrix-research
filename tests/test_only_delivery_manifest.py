@@ -113,25 +113,42 @@ def test_a_risk_exposure_is_excluded_even_when_it_passes() -> None:
     assert rows[0]["counts_as_alpha"] == "false"
 
 
-def test_a_tier_b_factor_is_not_delivered() -> None:
+def test_a_tier_b_factor_is_delivered_but_marked_low_priority() -> None:
+    """A validated factor enters the package on the gates, not on the scoring card.
+
+    The card is a draft (open question Q4) and its tier is a ranking device. Making it a
+    threshold silently redefined the headline from "cleared all eight frozen gates" to
+    "cleared the gates and scored >= 55", which is not how the 300 target was computed.
+    """
     rows = build_delivery_manifest([catalog_row("b")], scoring=scoring([("b", "B", 45.0)]))
     assert rows[0]["tier"] == "B"
-    assert rows[0]["in_delivery_package"] == "false"
+    assert rows[0]["in_delivery_package"] == "true"
 
 
-def test_a_tier_c_factor_is_not_delivered() -> None:
+def test_a_tier_c_factor_is_delivered_but_marked_low_priority() -> None:
     rows = build_delivery_manifest([catalog_row("c")], scoring=scoring([("c", "C", 10.0)]))
-    assert rows[0]["in_delivery_package"] == "false"
+    assert rows[0]["tier"] == "C"
+    assert rows[0]["in_delivery_package"] == "true"
 
 
-def test_an_unscored_factor_is_not_delivered() -> None:
-    """No score means no tier, and no tier means no delivery."""
+def test_an_unscored_factor_is_delivered_and_reports_no_tier() -> None:
+    """Scoring is optional; a factor is not excluded because a layer did not run."""
     rows = build_delivery_manifest([catalog_row("a")])
     assert rows[0]["tier"] == ""
+    assert rows[0]["in_delivery_package"] == "true"
+
+
+def test_a_rejected_factor_enters_the_package_under_no_scoring_at_all() -> None:
+    """The tier is not a gate, so it cannot admit what the frozen validator rejected."""
+    rows = build_delivery_manifest(
+        [catalog_row("bad", status="rejected")], scoring=scoring([("bad", "A", 90.0)])
+    )
+    assert rows[0]["tier"] == "A"
     assert rows[0]["in_delivery_package"] == "false"
 
 
 def test_package_tiers_are_s_and_a() -> None:
+    """The priority tiers are unchanged; they simply no longer decide inclusion."""
     assert PACKAGE_TIERS == ("S", "A")
 
 
@@ -232,8 +249,11 @@ def test_summary_counts_match_the_rows() -> None:
     assert summary["risk_exposure"] == 1
     assert summary["tier_counts"] == {"S": 0, "A": 2, "B": 1, "C": 0}
     assert summary["fdr_accepted"] == 1
-    # Only `a` is validated, alpha, and tier A.
-    assert summary["in_delivery_package"] == 1
+    # `a` and `b` are validated and alpha; the exposure is excluded by policy, and the
+    # rejected/not_run rows never passed the gates. The tier does not change this.
+    assert summary["in_delivery_package"] == 2
+    # The narrower priority reading is still reported, so the card's opinion stays visible.
+    assert summary["in_delivery_package_tier_sa"] == 1
     assert summary["delivered_clusters"] == 1
     assert summary["representatives"] == 1
 

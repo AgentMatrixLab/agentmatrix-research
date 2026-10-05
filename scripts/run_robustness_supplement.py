@@ -119,7 +119,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--primary-horizon", type=int, default=10)
     parser.add_argument("--factor", action="append", dest="factors", help="restrict to this factor id")
     parser.add_argument("--panel-file", help="extended panel Parquet, enables industry-neutral IC")
-    parser.add_argument("--factor-file", help="factor value long table Parquet")
+    parser.add_argument("--factor-file", help="factor value Parquet, or a directory of parts")
+    parser.add_argument(
+        "--neutral-for-all",
+        action="store_true",
+        help="compute industry-neutral retention for every result, not just the factors that "
+             "passed. The default restricts it to the delivered set, which is a ~3x saving at "
+             "the real scale; FDR is unaffected either way because it reads every p-value.",
+    )
     parser.add_argument(
         "--neutralize-returns",
         action="store_true",
@@ -142,8 +149,22 @@ def main(argv: list[str] | None = None) -> int:
         if not (args.panel_file and args.factor_file):
             raise SystemExit("--panel-file and --factor-file must be supplied together")
         print("computing industry-neutral retention")
+        neutral_targets = results
+        if not args.neutral_for_all:
+            # The gates already ran; only the factors that cleared them are delivered, and the
+            # column is only reported for those. FDR is computed over every p-value regardless,
+            # so this narrows the work without narrowing the correction.
+            neutral_targets = [
+                result
+                for result in results
+                if result.get("status") == "validated" and not result.get("failed_gates")
+            ]
+            print(
+                f"  restricting retention to the {len(neutral_targets)} factor(s) that passed "
+                f"every frozen gate (of {len(results)}); pass --neutral-for-all to widen it"
+            )
         neutral = compute_neutral_ic(
-            results,
+            neutral_targets,
             Path(args.panel_file),
             Path(args.factor_file),
             horizon=args.primary_horizon,

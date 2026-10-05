@@ -169,6 +169,127 @@ def neutral_retention_by_factor(
 
 
 @dataclass
+class RankedBlock:
+    """Within-date percentile ranks for a set of factors, one column each.
+
+    This is the one structure several post-processing steps need: the redundancy correlation,
+    the strategy composite score, and the clustering all start from cross-sectionally ranked
+    factor values. Building it once and sharing it is what keeps the chain inside memory.
+    """
+
+    ranks: np.ndarray  # float32, shape (rows, factors), NaN where a factor has no value
+    dates: np.ndarray  # datetime64[ns] per row
+    codes: np.ndarray  # object per row
+    factor_ids: list[str]
+    factors_missing: list[str]
+
+    @property
+    def n_rows(self) -> int:
+        return int(self.ranks.shape[0])
+
+    def date_groups(self) -> tuple[np.ndarray, np.ndarray]:
+        """Row slices, one per date, after ordering rows by date."""
+        order = np.argsort(self.dates, kind="stable")
+        ordered = self.dates[order]
+        boundaries = np.flatnonzero(ordered[1:] != ordered[:-1]) + 1
+        starts = np.concatenate([[0], boundaries])
+        ends = np.concatenate([boundaries, [len(ordered)]])
+        return order, np.stack([starts, ends], axis=1)
+
+
+def ranked_block(
+    factor_paths,
+    *,
+    factor_ids: Iterable[str],
+    progress: Callable[[str], None] | None = None,
+) -> RankedBlock:
+    """Stream every factor into one column, then rank within each date.
+
+    Columns follow the order of ``factor_ids`` so a caller can weight them positionally. Peak
+    memory is a single float32 array of ``rows x factors`` (about 14 GB at 450 factors and
+    7.7M rows); the block is ranked in place, so the raw values are never held alongside it.
+    """
+    ordered_ids = [str(factor_id) for factor_id in factor_ids]
+    column_of = {factor_id: index for index, factor_id in enumerate(ordered_ids)}
+    reference = RowOrderReference()
+    wide: np.ndarray | None = None
+    seen: set[str] = set()
+
+    for series in iter_factor_series(factor_paths, reference=reference):
+        index = column_of.get(series.factor_id)
+        if index is None:
+            continue
+        if wide is None:
+            wide = np.full((len(series), len(ordered_ids)), np.nan, dtype=np.float32)
+        if len(series) != wide.shape[0]:
+            raise StreamingSupplementError(
+                f"factor {series.factor_id!r} has {len(series):,} rows, expected {wide.shape[0]:,}"
+            )
+        wide[:, index] = series.values
+        seen.add(series.factor_id)
+        if progress is not None:
+            progress(series.factor_id)
+
+    if wide is None:
+        return RankedBlock(np.empty((0, 0), dtype=np.float32), np.empty(0), np.empty(0),
+                           ordered_ids, ordered_ids)
+
+    dates, codes = reference.keys()
+    dates = pd.to_datetime(dates).to_numpy()
+    codes = np.asarray(codes, dtype=object)
+    block = RankedBlock(wide, dates, codes, ordered_ids,
+                        sorted(set(ordered_ids) - seen))
+
+    order = np.argsort(dates, kind="stable")
+    ordered = dates[order]
+    boundaries = np.flatnonzero(ordered[1:] != ordered[:-1]) + 1
+    starts = np.concatenate([[0], boundaries])
+    ends = np.concatenate([boundaries, [len(ordered)]])
+    for start, end in zip(starts, ends):
+        rows = order[start:end]
+        block.ranks[rows] = _rank_within_date(wide[rows].astype(np.float64, copy=False))
+    return block
+
+
+def composite_scores(
+    block: RankedBlock,
+    weights: Mapping[str, float] | None = None,
+    columns: Iterable[str] | None = None,
+) -> pd.DataFrame:
+    """Mean cross-sectional rank per (date, code) -- the demo's stock score.
+
+    Reproduces `build_strategy_demos.composite_stock_scores` without the pivot: the mean skips
+    missing factors, and when weights are supplied the weighted values are averaged over the
+    factors actually present rather than renormalised by the weight sum.
+    """
+    if block.n_rows == 0 or not block.factor_ids:
+        return pd.DataFrame({"date": [], "code": [], "score": []})
+
+    wanted = None if columns is None else {str(name) for name in columns}
+    indices = [
+        index
+        for index, factor_id in enumerate(block.factor_ids)
+        if wanted is None or factor_id in wanted
+    ]
+    if not indices:
+        raise StreamingSupplementError("no factor column was selected for the composite score")
+
+    matrix = block.ranks[:, indices].astype(np.float64, copy=False)
+    if weights:
+        factor = np.array(
+            [weights.get(block.factor_ids[index], 1.0) for index in indices], dtype=np.float64
+        )
+        matrix = matrix * factor
+
+    with np.errstate(invalid="ignore"):
+        score = np.nanmean(matrix, axis=1)
+    frame = pd.DataFrame(
+        {"date": block.dates, "code": block.codes, "score": score}
+    ).dropna(subset=["score"])
+    return frame.reset_index(drop=True)
+
+
+@dataclass
 class CorrelationResult:
     """The correlation matrices plus what it took to build them."""
 
@@ -245,56 +366,19 @@ def _correlation_from(stats: Mapping[str, np.ndarray]) -> np.ndarray:
         return np.where(denominator > 0, covariance / denominator, np.nan)
 
 
-def cross_sectional_correlation(
-    factor_paths: Sequence[str | Path],
-    *,
-    factor_ids: Iterable[str],
-    progress: Callable[[str], None] | None = None,
-    min_observations: int = 20,
-) -> CorrelationResult:
-    """Daily cross-sectional Spearman between factors, averaged over time.
+def correlation_from_block(block: RankedBlock, *, min_observations: int = 20) -> CorrelationResult:
+    """Both correlation statistics for an already-ranked block.
 
-    Peak memory is one float32 block of ``rows x factors`` plus a handful of small
-    accumulators; the previous pivot-based implementation needed several float64 copies of a
-    much larger frame.
+    Split out from `cross_sectional_correlation` so a caller that already holds the ranked
+    block -- the strategy demo does -- does not have to read the factor table a second time.
     """
-    ordered_ids = [str(factor_id) for factor_id in factor_ids]
-    empty = pd.DataFrame(index=ordered_ids, columns=ordered_ids, dtype=float)
-    if len(ordered_ids) < 2:
-        return CorrelationResult(empty, empty, 0, 0, 0, [])
+    labels = block.factor_ids
+    empty = pd.DataFrame(index=labels, columns=labels, dtype=float)
+    if block.n_rows == 0 or block.ranks.shape[1] < 2:
+        return CorrelationResult(empty, empty, 0, 0, 0, block.factors_missing)
 
-    column_of = {factor_id: index for index, factor_id in enumerate(ordered_ids)}
-    reference = RowOrderReference()
-    wide: np.ndarray | None = None
-    filled = 0
-    seen: set[str] = set()
-
-    for series in iter_factor_series(factor_paths, reference=reference):
-        index = column_of.get(series.factor_id)
-        if index is None:
-            continue
-        if wide is None:
-            wide = np.full((len(series), len(ordered_ids)), np.nan, dtype=np.float32)
-        if len(series) != wide.shape[0]:
-            raise StreamingSupplementError(
-                f"factor {series.factor_id!r} has {len(series):,} rows, expected {wide.shape[0]:,}"
-            )
-        wide[:, index] = series.values
-        seen.add(series.factor_id)
-        filled += 1
-        if progress is not None:
-            progress(series.factor_id)
-
-    if wide is None or filled < 2:
-        return CorrelationResult(empty, empty, 0, 0, 0, sorted(set(ordered_ids) - seen))
-
-    dates, _codes = reference.keys()
-    dates = pd.to_datetime(dates).to_numpy()
-    order = np.argsort(dates, kind="stable")
-    ordered_dates = dates[order]
-    boundaries = np.flatnonzero(ordered_dates[1:] != ordered_dates[:-1]) + 1
-    starts = np.concatenate([[0], boundaries])
-    ends = np.concatenate([boundaries, [len(ordered_dates)]])
+    wide = block.ranks
+    order, slices = block.date_groups()
 
     factors = wide.shape[1]
     pooled = {
@@ -309,12 +393,11 @@ def cross_sectional_correlation(
     daily_count = np.zeros((factors, factors))
     dates_used = dates_skipped = 0
 
-    for start, end in zip(starts, ends):
+    for start, end in slices:
         if end - start < min_observations:
             dates_skipped += 1
             continue
-        block = wide[order[start:end]].astype(np.float64, copy=False)
-        ranks = _rank_within_date(block)
+        ranks = wide[order[start:end]].astype(np.float64, copy=False)
         present = ~np.isnan(ranks)
         if present.sum() < 2:
             dates_skipped += 1
@@ -340,10 +423,23 @@ def cross_sectional_correlation(
     np.fill_diagonal(pooled_matrix, 1.0)
     np.fill_diagonal(daily_matrix, 1.0)
     return CorrelationResult(
-        correlation=pd.DataFrame(daily_matrix, index=ordered_ids, columns=ordered_ids),
-        pooled=pd.DataFrame(pooled_matrix, index=ordered_ids, columns=ordered_ids),
+        correlation=pd.DataFrame(daily_matrix, index=labels, columns=labels),
+        pooled=pd.DataFrame(pooled_matrix, index=labels, columns=labels),
         n_rows=int(wide.shape[0]),
         dates_used=dates_used,
         dates_skipped=dates_skipped,
-        factors_missing=sorted(set(ordered_ids) - seen),
+        factors_missing=block.factors_missing,
     )
+
+
+def cross_sectional_correlation(
+    factor_paths: Sequence[str | Path],
+    *,
+    factor_ids: Iterable[str],
+    progress: Callable[[str], None] | None = None,
+    min_observations: int = 20,
+) -> CorrelationResult:
+    """Daily cross-sectional Spearman between factors, averaged over time."""
+    ordered_ids = [str(factor_id) for factor_id in factor_ids]
+    block = ranked_block(factor_paths, factor_ids=ordered_ids, progress=progress)
+    return correlation_from_block(block, min_observations=min_observations)
