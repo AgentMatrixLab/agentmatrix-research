@@ -1,0 +1,16 @@
+# Shell scripts must keep LF endings. Git on Windows rewrites them to CRLF on
+# checkout, and bash then fails on the trailing carriage return with
+# "$'\r': command not found" -- which is how a run that looked launched died
+# immediately on the server.
+*.sh text eol=lf
+
+# Keep the container/CI entrypoints LF too, for the same reason.
+*.bash text eol=lf
+Dockerfile text eol=lf
+Makefile text eol=lf
+
+# Binary-ish artifacts that must never be line-ending converted.
+*.parquet binary
+*.png binary
+*.jpg binary
+*.xlsx binary
