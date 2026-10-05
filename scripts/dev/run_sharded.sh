@@ -24,9 +24,27 @@ REPO=$RUN/agentmatrix
 PY=/home/data/conda-envs/rqsdk/bin/python
 PANEL=$RUN/panel/validation_panel.parquet
 CONFIG=$REPO/configs/validation_gates.yaml
-SHARDS=${1:-53}
-PARALLEL=${2:-6}
+SHARDS=${1:-54}
+PARALLEL=${2:-3}
 EMIT_START=${3:-2020-01-02}
+# Minimum free memory (GB) before a memory-hungry validation may start. The
+# builder is light; the validator loads a whole factor file. Six workers running
+# both phases at once is what preceded the box becoming unreachable, so each
+# validation now waits for headroom instead of assuming it.
+MIN_FREE_GB=${MIN_FREE_GB:-12}
+
+wait_for_memory() {
+  local waited=0
+  while [ "$(free -g | awk '/^Mem:/{print $7}')" -lt "$MIN_FREE_GB" ]; do
+    if [ "$waited" -ge 1800 ]; then
+      echo "  WARNING: memory still below ${MIN_FREE_GB}GB after 30 min; proceeding"
+      return 0
+    fi
+    sleep 20
+    waited=$((waited + 20))
+  done
+  return 0
+}
 LOGS=$RUN/logs
 
 mkdir -p "$LOGS" "$RUN/shards"
@@ -74,6 +92,8 @@ run_shard() {
         --emit-start "$EMIT_START" || { echo "BUILD FAILED"; return 1; }
 
     echo "--- validate train ---"
+    wait_for_memory
+    echo "  free before train: $(free -g | awk '/^Mem:/{print $7}')GB"
     /usr/bin/time -f "train wall=%es maxrss=%MkB" \
       "$PY" -X utf8 -u -m research_core.factor_lab.cli validate-batch \
         --candidates "$dir/candidate_list.csv" \
@@ -84,6 +104,8 @@ run_shard() {
         --output-dir "$dir/train" || { echo "TRAIN FAILED"; return 1; }
 
     echo "--- validate oos ---"
+    wait_for_memory
+    echo "  free before oos: $(free -g | awk '/^Mem:/{print $7}')GB"
     /usr/bin/time -f "oos wall=%es maxrss=%MkB" \
       "$PY" -X utf8 -u -m research_core.factor_lab.cli validate-batch \
         --candidates "$dir/candidate_list.csv" \
