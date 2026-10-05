@@ -48,6 +48,11 @@ from research_core.factor_lab.scoring import (  # noqa: E402
     score_batch,
     select_representatives,
 )
+from research_core.factor_lab.streaming_supplement import (  # noqa: E402
+    composite_scores,
+    correlation_from_block,
+    ranked_block,
+)
 from research_core.strategy_operations.strategy_backtest import (  # noqa: E402
     DEFAULT_ROUND_TRIP_COST,
     backtest_weights,
@@ -85,7 +90,14 @@ def composite_stock_scores(
     factor_ids: list[str],
     weights: dict[str, float] | None = None,
 ) -> pd.DataFrame:
-    """Average cross-sectional rank of the selected factors, per (date, code)."""
+    """Average cross-sectional rank of the selected factors, per (date, code).
+
+    Retained as the REFERENCE implementation. `main` no longer calls it, because it needs the
+    whole factor table in memory and pivots it once per variant -- impossible at the delivery
+    scale. `streaming_supplement.composite_scores` is the streaming equivalent, and a test
+    requires the two to agree on the same input, so this stays as the thing that pins the
+    streaming version's arithmetic.
+    """
     selected = values[values["factor_name"].isin(factor_ids)]
     if selected.empty:
         raise DemoError("none of the selected factors has any values in the table")
@@ -176,7 +188,6 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     panel = pd.read_parquet(panel_path)
-    values = pd.read_parquet(factor_path)
     results = load_runs(runs_dir)
 
     passing = [item for item in results if not item.get("failed_gates")]
@@ -192,21 +203,28 @@ def main(argv: list[str] | None = None) -> int:
     ranked_factors = [item["factor_id"] for item in batch["factors"]]
     print(f"scored {batch['n_scored']} factor(s); tiers={batch['tier_counts']}")
 
-    base = values[~values["factor_name"].str.contains(r"\|window=", regex=True)]
-    available = [factor_id for factor_id in ranked_factors if factor_id in set(base["factor_name"])]
+    # ONE streaming pass over the factor table builds the ranked block that both the
+    # composite score and the redundancy clustering need. This replaces a whole-table
+    # `read_parquet` plus a `pivot_table` per variant: at the delivery scale the table is
+    # ~450 base series x 7.7M rows, which neither fits in memory nor survives that pivot.
+    block = ranked_block(factor_path, factor_ids=ranked_factors)
+    if block.factors_missing:
+        print(
+            f"  WARNING: {len(block.factors_missing)} scored factor(s) have no base series and "
+            f"are excluded: {block.factors_missing[:5]}"
+        )
+    available = [fid for fid in ranked_factors if fid not in set(block.factors_missing)]
     if not available:
         raise SystemExit("none of the scored factors has base values in the factor table")
+    print(f"ranked block: {block.n_rows:,} rows x {len(block.factor_ids)} factor(s)")
 
     # Cluster the passers so a low-correlation core can be carved out.
-    wide = base[base["factor_name"].isin(available)].pivot_table(
-        index=["date", "code"], columns="factor_name", values="value"
-    )
     representatives: list[str] = []
     clusters: dict = {"n_clusters": 0, "clusters": []}
     if len(available) >= 2:
-        ranks = wide.groupby(level="date").rank(pct=True)
-        correlation = ranks.corr(method="spearman", min_periods=20)
-        clusters = cluster_factors(correlation, threshold=args.cluster_threshold)
+        correlation = correlation_from_block(block)
+        matrix = correlation.correlation.loc[available, available]
+        clusters = cluster_factors(matrix, threshold=args.cluster_threshold)
         reps = select_representatives(clusters["clusters"], scores_by_factor)
         representatives = [item["representative"] for item in reps]
         print(f"clusters={clusters['n_clusters']}, representatives={len(representatives)}")
@@ -233,9 +251,10 @@ def main(argv: list[str] | None = None) -> int:
     for name, factor_ids in variants.items():
         if not factor_ids:
             continue
-        stock_scores = composite_stock_scores(
-            base, factor_ids, weights=None if name == "all_passers" else
-            {fid: scores_by_factor[fid]["composite"] for fid in factor_ids}
+        stock_scores = composite_scores(
+            block, None if name == "all_passers" else
+            {fid: scores_by_factor[fid]["composite"] for fid in factor_ids},
+            columns=factor_ids,
         )
         try:
             weights = build_weights_for_dates(

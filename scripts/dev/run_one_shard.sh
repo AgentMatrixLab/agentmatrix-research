@@ -17,7 +17,10 @@ PY=/home/data/conda-envs/rqsdk/bin/python
 PANEL=$RUN/panel/validation_panel.parquet
 CONFIG=$REPO/configs/validation_gates.yaml
 INDEX="$1"
-TAG=$(printf "shard%03d" "$INDEX")
+# `printf "%03d" "008"` reads the argument as octal and fails ("invalid octal
+# number"), so indices 008, 009, 018, 019 ... would resolve to the wrong tag and
+# write into another shard's directory. Force base 10.
+TAG=$(printf "shard%03d" "$((10#$INDEX))")
 DIR="$RUN/shards/$TAG"
 LOG="$RUN/logs/$TAG.log"
 EMIT_START=${EMIT_START:-2020-01-02}
