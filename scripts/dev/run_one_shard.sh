@@ -65,6 +65,18 @@ wait_for_memory() {
 
   echo "--- oos ---"
   wait_for_memory
+  # Only one worker may be in the `oos` phase at a time.
+  #
+  # Measured peaks on the 9.44M-row panel: build 4.9 GB, train 20.5 GB, oos 28 GB. Two workers
+  # overlapping in oos therefore want ~56 GB on a 62 GB box that is shared with other users.
+  # That is not theoretical: shards 004 and 005 were killed with signal 9 part-way through oos,
+  # and because `xargs` runs each index exactly once, a killed shard is never validated again --
+  # its four candidates are silently lost. Serialising just this phase caps the peak at
+  # oos + train (28 + 20.5 GB) while still letting both workers build and train concurrently.
+  exec 9>"$RUN/logs/oos.lock"
+  if ! flock -w 3600 9; then
+    echo "  could not take the oos lock within an hour; running anyway to avoid a stall"
+  fi
   /usr/bin/time -f "oos wall=%es maxrss=%MkB" \
     "$PY" -X utf8 -u -m research_core.factor_lab.cli validate-batch \
       --candidates "$DIR/candidate_list.csv" \
@@ -73,6 +85,7 @@ wait_for_memory() {
       --factor-file "$DIR/factor_values.parquet" \
       --segment oos \
       --output-dir "$DIR/oos" || echo "OOS FAILED"
+  flock -u 9
 
   echo "--- release ---"
   rm -f "$DIR/factor_values.parquet"
