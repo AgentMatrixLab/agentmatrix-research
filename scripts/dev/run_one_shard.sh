@@ -43,6 +43,17 @@ wait_for_memory() {
   export PYTHONPATH="$REPO"
 
   echo "--- build ---"
+  # Build in parallel across this shard's candidates.
+  #
+  # Measured build times span 140 s to 1851 s depending on formula nesting (nested rolling
+  # correlation over 9.44M rows is the expensive shape), and when a shard's build is expensive
+  # it is most of the shard -- 46 min against 18.7 min for a cheap one, which halves throughput
+  # whenever both workers draw an expensive shard. The box is otherwise idle during this phase
+  # (14 of 16 cores) because train and oos are memory-bound and cannot be spread.
+  #
+  # Safe because the output is unchanged: series are still emitted in the same order and a
+  # serial and 4-way build of the same candidates against the real panel were compared and came
+  # out byte-identical (same sha256, same report fields).
   /usr/bin/time -f "build wall=%es maxrss=%MkB" \
     "$PY" -X utf8 -u scripts/build_factor_values.py \
       --candidates "$DIR/candidate_list.csv" \
@@ -50,7 +61,8 @@ wait_for_memory() {
       --config "$CONFIG" \
       --output "$DIR/factor_values.parquet" \
       --report "$DIR/build_report.json" \
-      --emit-start "$EMIT_START" || { echo "BUILD FAILED"; exit 1; }
+      --emit-start "$EMIT_START" \
+      --jobs "${BUILD_JOBS:-4}" || { echo "BUILD FAILED"; exit 1; }
 
   echo "--- train ---"
   wait_for_memory
