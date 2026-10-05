@@ -13,6 +13,8 @@
 #   4a. strategy demos, which publish the clustering
 #   4b. fused delivery manifest (the single authoritative table), reusing that clustering
 #   5. live signals (文件单 / 条件单 / Supabase rows)
+#   7. auditable package: per-factor artifacts with hashes and exclusion reasons
+#   8. cross-check: independently re-derive every hash in the batch
 #
 # Evidence lives OUTSIDE the deploy directory on purpose. The frozen config writes
 # per-factor results under <repo>/data/..., and an upload used to wipe that tree, which
@@ -171,7 +173,21 @@ step "5. 实盘信号（文件单 / 条件单 / Supabase 行）"
     --delivery-manifest "$OUT/delivery_manifest.csv" \
     --out-dir "$OUT/live_signals" || { echo "SIGNALS FAILED"; exit 1; }
 
-step "6. 交付一致性交叉验证（独立重算每个哈希）"
+step "7. 可审计交付包（逐因子证据 + 排除原因）"
+# The most auditable artifact the delivery produces, and nothing in the chain was calling it.
+# For every included factor it copies the validator's own run_manifest / validation_report /
+# validation_result under factors/<id>/ and records each file's sha256; for every excluded
+# factor it records the failed gate AND the numbers that failed it, e.g.
+#   failed_gate=residual_ic actual={"raw_rank_ic":0.0131,"residual_rank_ic":0.0060,...}
+# so an exclusion can be checked rather than taken on trust. It also emits factor_catalog.csv.
+# Scoped to the batch (what actually ran), like the merge and the cross-check; the 25-column
+# delivery_manifest.csv is where the full authorised 849-candidate list is represented.
+"$PY" -X utf8 -u scripts/package_delivery.py \
+    --output-dir "$OUT/package" \
+    --batch-manifest "$OUT/merged_oos/batch_manifest.json" \
+    --candidates "$BATCH_CANDIDATES" || echo "  PACKAGING reported an issue (exit 4 = empty package)"
+
+step "8. 交付一致性交叉验证（独立重算每个哈希）"
 # Independent re-derivation of the batch's own artifacts. Exit 5 means it found an
 # inconsistency, which must be looked at rather than shipped.
 "$PY" -X utf8 -u scripts/cross_check_delivery.py \
