@@ -27,7 +27,16 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import numpy as np
 import pyarrow.parquet as pq
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from research_core.factor_lab.factor_value_stream import (  # noqa: E402
+    dictionary_codes_and_names,
+)
 
 CN_TZ = timezone(timedelta(hours=8))
 VALUE_COLUMNS = ("date", "code", "factor_name", "value")
@@ -115,18 +124,26 @@ def main(argv: list[str] | None = None) -> int:
                     "them would produce a file whose columns mean different things"
                 )
             for batch in parquet.iter_batches(batch_size=args.batch_rows, columns=list(VALUE_COLUMNS)):
-                names = batch.column("factor_name").to_pylist()
-                for name in names:
+                # Per-series counts from the dictionary codes. The first version called
+                # `to_pylist()` and looped over every row in Python, which on a 26 GB table is
+                # one string per row for no reason: a batch holds a handful of distinct series,
+                # so `bincount` over the codes gives the same counts in one pass.
+                code_values, labels = dictionary_codes_and_names(batch.column("factor_name"))
+                counts = np.bincount(code_values, minlength=len(labels))
+                for code, occurrences in enumerate(counts):
+                    if not occurrences:
+                        continue
+                    name = labels[code]
                     if VARIANT_MARKER in name:
                         raise ConsolidateError(
                             f"a perturbation variant ({name!r}) is present in {part.name}; the "
                             "consolidated file is defined to carry base series only"
                         )
-                    series[name] = series.get(name, 0) + 1
-                # A factor must appear in exactly one source. Two sources holding the same factor
-                # would duplicate every (date, code, factor_name) key, which the freeze rejects --
-                # but only after the whole file has been written. Catch it while copying.
-                for name in set(names):
+                    series[name] = series.get(name, 0) + int(occurrences)
+                    # A factor must appear in exactly one source. Two sources holding the same
+                    # factor would duplicate every (date, code, factor_name) key, which the
+                    # freeze rejects -- but only after the whole file has been written. Catch it
+                    # while copying.
                     previous = origin.setdefault(name, part.name)
                     if previous != part.name:
                         raise ConsolidateError(
@@ -136,7 +153,7 @@ def main(argv: list[str] | None = None) -> int:
                             "being merged with them."
                         )
                 writer.write_batch(batch)
-                rows += len(names)
+                rows += batch.num_rows
                 dates = batch.column("date")
                 if len(dates):
                     low = str(dates[0].as_py())[:10]

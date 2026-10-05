@@ -71,6 +71,8 @@
 | 交叉验证 | **`finding_count: 0`**（独立重算 76 个 result_hash/manifest/report、面板与配置哈希） | `rehearsal/scope_check.log` |
 | 面板列裁剪 | `prepare_panel` 只读 4 列（原 20 列）：准备 6.9 s → **4.5 s**，每因子 `panel.copy()` 缩小约 4 倍 | `rehearsal/panel_cols.log` |
 | 列名等价性 | 由 Parquet schema 取列名与整表读取所得**完全一致**（`IDENTICAL COLUMN LISTS: True`），故该改动不会改变任何因子值 | 同上 |
+| 因子值流式读取 | 修掉「每行一次 Python 循环 + 逐行 `to_pylist()`」后：**0.60 s/序列（原 7.12 s，11.9×）**；450 个序列 4.5 min（原约 53 min），峰值 1.4 GB | `rehearsal/stream_speed.log` |
+| 合并为单文件 | 22 个 parts / 50 个因子 / **384,808,350 行**：**97 s、峰值 599 MB**；每条序列均 7,696,167 行，且 50 × 7,696,167 恰等于总行数（据此证明无重复键） | `rehearsal/consolidate_speed.log` |
 
 ### 关于并行度：为什么不能开到 2 路以上
 

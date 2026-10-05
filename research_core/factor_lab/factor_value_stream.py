@@ -162,6 +162,30 @@ class RowOrderReference:
         return dates, codes
 
 
+def _codes_and_names(column: pa.Array) -> tuple[np.ndarray, list[str]]:
+    """Integer codes plus the small dictionary they index, for boundary detection."""
+    return dictionary_codes_and_names(column)
+
+
+def dictionary_codes_and_names(column: pa.Array) -> tuple[np.ndarray, list[str]]:
+    """Integer codes plus the small dictionary they index.
+
+    Callers that need to know which series a batch holds should use this rather than
+    ``to_pylist()``: on a 7.7M-row batch the latter builds 7.7M Python strings, which is the
+    difference between milliseconds and seconds per series.
+    """
+    if pa.types.is_dictionary(column.type):
+        return (
+            column.indices.to_numpy(zero_copy_only=False).astype(np.int64, copy=False),
+            column.dictionary.to_pylist(),
+        )
+    encoded = column.dictionary_encode()
+    return (
+        encoded.indices.to_numpy(zero_copy_only=False).astype(np.int64, copy=False),
+        encoded.dictionary.to_pylist(),
+    )
+
+
 def iter_factor_series(
     paths: Sequence[str | Path],
     *,
@@ -185,7 +209,6 @@ def iter_factor_series(
         if missing:
             raise FactorValueStreamError(f"{path} is missing columns: {', '.join(missing)}")
 
-        name_parts: list[pa.Array] = []
         date_parts: list[pa.Array] = []
         code_parts: list[pa.Array] = []
         value_parts: list[np.ndarray] = []
@@ -200,26 +223,34 @@ def iter_factor_series(
                 values=np.concatenate(value_parts) if value_parts else np.empty(0, dtype=float),
                 source=path,
             )
-            name_parts.clear()
             date_parts.clear()
             code_parts.clear()
             value_parts.clear()
             return series
 
-        for batch in parquet.iter_batches(batch_size=batch_rows, columns=list(VALUE_COLUMNS)):
+        for batch in parquet.iter_batches(
+            batch_size=batch_rows,
+            columns=list(VALUE_COLUMNS),
+        ):
             names = batch.column("factor_name")
             dates = batch.column("date")
             codes = batch.column("code")
             values = batch.column("value").to_numpy(zero_copy_only=False)
 
             # A row group may straddle two series: the writer flushes on row count, not on
-            # series boundaries. Boundaries are therefore detected per row, not per batch.
-            as_python = names.to_pylist()
-            start = 0
-            for position in range(1, len(as_python) + 1):
-                if position < len(as_python) and as_python[position] == as_python[start]:
-                    continue
-                name = as_python[start]
+            # series boundaries, so boundaries are found per row -- but from the dictionary
+            # CODES, not from materialised names.
+            #
+            # The first version called `to_pylist()` and then walked every row in Python,
+            # comparing strings: 7.7M iterations per series, measured at ~7 s per series. That
+            # is most of an hour for a 450-factor table, and the chain reads it more than once.
+            # `np.diff` on the integer codes finds the same boundaries in milliseconds, and the
+            # dictionary itself is a few hundred strings.
+            code_values, names_by_code = _codes_and_names(names)
+            boundaries = np.flatnonzero(code_values[1:] != code_values[:-1]) + 1
+            segments = np.concatenate([[0], boundaries, [len(code_values)]])
+            for start, stop in zip(segments[:-1], segments[1:]):
+                name = names_by_code[code_values[start]]
                 if name != current:
                     if current is not None:
                         if current in closed:
@@ -236,16 +267,13 @@ def iter_factor_series(
                                 on_series(series)
                             yield series
                         else:
-                            name_parts.clear()
                             date_parts.clear()
                             code_parts.clear()
                             value_parts.clear()
                     current = name
-                name_parts.append(names.slice(start, position - start))
-                date_parts.append(dates.slice(start, position - start))
-                code_parts.append(codes.slice(start, position - start))
-                value_parts.append(values[start:position])
-                start = position
+                date_parts.append(dates.slice(int(start), int(stop - start)))
+                code_parts.append(codes.slice(int(start), int(stop - start)))
+                value_parts.append(values[start:stop])
 
         if current is not None:
             if current in closed:
