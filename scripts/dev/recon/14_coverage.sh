@@ -1,4 +1,4 @@
-CH="clickhouse-client --user smartdata_ro --password <redacted>"
+CH="clickhouse-client --user smartdata_ro --password "$CH_PASSWORD""
 
 echo "===== stock_price_1d_raw: 日期范围 / 股票数 / adjust_type ====="
 $CH --query "

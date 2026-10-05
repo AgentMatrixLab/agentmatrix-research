@@ -19,7 +19,7 @@ for m in ['pandas','numpy','pyarrow','scipy','yaml','statsmodels','rqdatac','pyt
 echo
 echo "===== 容量测算 ====="
 echo "面板 2020-2026 的 (date,code) 对数："
-clickhouse-client --user smartdata_ro --password <redacted> --query "
+clickhouse-client --user smartdata_ro --password "$CH_PASSWORD" --query "
 SELECT count() FROM rqdata.stock_price_1d_raw
 WHERE adjust_type='none' AND trade_date >= '2020-01-02' AND trade_date <= '2026-08-31'
 " 2>&1 | head -3

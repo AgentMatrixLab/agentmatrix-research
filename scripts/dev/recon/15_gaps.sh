@@ -1,4 +1,4 @@
-CH="clickhouse-client --user smartdata_ro --password <redacted>"
+CH="clickhouse-client --user smartdata_ro --password "$CH_PASSWORD""
 
 echo "===== 已存在的导出：侧车全文 ====="
 for f in rqdata_panel.parquet.json benchmark_000985.parquet.json factor_values_long_2020_2026.parquet.json; do

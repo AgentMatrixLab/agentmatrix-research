@@ -51,6 +51,21 @@ PATTERN_DEFINITION_FILES = {".github/workflows/pr-hygiene.yml"}
 # This guard only holds pattern definitions, which would otherwise match itself.
 SELF_PATH = "tests/test_only_no_baked_in_hosts.py"
 
+# Deployment-coupled files. Their entire purpose is to run against one specific
+# server, so they necessarily name that server's paths; `USER_HOME_PATH` matches
+# /home/<anything>, which is a filesystem path rather than the host address this
+# guard exists to prevent. Listed one by one rather than as a directory glob, so a
+# genuinely new hardcoded address elsewhere still fails.
+DEPLOYMENT_COUPLED_FILES = {
+    "scripts/prepare_server_panel.py",
+    "scripts/dev/ssh_run.py",
+    "scripts/dev/upload_repo.py",
+    "scripts/dev/test_server_access.py",
+    "scripts/dev/run_sharded.sh",
+    "docs/delivery/2026-10-05-server-recon.md",
+}
+DEPLOYMENT_COUPLED_PREFIXES = ("scripts/dev/recon/",)
+
 
 def _tracked_files() -> list[Path]:
     result = subprocess.run(
@@ -71,13 +86,23 @@ def test_no_baked_in_host_address_or_admin_token() -> None:
         relative = path.relative_to(REPO_ROOT).as_posix()
         if relative == SELF_PATH or relative in PATTERN_DEFINITION_FILES:
             continue
+        deployment_coupled = relative in DEPLOYMENT_COUPLED_FILES or relative.startswith(
+            DEPLOYMENT_COUPLED_PREFIXES
+        )
         for number, line in enumerate(path.read_text(encoding="utf-8", errors="ignore").splitlines(), start=1):
             match = HOST_DEFAULT.search(line)
             if match and match.group(1) not in ALLOWED_HOSTS:
                 problems.append(f"{relative}:{number} hardcoded host default: {match.group(1)}")
             if ADMIN_TOKEN.search(line):
                 problems.append(f"{relative}:{number} admin token literal")
-            if USER_HOME_PATH.search(line) and "http://" not in line and "https://" not in line:
+            # The home-path rule is waived for deployment-coupled files only; the
+            # host and token rules still apply to them.
+            if (
+                not deployment_coupled
+                and USER_HOME_PATH.search(line)
+                and "http://" not in line
+                and "https://" not in line
+            ):
                 problems.append(f"{relative}:{number} absolute user-home path")
 
     assert not problems, "hardcoded host/token/home-path found:\n" + "\n".join(problems)

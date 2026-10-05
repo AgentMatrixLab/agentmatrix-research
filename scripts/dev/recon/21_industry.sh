@@ -1,5 +1,5 @@
 CH="/usr/local/bin/clickhouse-client"
-PW="<redacted>"
+PW="${CH_PASSWORD:?export CH_PASSWORD first}"
 echo "===== security_state_daily.industry_code 覆盖 ====="
 "$CH" --user smartdata_ro --password "$PW" --query "
 SELECT min(trade_date) AS d0, max(trade_date) AS d1, count() AS rows,

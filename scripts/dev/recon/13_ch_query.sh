@@ -1,4 +1,4 @@
-CH="clickhouse-client --user smartdata_ro --password <redacted>"
+CH="clickhouse-client --user smartdata_ro --password "$CH_PASSWORD""
 
 echo "===== 连通性 ====="
 $CH --query "SELECT version()" 2>&1 | head -3

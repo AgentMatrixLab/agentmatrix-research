@@ -1,4 +1,4 @@
-CH="clickhouse-client --user smartdata_ro --password <redacted>"
+CH="clickhouse-client --user smartdata_ro --password "$CH_PASSWORD""
 
 echo "===== 行业快照：具体日期 ====="
 $CH --query "SELECT DISTINCT query_date FROM rqdata.stock_industry_snapshot ORDER BY query_date" 2>&1 | head -25

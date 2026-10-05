@@ -28,6 +28,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
@@ -40,7 +41,7 @@ CN_TZ = timezone(timedelta(hours=8))
 
 CLICKHOUSE = "/usr/local/bin/clickhouse-client"
 CH_USER = "smartdata_ro"
-CH_PASSWORD = "<redacted>"
+CH_PASSWORD = os.environ.get("CH_PASSWORD", "")
 
 SHARES_SQL = """
 SELECT order_book_id AS code,

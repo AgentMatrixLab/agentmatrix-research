@@ -1,5 +1,5 @@
 CH="/usr/local/bin/clickhouse-client"
-PW="<redacted>"
+PW="${CH_PASSWORD:?export CH_PASSWORD first}"
 echo "===== stock_shares 结构 ====="
 "$CH" --user smartdata_ro --password "$PW" --query "DESCRIBE TABLE rqdata.stock_shares" 2>&1 | head -20
 echo "--- 样例 ---"
