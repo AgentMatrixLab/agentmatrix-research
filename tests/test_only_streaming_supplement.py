@@ -239,6 +239,62 @@ def test_only_ranked_block_reports_missing_factors(tmp_path: Path) -> None:
     assert panel.groupby("code")["forward_return"].apply(lambda s: s.tail(2).isna().all()).all()
 
 
+@pytest.mark.skipif(
+    "fork" not in __import__("multiprocessing").get_all_start_methods(),
+    reason="the parallel path only engages where fork exists (the Linux deployment target); "
+    "elsewhere the library deliberately falls back to the serial path",
+)
+def test_only_parallel_retention_matches_the_single_process_path(tmp_path: Path) -> None:
+    """`--jobs N` must not change a single number; it only changes how long it takes.
+
+    The per-factor maths is the dominant cost of the supplementary layer (~17 s per factor
+    over ~1,600 dates), so it is spread across processes on the critical path. A parallel path
+    that quietly disagreed with the serial one would be the worst kind of optimisation.
+    """
+    import os
+
+    rng = np.random.default_rng(23)
+    frames = []
+    for position, code in enumerate(CODES):
+        frames.append(
+            pd.DataFrame(
+                {
+                    "date": DATES,
+                    "code": code,
+                    "close": 10.0 + np.cumsum(rng.normal(0, 0.1, len(DATES))),
+                    "industry": "bank" if position % 3 else "tech",
+                }
+            )
+        )
+    panel_path = tmp_path / "panel.parquet"
+    pq.write_table(pa.Table.from_pandas(pd.concat(frames, ignore_index=True)), panel_path)
+    ids = ["f_a", "f_b", "f_c"]
+    _write_long_table(tmp_path / "values.parquet", ids, with_variants=False)
+
+    serial = neutral_retention_by_factor(
+        tmp_path / "values.parquet", panel_path=panel_path, horizon=1, factor_ids=ids, jobs=1
+    )
+    jobs = 2 if (os.cpu_count() or 1) > 1 else 1
+    parallel = neutral_retention_by_factor(
+        tmp_path / "values.parquet", panel_path=panel_path, horizon=1, factor_ids=ids, jobs=jobs
+    )
+
+    assert sorted(serial) == sorted(parallel) == ids
+    for factor_id in ids:
+        assert (serial[factor_id] is None) == (parallel[factor_id] is None)
+        if serial[factor_id] is None:
+            continue
+        assert parallel[factor_id]["raw"]["mean"] == pytest.approx(
+            serial[factor_id]["raw"]["mean"], rel=1e-12
+        )
+        assert parallel[factor_id]["neutral"]["mean"] == pytest.approx(
+            serial[factor_id]["neutral"]["mean"], rel=1e-12
+        )
+        assert parallel[factor_id]["retention"] == pytest.approx(
+            serial[factor_id]["retention"], rel=1e-12
+        )
+
+
 def test_only_refuses_a_panel_without_industry(tmp_path: Path) -> None:
     panel_path = tmp_path / "panel.parquet"
     pq.write_table(

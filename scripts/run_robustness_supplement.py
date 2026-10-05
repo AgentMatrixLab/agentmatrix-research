@@ -86,6 +86,7 @@ def compute_neutral_ic(
     *,
     horizon: int,
     neutralize_returns: bool,
+    jobs: int = 1,
 ) -> dict:
     """Industry-neutral retention per factor, without loading the whole factor table.
 
@@ -97,7 +98,7 @@ def compute_neutral_ic(
     unchanged.
     """
     factor_ids = [str(result["factor_id"]) for result in results]
-    print(f"  streaming {len(factor_ids)} factor(s) from {factor_path}")
+    print(f"  streaming {len(factor_ids)} factor(s) from {factor_path} with jobs={jobs}")
     return neutral_retention_by_factor(
         factor_path,
         panel_path=panel_path,
@@ -106,6 +107,7 @@ def compute_neutral_ic(
         factor_ids=factor_ids,
         allow_missing=True,
         progress=lambda factor_id: print(f"    neutral-IC {factor_id}", flush=True),
+        jobs=jobs,
     )
 
 
@@ -120,6 +122,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--factor", action="append", dest="factors", help="restrict to this factor id")
     parser.add_argument("--panel-file", help="extended panel Parquet, enables industry-neutral IC")
     parser.add_argument("--factor-file", help="factor value Parquet, or a directory of parts")
+    parser.add_argument(
+        "--jobs",
+        type=int,
+        default=1,
+        help="processes for the per-factor industry-neutral maths. Each factor needs two "
+             "per-date Spearman passes over ~1,600 dates (~17 s), so hundreds of factors "
+             "single-threaded is hours on the critical path. Uses fork, so the ~3 GB panel is "
+             "shared rather than copied; ignored where fork is unavailable.",
+    )
     parser.add_argument(
         "--neutral-for-all",
         action="store_true",
@@ -169,6 +180,7 @@ def main(argv: list[str] | None = None) -> int:
             Path(args.factor_file),
             horizon=args.primary_horizon,
             neutralize_returns=args.neutralize_returns,
+            jobs=args.jobs,
         )
     else:
         print("  industry-neutral IC skipped (no --panel-file/--factor-file)")

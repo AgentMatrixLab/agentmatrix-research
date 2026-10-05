@@ -105,11 +105,16 @@ VALUES=$CONSOLIDATED
 echo "  因子值来源: $VALUES"
 
 step "3. 稳健性附加层（FDR 勋章 + 行业中性留存）"
+# ~21 s per factor single-threaded, measured on the real panel, so hundreds of factors is
+# hours on the critical path. The maths is GIL-bound and embarrassingly parallel; fork shares
+# the ~3 GB panel. Measured on 29 real factors: 612 s serial vs 269 s at jobs=6, identical
+# numbers. 6 leaves the box room for the rest of the chain.
 "$PY" -X utf8 -u scripts/run_robustness_supplement.py \
     --runs-dir "$RUNS" \
     --panel-file "$PANEL" \
     --factor-file "$VALUES" \
     --q 0.05 \
+    --jobs "${NEUTRAL_JOBS:-6}" \
     --out "$OUT/supplementary_report.json" || { echo "SUPPLEMENT FAILED"; exit 1; }
 
 step "4a. 策略演示（样本外，含低位相关核心集）"

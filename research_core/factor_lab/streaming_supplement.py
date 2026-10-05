@@ -95,6 +95,36 @@ def _alignment_index(panel: pd.DataFrame, dates: np.ndarray, codes: np.ndarray) 
     return keys.get_indexer(wanted)
 
 
+_WORKER_STATE: dict = {}
+
+
+def _init_worker(panel: pd.DataFrame, positions: np.ndarray, neutralize_returns: bool) -> None:
+    """Give each worker the panel once, by fork, instead of pickling it per task.
+
+    The panel is ~3 GB; sending it with every task would cost more than the work.
+    """
+    _WORKER_STATE.clear()
+    _WORKER_STATE["panel"] = panel
+    _WORKER_STATE["positions"] = positions
+    _WORKER_STATE["neutralize_returns"] = neutralize_returns
+
+
+def _retention_task(item: tuple[str, np.ndarray]) -> tuple[str, dict | None]:
+    from research_core.factor_lab.supplementary import industry_neutral_retention
+
+    factor_id, values = item
+    panel = _WORKER_STATE["panel"]
+    aligned = pd.Series(np.nan, index=panel.index, dtype=float)
+    aligned.iloc[_WORKER_STATE["positions"]] = values
+    return factor_id, industry_neutral_retention(
+        panel,
+        factor_values=aligned,
+        factor_col="_factor",
+        return_col="forward_return",
+        neutralize_returns=_WORKER_STATE["neutralize_returns"],
+    )
+
+
 def neutral_retention_by_factor(
     factor_paths: Sequence[str | Path],
     *,
@@ -104,6 +134,7 @@ def neutral_retention_by_factor(
     factor_ids: Iterable[str] | None = None,
     allow_missing: bool = False,
     progress: Callable[[str], None] | None = None,
+    jobs: int = 1,
 ) -> dict[str, dict | None]:
     """Industry-neutral retention per factor, streaming one series at a time.
 
@@ -111,19 +142,35 @@ def neutral_retention_by_factor(
     raises, because a silent ``None`` is how a factor ends up delivered with no robustness
     evidence at all. Callers that prefer to report the gap and keep going pass True; either
     way, nothing is ever substituted for a measurement that was not made.
-    """
-    from research_core.factor_lab.supplementary import industry_neutral_retention
 
+    ``jobs`` spreads the per-factor maths across processes. It is worth having: each factor
+    needs two per-date Spearman passes over ~1,600 dates, measured at ~17 s, so 450 factors is
+    over two hours single-threaded -- on the critical path, after the shards have stopped.
+    The work is GIL-bound and embarrassingly parallel, and forking shares the panel rather than
+    copying it. ``jobs=1`` keeps the simple in-process path.
+    """
     panel = prepare_panel(panel_path, horizon=horizon)
     wanted = set(factor_ids) if factor_ids is not None else None
     reference = RowOrderReference()
     positions: np.ndarray | None = None
-    panel_dates = pd.to_datetime(panel["date"]).to_numpy()
-
     output: dict[str, dict | None] = {}
-    for series in iter_factor_series(factor_paths, reference=reference):
-        if wanted is not None and series.factor_id not in wanted:
-            continue
+    pool = None
+    pending: dict = {}
+    ctx = None
+
+    if jobs and jobs > 1:
+        import multiprocessing
+
+        if "fork" not in multiprocessing.get_all_start_methods():
+            # Without fork the ~3 GB panel is pickled to every worker, which costs more than
+            # the arithmetic it parallelises. Fall back to the in-process path rather than
+            # pretending to parallelise; the deployment target is Linux.
+            jobs = 1
+        else:
+            ctx = multiprocessing.get_context("fork")
+
+    def prepare(series: FactorSeries) -> tuple[str, np.ndarray]:
+        nonlocal positions
         if positions is None:
             dates, codes = reference.keys()
             positions = _alignment_index(panel, dates, codes)
@@ -133,24 +180,64 @@ def neutral_retention_by_factor(
                     f"{missing:,} of {len(positions):,} (date, code) rows in the factor values do "
                     "not appear in the panel; aligning them would silently score a subset"
                 )
-        values = series.values
-        if len(values) != len(positions):
+        if len(series.values) != len(positions):
             raise StreamingSupplementError(
-                f"factor {series.factor_id!r} has {len(values):,} rows but the alignment index "
-                f"has {len(positions):,}"
+                f"factor {series.factor_id!r} has {len(series.values):,} rows but the alignment "
+                f"index has {len(positions):,}"
             )
-        aligned = pd.Series(np.nan, index=panel.index, dtype=float)
-        aligned.iloc[positions] = values
-        retention = industry_neutral_retention(
-            panel,
-            factor_values=aligned,
-            factor_col="_factor",
-            return_col="forward_return",
-            neutralize_returns=neutralize_returns,
-        )
-        output[series.factor_id] = retention
-        if progress is not None:
-            progress(series.factor_id)
+        return series.factor_id, series.values
+
+    try:
+        for series in iter_factor_series(factor_paths, reference=reference):
+            if wanted is not None and series.factor_id not in wanted:
+                continue
+            factor_id, values = prepare(series)
+
+            if ctx is None:
+                aligned = pd.Series(np.nan, index=panel.index, dtype=float)
+                aligned.iloc[positions] = values
+                from research_core.factor_lab.supplementary import industry_neutral_retention
+
+                output[factor_id] = industry_neutral_retention(
+                    panel,
+                    factor_values=aligned,
+                    factor_col="_factor",
+                    return_col="forward_return",
+                    neutralize_returns=neutralize_returns,
+                )
+            else:
+                if pool is None:
+                    # The panel and the alignment index are inherited by fork, so they are not
+                    # pickled with each task.
+                    pool = ctx.Pool(
+                        jobs,
+                        initializer=_init_worker,
+                        initargs=(panel, positions, neutralize_returns),
+                    )
+                pending[pool.apply_async(_retention_task, ((factor_id, values),))] = factor_id
+                if len(pending) >= jobs * 3:
+                    for result in pending:
+                        key, value = result.get()
+                        output[key] = value
+                        if progress is not None:
+                            progress(key)
+                    pending.clear()
+
+            if ctx is None and progress is not None:
+                progress(factor_id)
+
+        if pool is not None:
+            for result in pending:
+                key, value = result.get()
+                output[key] = value
+                if progress is not None:
+                    progress(key)
+            pending.clear()
+            pool.close()
+            pool.join()
+    finally:
+        if pool is not None:
+            pool.terminate()
 
     if wanted is not None:
         absent = sorted(wanted - set(output))
