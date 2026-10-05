@@ -169,7 +169,8 @@ def main(argv: list[str] | None = None) -> int:
     industry = clickhouse_parquet(INDUSTRY_SQL, work / "industry.parquet")
     industry["query_date"] = pd.to_datetime(industry["query_date"])
     print(f"  industry: {len(industry):,} rows, {industry['code'].nunique():,} codes, "
-          f"{industry['query_date'].nunique()} snapshots")
+          f"{industry['query_date'].nunique()} snapshots, "
+          f"{industry['query_date'].min().date()} .. {industry['query_date'].max().date()}")
     # Half-yearly snapshots, so carry each forward to the next one.
     industry = industry.sort_values(["query_date", "code"])
     frame = pd.merge_asof(
@@ -177,8 +178,23 @@ def main(argv: list[str] | None = None) -> int:
         industry.rename(columns={"query_date": "date"}).sort_values("date"),
         on="date", by="code", direction="backward",
     )
-    coverage = frame["industry"].notna().mean()
-    print(f"  industry coverage after forward-fill: {coverage:.1%}")
+    after_ffill = frame["industry"].notna().mean()
+
+    # The earliest snapshot is 2020-06-30, so 2018-01-01..2020-06-29 -- including
+    # the first six months of the frozen train window -- would otherwise have no
+    # industry at all, and residual_ic would silently drop those rows. Carry each
+    # code's earliest known classification backwards instead. Industry membership
+    # is slow-moving, so this is a reasonable approximation, but it IS an
+    # approximation and is recorded as one.
+    before_backfill = int(frame["industry"].isna().sum())
+    frame["industry"] = frame.groupby("code")["industry"].transform(lambda s: s.bfill())
+    after_bfill = frame["industry"].notna().mean()
+    print(f"  industry coverage: {after_ffill:.1%} forward-fill -> {after_bfill:.1%} after back-fill "
+          f"({before_backfill:,} rows filled)")
+    train = frame[(frame["date"] >= "2020-01-02") & (frame["date"] <= "2022-12-31")]
+    oos = frame[(frame["date"] >= "2023-01-01") & (frame["date"] <= "2026-08-31")]
+    print(f"  frozen train industry coverage: {train['industry'].notna().mean():.1%}")
+    print(f"  frozen oos   industry coverage: {oos['industry'].notna().mean():.1%}")
 
     print("\n=== 5/5 write ===")
     frame["is_st"] = frame["is_st"].fillna(False).astype(bool)
@@ -210,6 +226,12 @@ def main(argv: list[str] | None = None) -> int:
         "price_basis": "post_adjusted_ohlc_via_adjustment_factor; total_turnover unadjusted cash amount",
         "universe": f"{frame['code'].nunique()} codes",
         "industry_source": "citics_2019 (first level), forward-filled from half-yearly snapshots",
+        "industry_note": (
+            "Snapshots start 2020-06-30. Each code's earliest classification is carried "
+            "backwards to cover 2018-01-01..2020-06-29, including the first six months of the "
+            "frozen train window, so residual_ic does not silently drop those rows. Industry "
+            "membership is slow-moving, but this is an approximation and is flagged as one."
+        ),
         "shares_note": (
             "circulation_a/total_shares come from rqdata.stock_shares, which starts 2020-01-02. "
             "Rows before that (warm-up only) carry the earliest known count per code via "
