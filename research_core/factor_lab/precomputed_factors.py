@@ -10,6 +10,8 @@ from pathlib import Path
 from typing import Any, Iterable
 
 import numpy as np
+import pyarrow as pa
+import pyarrow.parquet as pq
 import pandas as pd
 from pandas.api import types as ptypes
 
@@ -147,6 +149,28 @@ def _normalized_dates(values: pd.Series) -> pd.Series:
     if not parsed.eq(parsed.dt.normalize()).all():
         raise PrecomputedFactorError("date must contain dates without a time component")
     return parsed.dt.normalize()
+
+
+def _read_parquet_with_dictionary_columns(path: Path) -> pd.DataFrame:
+    """Read the factor Parquet with `code` and `factor_name` already dictionary-encoded.
+
+    Dictionary-encoding after the fact does not help: `frame[col].astype("category")`
+    builds the object column and the categorical at the same time, so the peak is
+    the sum of both. Measured on a real file that peak was 44 GB for 369M rows, and
+    the later fix that only touched the frame left the measurement at 14.6 GB for
+    92M rows because the object intermediate was still being created.
+
+    Encoding in Arrow first means the Python strings are never materialised at all.
+    """
+    table = pq.read_table(path)
+    for name in ("code", "factor_name"):
+        index = table.schema.get_field_index(name)
+        if index < 0:
+            continue
+        column = table.column(index)
+        if not pa.types.is_dictionary(column.type):
+            table = table.set_column(index, name, column.dictionary_encode())
+    return table.to_pandas()
 
 
 def _string_column(frame: pd.DataFrame, column: str) -> pd.Series:
@@ -289,7 +313,7 @@ def load_precomputed_factors(
     digest = _check_hash(data_path, metadata)
 
     try:
-        frame = pd.read_parquet(data_path)
+        frame = _read_parquet_with_dictionary_columns(data_path)
     except Exception as exc:
         raise PrecomputedFactorError(f"cannot read Parquet file: {data_path}") from exc
     if not isinstance(frame, pd.DataFrame) or frame.empty:
