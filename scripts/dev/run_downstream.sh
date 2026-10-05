@@ -91,6 +91,15 @@ else
       --output-dir "$REBUILD" || { echo "REBUILD FAILED"; exit 1; }
   VALUES=$REBUILD/factor_values.parquet
 fi
+
+step "2b. 合并为单一因子值文件（demo 与 cross_check 都要求带 sidecar 的单文件）"
+# The retention daemon produces one part per shard; the strategy demo refuses to run without
+# a sibling <factor-file>.json sidecar, and the cross-check verifies a digest against a named
+# file. Consolidating is a row-group copy -- bounded in memory, unlike a rebuild.
+CONSOLIDATED=$REBUILD/factor_values.parquet
+"$PY" -X utf8 -u scripts/consolidate_factor_values.py \
+    --parts "$VALUES" --output "$CONSOLIDATED" || { echo "CONSOLIDATE FAILED"; exit 1; }
+VALUES=$CONSOLIDATED
 echo "  因子值来源: $VALUES"
 
 step "3. 稳健性附加层（FDR 勋章 + 行业中性留存）"

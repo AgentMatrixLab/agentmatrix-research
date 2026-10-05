@@ -239,10 +239,25 @@ def main(argv: list[str] | None = None) -> int:
     rebalance_dates = month_end_dates(panel["date"], count=args.rebalances)
     benchmark_level = None
     benchmark_series = None
-    if "industry" in panel.columns and {"date", "close"} <= set(panel.columns):
-        market = panel.groupby("date")["close"].mean()
-        benchmark_series = market
-        benchmark_level = float(market.iloc[0])
+    if {"date", "code", "close"} <= set(panel.columns):
+        # An equal-weighted index of per-name daily returns.
+        #
+        # This replaces `panel.groupby("date")["close"].mean()`, which averages price LEVELS
+        # across names and is therefore not an index at all: a 5-yuan stock and a 200-yuan
+        # stock contribute 1 and 200 to it, so its change is driven by which names happen to
+        # be expensive rather than by how the market performed. Reporting an excess return
+        # against it would be meaningless.
+        price_panel = panel.pivot_table(
+            index="date", columns="code", values="close", aggfunc="last"
+        ).sort_index()
+        equal_weighted = price_panel.pct_change().mean(axis=1).fillna(0.0)
+        benchmark_series = (1.0 + equal_weighted).cumprod()
+        benchmark_level = float(benchmark_series.iloc[0])
+
+    # Names that never carry a price must never reach the book: the engine cannot value them
+    # and would carry them at zero, silently vaporising the position.
+    priced_codes = set(panel.loc[panel["close"].notna(), "code"].astype(str))
+    print(f"  priced names: {len(priced_codes)}")
 
     strategy_index: list[dict] = []
     backtest_results: dict[str, dict] = {}
@@ -256,6 +271,11 @@ def main(argv: list[str] | None = None) -> int:
             {fid: scores_by_factor[fid]["composite"] for fid in factor_ids},
             columns=factor_ids,
         )
+        # Only names the price panel can actually value.
+        stock_scores = stock_scores[stock_scores["code"].astype(str).isin(priced_codes)]
+        if stock_scores.empty:
+            print(f"  {name}: skipped (no scored name has a price)")
+            continue
         try:
             weights = build_weights_for_dates(
                 stock_scores, rebalance_dates, top_n=args.top_n, max_weight=args.max_weight
@@ -271,6 +291,14 @@ def main(argv: list[str] | None = None) -> int:
                 round_trip_cost=args.round_trip_cost,
                 benchmark=benchmark_series,
                 benchmark_level=benchmark_level,
+                # Stated explicitly rather than left to the default. The default is "error",
+                # which aborts on the first held name that is unquoted on some date -- and on a
+                # 5,455-name all-A universe that happens constantly, so three of the four
+                # variants silently produced no strategy at all. "last_close" carries the last
+                # known close for a suspended name, which is the conservative reading: the
+                # alternative in this engine is valuing it at zero, which would vaporise the
+                # position and flatter the curve.
+                missing_price_policy="last_close",
             )
         except Exception as exc:  # noqa: BLE001
             print(f"  {name}: backtest failed ({type(exc).__name__}: {exc})")
@@ -332,6 +360,13 @@ def main(argv: list[str] | None = None) -> int:
                 },
                 "cost_model": {"round_trip_total": args.round_trip_cost},
                 "universe_rule": f"all-A panel, top {args.top_n} by composite rank",
+                "benchmark": (
+                    "equal-weighted index of per-name daily returns; replaces the previous "
+                    "mean-close-level series, which was not an index because it weights names "
+                    "by share price rather than by return"
+                ),
+                "missing_price_policy": "last_close",
+                "priced_names": len(priced_codes),
                 "top_n": args.top_n,
                 "clusters": clusters,
                 "results": backtest_results,
