@@ -247,13 +247,14 @@ def main(argv: list[str] | None = None) -> int:
 
     # Cluster the passers so a low-correlation core can be carved out.
     representatives: list[str] = []
+    representatives_detail: list[dict] = []
     clusters: dict = {"n_clusters": 0, "clusters": []}
     if len(available) >= 2:
         correlation = correlation_from_block(block)
         matrix = correlation.correlation.loc[available, available]
         clusters = cluster_factors(matrix, threshold=args.cluster_threshold)
-        reps = select_representatives(clusters["clusters"], scores_by_factor)
-        representatives = [item["representative"] for item in reps]
+        representatives_detail = select_representatives(clusters["clusters"], scores_by_factor)
+        representatives = [item["representative"] for item in representatives_detail]
         print(f"clusters={clusters['n_clusters']}, representatives={len(representatives)}")
 
     variants: dict[str, list[str]] = {
@@ -363,6 +364,30 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit("no strategy variant could be built")
 
     out_dir.mkdir(parents=True, exist_ok=True)
+    # Publish the clustering so the delivery manifest reuses THIS one.
+    #
+    # Two reasons. First, consistency: the manifest used to compute its own clustering on the
+    # scored factor set while this script clustered the subset that has values, so
+    # `cluster_id` in the delivery table could disagree with the low-correlation core the demo
+    # actually traded. Second, cost: rebuilding the ranked block purely to re-derive a
+    # correlation already computed here is another full pass over a table that reaches ~26 GB.
+    (out_dir / "clusters.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "generated_at": generated,
+                "threshold": args.cluster_threshold,
+                "n_clusters": clusters.get("n_clusters", 0),
+                "clusters": clusters.get("clusters", []),
+                "representatives": representatives_detail,
+                "clustered_factors": available,
+                "source": "build_strategy_demos, daily cross-sectional Spearman on the ranked block",
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
     (out_dir / "strategies.json").write_text(
         json.dumps(
             {

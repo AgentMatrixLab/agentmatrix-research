@@ -108,6 +108,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--supplementary", default="", help="supplementary_report.json")
     parser.add_argument("--factor-file", default="", help="enables clustering")
     parser.add_argument("--cluster-threshold", type=float, default=0.7)
+    parser.add_argument(
+        "--clusters-json",
+        default="",
+        help="clustering published by build_strategy_demos; reusing it keeps the delivery "
+             "table's cluster_id consistent with the low-correlation core the demo traded, "
+             "and avoids rebuilding the ranked block purely to re-derive the correlation",
+    )
     parser.add_argument("--summary-out", default="", help="where the JSON summary goes")
     args = parser.parse_args(argv)
 
@@ -121,6 +128,29 @@ def main(argv: list[str] | None = None) -> int:
     )
     print(f"catalog rows: {len(catalog)}")
 
+    # A stale merged manifest is the quiet way this delivery goes wrong: the catalog supplies
+    # status/failed_gates, and if it was merged before the last shards finished, the package is
+    # built from a subset while everything else looks healthy. The rehearsal hit exactly this
+    # (catalog said 9 validated, the runs directory held 24).
+    catalog_validated = sum(1 for row in catalog if row.get("status") == "validated")
+    if args.runs_dir:
+        runs_validated = 0
+        for result_path in sorted(Path(args.runs_dir).glob("*/validation_result.json")):
+            try:
+                payload = json.loads(result_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if payload.get("status") == "validated" and not payload.get("failed_gates"):
+                runs_validated += 1
+        print(f"  validated: catalog={catalog_validated}, runs dir={runs_validated}")
+        if runs_validated > catalog_validated:
+            print(
+                f"  WARNING: the batch manifest records {catalog_validated} validated factor(s) "
+                f"but the runs directory holds {runs_validated}. The catalog is the status "
+                "source, so the package will be built from the smaller set -- re-run the merge "
+                "against the finished shards before trusting this manifest."
+            )
+
     scoring: dict | None = None
     clusters: dict | None = None
     representatives: list = []
@@ -133,7 +163,19 @@ def main(argv: list[str] | None = None) -> int:
             scoring = score_batch(runs)
             print(f"scored {scoring['n_scored']} (skipped {scoring['n_skipped']}), tiers={scoring['tier_counts']}")
 
-    if args.factor_file and scoring:
+    if args.clusters_json:
+        payload = json.loads(Path(args.clusters_json).read_text(encoding="utf-8"))
+        clusters = {
+            "n_clusters": int(payload.get("n_clusters", 0)),
+            "clusters": list(payload.get("clusters", [])),
+        }
+        representatives = list(payload.get("representatives", []))
+        print(
+            f"clusters from {Path(args.clusters_json).name}: "
+            f"{clusters['n_clusters']} cluster(s), {len(representatives)} representative(s), "
+            f"threshold={payload.get('threshold')}"
+        )
+    elif args.factor_file and scoring:
         scored_ids = [item["factor_id"] for item in scoring["factors"]]
         clusters, _ = compute_clusters(Path(args.factor_file), scored_ids, args.cluster_threshold)
         if clusters["clusters"]:

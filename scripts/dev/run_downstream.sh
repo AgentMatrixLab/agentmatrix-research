@@ -8,9 +8,11 @@
 #   1. merge the per-shard batch manifests into one
 #   2. collect factor VALUES for the passing factors -- from the retention parts if
 #      the daemon caught them, otherwise by rebuilding
+#   2b. consolidate those parts into one file with a sidecar
 #   3. additive robustness layer (FDR badge, industry-neutral retention)
-#   4. fused delivery manifest (the single authoritative table), with clustering
-#   5. strategy demos and live signals (文件单 / 条件单 / Supabase rows)
+#   4a. strategy demos, which publish the clustering
+#   4b. fused delivery manifest (the single authoritative table), reusing that clustering
+#   5. live signals (文件单 / 条件单 / Supabase rows)
 #
 # Evidence lives OUTSIDE the deploy directory on purpose. The frozen config writes
 # per-factor results under <repo>/data/..., and an upload used to wipe that tree, which
@@ -110,7 +112,26 @@ step "3. 稳健性附加层（FDR 勋章 + 行业中性留存）"
     --q 0.05 \
     --out "$OUT/supplementary_report.json" || { echo "SUPPLEMENT FAILED"; exit 1; }
 
-step "4. 交付清单（25 列冻结 schema）"
+step "4a. 策略演示（样本外，含低位相关核心集）"
+# Runs BEFORE the manifest on purpose. It builds the ranked block and publishes its clustering
+# to clusters.json, which the manifest then reuses: the delivery table's cluster_id and the
+# low-correlation core the demo traded then come from one clustering instead of two, and the
+# manifest does not rebuild an ~18 GB block purely to re-derive the correlation.
+"$PY" -X utf8 -u scripts/build_strategy_demos.py \
+    --panel-file "$PANEL" \
+    --factor-file "$VALUES" \
+    --runs-dir "$RUNS" \
+    --out-dir "$OUT/strategy_demos" || { echo "DEMOS FAILED"; exit 1; }
+
+step "4b. 交付清单（25 列冻结 schema）"
+CLUSTERS="$OUT/strategy_demos/clusters.json"
+CLUSTER_ARG=""
+if [ -f "$CLUSTERS" ]; then
+  CLUSTER_ARG="--clusters-json $CLUSTERS"
+  echo "  复用演示步骤发布的聚类: $CLUSTERS"
+else
+  echo "  未找到 clusters.json；交付清单将自行计算聚类（会多花一次全表读取）"
+fi
 "$PY" -X utf8 -u scripts/build_delivery_manifest.py \
     --candidates "$RUN/candidate_list.csv" \
     --batch-manifest "$OUT/merged_oos/batch_manifest.json" \
@@ -118,16 +139,10 @@ step "4. 交付清单（25 列冻结 schema）"
     --supplementary "$OUT/supplementary_report.json" \
     --factor-file "$VALUES" \
     --cluster-threshold 0.7 \
+    $CLUSTER_ARG \
     --out "$OUT/delivery_manifest.csv" || { echo "MANIFEST FAILED"; exit 1; }
 
-step "5a. 策略演示（样本外，含低位相关核心集）"
-"$PY" -X utf8 -u scripts/build_strategy_demos.py \
-    --panel-file "$PANEL" \
-    --factor-file "$VALUES" \
-    --runs-dir "$RUNS" \
-    --out-dir "$OUT/strategy_demos" || { echo "DEMOS FAILED"; exit 1; }
-
-step "5b. 实盘信号（文件单 / 条件单 / Supabase 行）"
+step "5. 实盘信号（文件单 / 条件单 / Supabase 行）"
 "$PY" -X utf8 -u scripts/build_live_signals.py \
     --panel-file "$PANEL" \
     --factor-file "$VALUES" \
