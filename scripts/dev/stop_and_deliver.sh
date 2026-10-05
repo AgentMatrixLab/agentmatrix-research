@@ -133,6 +133,9 @@ STATUS=$?
 
 echo
 echo "=== 6. 结果 ==="
+echo "--- 验收检查（只读）---"
+"$PY" -X utf8 -u "$REPO/scripts/verify_delivery.py" --delivery-dir "$RUN/delivery" || true
+echo
 if [ -f "$RUN/delivery/delivery_manifest.csv" ]; then
   "$PY" -X utf8 - "$RUN/delivery/delivery_manifest.csv" <<'PYEOF'
 import csv, sys

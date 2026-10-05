@@ -156,6 +156,14 @@ print(json.load(open('$RUN/delivery/delivery_manifest.summary.json')).get('in_de
       echo "$(date -Is) chain_exit=$status no_manifest" > "$DONE_MARK"
     fi
 
+    # Record the acceptance verdict alongside the chain result, so an unattended delivery
+    # leaves an audit trail rather than a count that has to be taken on trust.
+    if [ -f "$REPO/scripts/verify_delivery.py" ]; then
+      "$PY" -X utf8 "$REPO/scripts/verify_delivery.py" --delivery-dir "$RUN/delivery" \
+        >> "$RUN/logs/auto_deliver_acceptance.log" 2>&1
+      log "acceptance check exit $?; see logs/auto_deliver_acceptance.log"
+    fi
+
     # Leave the pool stopped: the run is over, and a restart would only add load.
     exit "$status"
   fi
