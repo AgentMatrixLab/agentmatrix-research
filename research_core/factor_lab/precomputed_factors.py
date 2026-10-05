@@ -357,11 +357,15 @@ def load_precomputed_factors(
     # per row on a real file, 15.6 GB for 92M rows, and that is what forced tiny
     # shards. Keeping the categorical gives the level an integer code plus a
     # shared dictionary of a few thousand names instead.
+    #
+    # Note `Categorical.to_numpy()` returns an *object* array of the category
+    # values, so the categorical has to be passed through as-is; converting it was
+    # what left the level object-typed on the first attempt.
     series = {
         str(name): pd.Series(
             group["value"].to_numpy(dtype="float64"),
             index=pd.MultiIndex.from_arrays(
-                [group["date"].to_numpy(), group["code"].to_numpy()],
+                [group["date"].to_numpy(), group["code"].array],
                 names=["date", "code"],
             ),
         )
