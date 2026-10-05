@@ -36,3 +36,10 @@ desktop/release-zoom/
 test_kline_api.py
 test_quant_api.py
 test_json_output.py
+
+# Scratch from server/repo comparisons. A `git add -A` once swept a server snapshot --
+# including a stale copy of a library module -- into a commit; these names stop that recurring.
+server_hashes.txt
+snapshot.tgz
+snapshot_b64.txt
+snapshot_dir/
