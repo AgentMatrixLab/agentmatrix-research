@@ -202,12 +202,38 @@ def main(argv: list[str] | None = None) -> int:
     dates = pd.to_datetime(panel[args.date_column])
     codes = panel[args.code_column].astype(str)
 
-    frames: list[pd.DataFrame] = []
     factors_meta: dict[str, dict] = {}
     failures: list[tuple[str, str]] = []
     vacuous: list[str] = []
     ambiguous: list[tuple[str, int]] = []
     started = time.perf_counter()
+
+    # Write each series as soon as it is computed and release it, rather than
+    # accumulating the shard and writing at the end. Holding a 53-factor shard's
+    # series costs about 12 GB (159 series x 9.44M values x 8 bytes), which capped
+    # the run at four workers and left it within a few GB of the OOM killer.
+    output = Path(args.output)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    if output.exists():
+        output.unlink()
+    writer = pq.ParquetWriter(output, schema=_series_arrow_schema(), compression="zstd")
+    series_count = 0
+    total_rows = 0
+
+    def emit(name: str, values: pd.Series) -> None:
+        """Write one factor series and release it immediately."""
+        nonlocal series_count, total_rows
+        frame = pd.DataFrame({
+            args.date_column: dates,
+            args.code_column: codes,
+            "factor_name": name,
+            "value": pd.to_numeric(pd.Series(values), errors="coerce").to_numpy(dtype=float),
+        }).replace([np.inf, -np.inf], np.nan)
+        writer.write_table(
+            pa.Table.from_pandas(frame, schema=_series_arrow_schema(), preserve_index=False)
+        )
+        series_count += 1
+        total_rows += len(frame)
 
     for position, candidate in enumerate(candidates, start=1):
         factor_id = candidate.factor_id
@@ -240,10 +266,7 @@ def main(argv: list[str] | None = None) -> int:
             failures.append((factor_id, f"{type(exc).__name__}: {exc}"))
             continue
 
-        frames.append(pd.DataFrame({
-            args.date_column: dates, args.code_column: codes,
-            "factor_name": factor_id, "value": base_values.to_numpy(dtype=float),
-        }))
+        emit(factor_id, base_values)
         factors_meta[factor_id] = {"window": int(base_window)}
 
         windows = variant_windows(int(base_window), multipliers)
@@ -267,38 +290,17 @@ def main(argv: list[str] | None = None) -> int:
                 except Exception as exc:  # noqa: BLE001
                     failures.append((factor_id, f"variant {window}: {type(exc).__name__}: {exc}"))
                     continue
-            frames.append(pd.DataFrame({
-                args.date_column: dates, args.code_column: codes,
-                "factor_name": name, "value": values.to_numpy(dtype=float),
-            }))
+            emit(name, values)
 
-        if position % 50 == 0 or position == len(candidates):
+        if position % 25 == 0 or position == len(candidates):
             elapsed = time.perf_counter() - started
             rate = elapsed / position
             print(f"  {position}/{len(candidates)}  {rate:.2f}s/factor  "
-                  f"eta {(len(candidates) - position) * rate / 60:.1f} min")
+                  f"eta {(len(candidates) - position) * rate / 60:.1f} min", flush=True)
 
-    if not frames:
+    writer.close()
+    if series_count == 0:
         raise FactorValueError("nothing was computed; refusing to write an empty dataset")
-
-    # Write each series as its own row group instead of concatenating everything
-    # and writing once. Accumulating a whole shard costs roughly 12 GB on top of
-    # the panel (159 series x 9.44M values x 8 bytes), which is what capped
-    # parallelism at about four workers.
-    output = Path(args.output)
-    output.parent.mkdir(parents=True, exist_ok=True)
-    if output.exists():
-        output.unlink()
-
-    writer = pq.ParquetWriter(output, schema=_series_arrow_schema(), compression="zstd")
-    total_rows = 0
-    try:
-        for frame in frames:
-            frame = frame.replace([np.inf, -np.inf], np.nan)
-            writer.write_table(pa.Table.from_pandas(frame, schema=_series_arrow_schema(), preserve_index=False))
-            total_rows += len(frame)
-    finally:
-        writer.close()
 
     sidecar_path = Path(args.sidecar) if args.sidecar else Path(f"{output}.json")
     sidecar = {
@@ -321,7 +323,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"\nwrote {output}")
     print(f"  rows       : {total_rows:,}")
     print(f"  base factor: {len(factors_meta)}")
-    print(f"  series     : {len(frames):,}")
+    print(f"  series     : {series_count:,}")
     print(f"  shared with: {sidecar_path}")
 
     if vacuous:
@@ -343,7 +345,7 @@ def main(argv: list[str] | None = None) -> int:
     report = {
         "candidates": len(candidates),
         "base_factors": len(factors_meta),
-        "series": len(frames),
+        "series": series_count,
         "rows": int(total_rows),
         "multipliers": multipliers,
         "panel_columns_used": keep_columns,
