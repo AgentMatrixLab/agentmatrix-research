@@ -172,6 +172,25 @@ def test_only_is_idempotent(tmp_path: Path) -> None:
     assert part.read_bytes() == first
 
 
+def test_only_drops_a_stale_link_left_after_the_part_is_written(tmp_path: Path) -> None:
+    """A leftover link would hold ~800 MB per shard for the rest of the run."""
+    shard = _write_shard(tmp_path, "shard000", passing=("ALPHA:A",))
+    settled: dict = {}
+    _run(shard, tmp_path, settled)
+    _run(shard, tmp_path, settled)
+
+    link = tmp_path / "values" / "raw" / "shard000.parquet"
+    # Simulate what a re-run leaves behind: a link that survived the part being written.
+    import os
+
+    os.link(shard / "factor_values.parquet", link)
+    assert link.exists()
+
+    assert _run(shard, tmp_path, settled)["action"] == "already_retained"
+    assert not link.exists(), "the stale link must be cleaned up"
+    assert (tmp_path / "values" / "parts" / "shard000.parquet").is_file()
+
+
 def test_only_rejects_a_part_whose_row_counts_do_not_match_the_report(tmp_path: Path) -> None:
     """If the factor file disagrees with its own build report, keep nothing."""
     shard = _write_shard(tmp_path, "shard000", passing=("ALPHA:A",))

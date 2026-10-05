@@ -86,6 +86,12 @@ def retain_one(
 
     # --- 1. link the values while they still exist -------------------------------
     if part.exists():
+        # The part is written; any hard link still pointing at a shard's factor file is a
+        # leftover. Leaving it holds ~800 MB per shard for the rest of the run -- about 3 GB was
+        # already stranded this way before this cleanup existed.
+        if link.exists():
+            link.unlink(missing_ok=True)
+            log(f"  {tag}: dropped a stale link left over after the part was written")
         state["action"] = "already_retained"
         return state
 

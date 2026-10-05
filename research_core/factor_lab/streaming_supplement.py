@@ -283,24 +283,27 @@ def composite_scores(
     if not indices:
         raise StreamingSupplementError("no factor column was selected for the composite score")
 
-    matrix = block.ranks[:, indices].astype(np.float64, copy=True)
-    for position, index in enumerate(indices):
-        value = None if directions is None else directions.get(block.factor_ids[index])
-        if value is not None and float(value) < 0:
-            column = matrix[:, position]
-            matrix[:, position] = np.where(np.isnan(column), np.nan, 1.0 - column)
+    # Accumulated one column at a time on purpose. Slicing the block (`ranks[:, indices]`) and
+    # casting to float64 would materialise 7.7M x n_factors x 8 bytes -- 37 GB at 600 factors,
+    # on top of the float32 block itself -- which is an OOM at exactly the moment the delivery is
+    # being assembled. One column at a time is 61 MB.
+    rows = block.ranks.shape[0]
+    total = np.zeros(rows, dtype=np.float64)
+    count = np.zeros(rows, dtype=np.int64)
+    for index in indices:
+        column = block.ranks[:, index].astype(np.float64)
+        direction = None if directions is None else directions.get(block.factor_ids[index])
+        if direction is not None and float(direction) < 0:
+            column = np.where(np.isnan(column), np.nan, 1.0 - column)
+        if weights:
+            column = column * float(weights.get(block.factor_ids[index], 1.0))
+        present = ~np.isnan(column)
+        total[present] += column[present]
+        count[present] += 1
 
-    if weights:
-        factor = np.array(
-            [weights.get(block.factor_ids[index], 1.0) for index in indices], dtype=np.float64
-        )
-        matrix = matrix * factor
-
-    # Rows where no selected factor has a value are expected (a name can be missing from every
-    # series); the mean of an all-NaN row is NaN and the row is dropped, so the warning is noise.
-    with np.errstate(invalid="ignore"), warnings.catch_warnings():
-        warnings.simplefilter("ignore", RuntimeWarning)
-        score = np.nanmean(matrix, axis=1)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        score = np.where(count > 0, total / np.maximum(count, 1), np.nan)
+    score[count == 0] = np.nan
     frame = pd.DataFrame(
         {"date": block.dates, "code": block.codes, "score": score}
     ).dropna(subset=["score"])
@@ -412,6 +415,12 @@ def correlation_from_block(block: RankedBlock, *, min_observations: int = 20) ->
     order, slices = block.date_groups()
 
     factors = wide.shape[1]
+    # Two regimes, accumulated separately and combined at the end.
+    #
+    # A date whose cross-section is complete for every factor needs no pairwise bookkeeping: the
+    # counts and sums collapse to scalars, so ONE matrix product suffices. Dates with gaps need
+    # the full pairwise set. At the delivery scale most factors have full coverage, so the fast
+    # path carries nearly all the weight and cuts the dominant cost by roughly six.
     pooled = {
         "n": np.zeros((factors, factors)),
         "x": np.zeros((factors, factors)),
@@ -420,9 +429,17 @@ def correlation_from_block(block: RankedBlock, *, min_observations: int = 20) ->
         "yy": np.zeros((factors, factors)),
         "xy": np.zeros((factors, factors)),
     }
+    complete_rows = 0
+    complete_sum = np.zeros(factors)
+    complete_sq = np.zeros(factors)
+    complete_xy = np.zeros((factors, factors))
     daily_sum = np.zeros((factors, factors))
     daily_count = np.zeros((factors, factors))
     dates_used = dates_skipped = 0
+
+    def _accumulate_daily(per_date: np.ndarray, usable: np.ndarray) -> None:
+        daily_sum[:] += np.where(usable, per_date, 0.0)
+        daily_count[:] += usable
 
     for start, end in slices:
         if end - start < min_observations:
@@ -434,20 +451,41 @@ def correlation_from_block(block: RankedBlock, *, min_observations: int = 20) ->
             dates_skipped += 1
             continue
 
-        stats, _mask = _daily_statistics(ranks, present)
-        for key, value in stats.items():
-            pooled[key] += value
+        if present.all():
+            rows = end - start
+            column_sum = ranks.sum(axis=0)
+            column_sq = (ranks * ranks).sum(axis=0)
+            product = ranks.T @ ranks
+            complete_rows += rows
+            complete_sum += column_sum
+            complete_sq += column_sq
+            complete_xy += product
 
-        # This date's own correlation, kept separate so the average over dates is available
-        # alongside the pooled figure. Both come from the same accumulators, so the extra
-        # cost is arithmetic rather than another pass over the data.
-        per_date = _correlation_from(stats)
-        usable = (stats["n"] >= min_observations) & ~np.isnan(per_date)
-        daily_sum += np.where(usable, per_date, 0.0)
-        daily_count += usable
+            with np.errstate(invalid="ignore", divide="ignore"):
+                mean = column_sum / rows
+                covariance = product / rows - np.outer(mean, mean)
+                variance = column_sq / rows - mean * mean
+                denominator = np.sqrt(np.outer(variance, variance))
+                per_date = np.where(denominator > 0, covariance / denominator, np.nan)
+            _accumulate_daily(per_date, ~np.isnan(per_date))
+        else:
+            stats, _mask = _daily_statistics(ranks, present)
+            for key, value in stats.items():
+                pooled[key] += value
+            per_date = _correlation_from(stats)
+            usable = (stats["n"] >= min_observations) & ~np.isnan(per_date)
+            _accumulate_daily(per_date, usable)
         dates_used += 1
 
-    pooled_matrix = _correlation_from(pooled)
+    combined = {
+        "n": pooled["n"] + complete_rows,
+        "x": pooled["x"] + complete_sum[:, None],
+        "y": pooled["y"] + complete_sum[None, :],
+        "xx": pooled["xx"] + complete_sq[:, None],
+        "yy": pooled["yy"] + complete_sq[None, :],
+        "xy": pooled["xy"] + complete_xy,
+    }
+    pooled_matrix = _correlation_from(combined)
     with np.errstate(invalid="ignore", divide="ignore"):
         daily_matrix = np.where(daily_count > 0, daily_sum / daily_count, np.nan)
 
