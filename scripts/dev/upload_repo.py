@@ -88,7 +88,8 @@ def main(argv: list[str] | None = None) -> int:
 
         code, out, err = run(
             f"cd {args.remote_dir} && tar xf {remote_archive} && rm -f {remote_archive} "
-            f"&& echo 'extracted' && ls | head -20"
+            f"&& echo '{revision}' > COMMIT "
+            f"&& echo 'extracted' && ls COMMIT && cat COMMIT"
         )
         print(out.strip())
         if code != 0:

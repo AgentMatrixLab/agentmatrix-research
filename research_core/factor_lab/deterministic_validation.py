@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
 import re
 import subprocess
 from dataclasses import dataclass
@@ -107,13 +108,38 @@ def _frame_hash(frame: pd.DataFrame) -> str:
 
 
 def _git_commit() -> str:
-    return subprocess.run(
-        ["git", "rev-parse", "HEAD"],
-        cwd=PROJECT_ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout.strip()
+    """The revision this code is running from, for the run manifest.
+
+    This is provenance, not a validation input, so it must never be able to abort a
+    run. A deployment shipped as a git archive has no `.git` directory, and
+    `git rev-parse` then exits 128 -- which killed every shard's train validation
+    on the 115 server with a CalledProcessError that had nothing to do with the
+    factor being tested.
+
+    Resolution order, most trustworthy first:
+      1. AGENTMATRIX_COMMIT -- set by whoever deployed, survives the archive step
+      2. a COMMIT file written next to the code at upload time
+      3. `git rev-parse HEAD`
+      4. "unknown", which the manifest records honestly rather than guessing
+    """
+    explicit = os.environ.get("AGENTMATRIX_COMMIT", "").strip()
+    if explicit:
+        return explicit
+    stamp = PROJECT_ROOT / "COMMIT"
+    if stamp.is_file():
+        recorded = stamp.read_text(encoding="utf-8", errors="ignore").strip()
+        if recorded:
+            return recorded
+    try:
+        completed = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=PROJECT_ROOT, capture_output=True, text=True, timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return "unknown"
+    if completed.returncode != 0:
+        return "unknown"
+    return completed.stdout.strip() or "unknown"
 
 
 #: Characters no mainstream filesystem accepts, plus the Windows reserved set.
