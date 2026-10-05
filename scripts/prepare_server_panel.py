@@ -46,9 +46,9 @@ SHARES_SQL = """
 SELECT order_book_id AS code,
        toString(trade_date) AS date,
        toFloat64(circulation_a) AS circulation_a,
-       toFloat64(total_shares) AS total_shares
+       toFloat64(total) AS total_shares
 FROM rqdata.stock_shares
-WHERE trade_date >= '2017-12-01'
+WHERE trade_date >= '2019-12-01'
 FORMAT Parquet
 """
 
@@ -148,8 +148,23 @@ def main(argv: list[str] | None = None) -> int:
     shares = clickhouse_parquet(SHARES_SQL, work / "stock_shares.parquet")
     shares["date"] = pd.to_datetime(shares["date"])
     shares["code"] = shares["code"].astype(str)
-    print(f"  shares: {len(shares):,} rows, {shares['code'].nunique():,} codes")
+    print(f"  shares: {len(shares):,} rows, {shares['code'].nunique():,} codes, "
+          f"{shares['date'].min().date()} .. {shares['date'].max().date()}")
     frame = frame.merge(shares, on=["code", "date"], how="left")
+
+    # Share counts only start 2020-01-02, while the panel starts 2018-01-01 for
+    # warm-up. Carry each code's earliest known count backwards and the latest
+    # forwards: share counts move slowly, and circulation_a only feeds a handful
+    # of turnover-ratio factors. Recorded in the sidecar rather than assumed.
+    for column in ("circulation_a", "total_shares"):
+        frame[column] = (
+            frame.groupby("code")[column]
+            .transform(lambda s: s.ffill().bfill())
+        )
+    missing_shares = int(frame["circulation_a"].isna().sum())
+    backfilled = int((frame["date"] < "2020-01-02").sum())
+    print(f"  circulation_a null after fill: {missing_shares:,} "
+          f"(rows before 2020-01-02 carried by fill: {backfilled:,})")
 
     industry = clickhouse_parquet(INDUSTRY_SQL, work / "industry.parquet")
     industry["query_date"] = pd.to_datetime(industry["query_date"])
@@ -195,6 +210,11 @@ def main(argv: list[str] | None = None) -> int:
         "price_basis": "post_adjusted_ohlc_via_adjustment_factor; total_turnover unadjusted cash amount",
         "universe": f"{frame['code'].nunique()} codes",
         "industry_source": "citics_2019 (first level), forward-filled from half-yearly snapshots",
+        "shares_note": (
+            "circulation_a/total_shares come from rqdata.stock_shares, which starts 2020-01-02. "
+            "Rows before that (warm-up only) carry the earliest known count per code via "
+            "forward/backward fill."
+        ),
         "generated_at": datetime.now(CN_TZ).isoformat(timespec="seconds"),
         "columns": list(frame.columns),
     }
