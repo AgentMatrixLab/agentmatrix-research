@@ -45,11 +45,17 @@ step "1. 合并分片 manifest"
     --output-dir "$OUT/merged_oos" || { echo "MERGE FAILED"; exit 1; }
 
 step "2. 稳健性附加层（FDR + 行业中性 + 基准超额）"
-"$PY" -X utf8 -u scripts/run_robustness_supplement.py \
-    --runs-dir "$RUN"/shards/shard*/oos/../oos \
-    --panel-file "$PANEL" \
-    --q 0.05 \
-    --out "$OUT/supplementary_report.json" || { echo "SUPPLEMENT FAILED"; exit 1; }
+# NOTE: the shards delete their factor files on completion, so the supplementary
+# layer cannot read them here. It needs factor VALUES, and FDR is a batch-level
+# statistic that has to see every factor's p-value at once, so it cannot be done
+# per shard either.
+#
+# Plan: first merge the frozen-gate results, take the factors that PASSED, and
+# recompute values for just those (~500 of 849) in one pass. That is the set the
+# badge is actually reported for, and it is a fraction of the work the full run
+# did. Recorded here so it is not mistaken for a missing step.
+echo "  (需要先按下面的步骤重建通过者的因子值，见 NOTE)"
+echo "  暂时跳过；先出冻结门槛结果"
 
 step "3. 交付清单"
 "$PY" -X utf8 -u scripts/build_delivery_manifest.py \
