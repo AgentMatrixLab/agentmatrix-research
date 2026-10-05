@@ -163,6 +163,93 @@ def variant_windows(base_window: int, multipliers: list[float]) -> list[int]:
     return sorted({max(1, int(round(base_window * float(m)))) for m in multipliers})
 
 
+#: Worker state for the parallel build path. The panel is installed once per process by fork,
+#: so it is shared rather than pickled with every task.
+_BUILD_WORKER: dict = {}
+
+
+def _init_build_worker(panel: pd.DataFrame, candidates: list, multipliers: list[float]) -> None:
+    _BUILD_WORKER.clear()
+    _BUILD_WORKER["panel"] = panel
+    _BUILD_WORKER["candidates"] = candidates
+    _BUILD_WORKER["multipliers"] = multipliers
+
+
+def compute_one_candidate(index: int) -> dict:
+    """Compute one candidate's base series and its perturbation variants.
+
+    Returns the values rather than writing them, so the caller can emit in the original order.
+    Extraction is what makes the build parallelisable: the phases are independent per candidate
+    and the box is CPU-idle, while the shard's other phases are memory-bound and cannot be
+    spread. Everything here mirrors the serial path exactly, including which failures are
+    recorded and in what order the series are produced.
+    """
+    panel = _BUILD_WORKER["panel"]
+    candidate = _BUILD_WORKER["candidates"][index]
+    multipliers = _BUILD_WORKER["multipliers"]
+
+    factor_id = candidate.factor_id
+    metadata = candidate.metadata or {}
+    expression = metadata.get("formula", "")
+    if not expression:
+        return {"factor_id": factor_id, "failure": "candidate carries no formula"}
+
+    base_window = candidate.window
+    if base_window is None:
+        # Not merely at risk: the sidecar contract requires every declared factor to carry a
+        # positive integer window, so a windowless factor cannot be represented in this file at
+        # all, and the validator cannot obtain a base window for it. Excluding it here is the
+        # honest outcome.
+        return {
+            "factor_id": factor_id,
+            "failure": "no window: the factor file cannot declare a windowless factor, "
+                       "so this candidate cannot be validated (see Q11)",
+        }
+
+    try:
+        base_values = pd.Series(compile_formula(expression)(panel))
+    except UnsupportedOperatorError as exc:
+        return {"factor_id": factor_id, "failure": f"unsupported operator: {exc}"}
+    except Exception as exc:  # noqa: BLE001
+        return {"factor_id": factor_id, "failure": f"{type(exc).__name__}: {exc}"}
+
+    emitted: list[tuple[str, pd.Series]] = [(factor_id, base_values)]
+    failures: list[str] = []
+    ambiguous: int | None = None
+    windows = variant_windows(int(base_window), multipliers)
+    for window in windows:
+        name = perturbation_factor_name(factor_id, window)
+        if window == int(base_window):
+            # Still emit it: the gate asks for this name and has no fallback.
+            values = base_values
+        else:
+            variant_expression, replacements = substitute_window(
+                expression, int(base_window), window
+            )
+            if replacements == 0:
+                failures.append(
+                    f"window {base_window} not found in the expression for variant {window}"
+                )
+                continue
+            if replacements > 1:
+                ambiguous = replacements
+            try:
+                values = pd.Series(compile_formula(variant_expression)(panel))
+            except Exception as exc:  # noqa: BLE001
+                failures.append(f"variant {window}: {type(exc).__name__}: {exc}")
+                continue
+        emitted.append((name, values))
+
+    return {
+        "factor_id": factor_id,
+        "window": int(base_window),
+        "emitted": emitted,
+        "vacuous": all(window == int(base_window) for window in windows),
+        "ambiguous": ambiguous,
+        "failures": failures,
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--candidates", required=True)
@@ -180,6 +267,18 @@ def main(argv: list[str] | None = None) -> int:
              "for warm-up but never written",
     )
     parser.add_argument("--report", default="", help="where to write the build report JSON")
+    parser.add_argument(
+        "--jobs",
+        type=int,
+        default=1,
+        help="processes for the per-candidate maths. The build is single-threaded and the box "
+             "is CPU-idle while the shard's train/oos phases are memory-bound and cannot be "
+             "spread, so this is the one phase that can use spare cores. Measured builds span "
+             "140 s to 1851 s depending on formula nesting, and for the expensive ones the "
+             "build is most of the shard. Series are still emitted in the original order, so "
+             "the file is byte-identical; fork shares the panel. Ignored where fork is "
+             "unavailable.",
+    )
     args = parser.parse_args(argv)
 
     config = yaml.safe_load(Path(args.config).read_text(encoding="utf-8"))
@@ -273,68 +372,67 @@ def main(argv: list[str] | None = None) -> int:
             emitted_start = block_start if emitted_start is None else min(emitted_start, block_start)
             emitted_end = block_end if emitted_end is None else max(emitted_end, block_end)
 
-    for position, candidate in enumerate(candidates, start=1):
-        factor_id = candidate.factor_id
-        metadata = candidate.metadata or {}
-        expression = metadata.get("formula", "")
-        if not expression:
-            failures.append((factor_id, "candidate carries no formula"))
-            continue
-        base_window = candidate.window
-        if base_window is None:
-            # Not merely at risk: the sidecar contract requires every declared
-            # factor to carry a positive integer window, so a windowless factor
-            # cannot be represented in this file at all, and the validator cannot
-            # obtain a base window for it. Excluding it here is the honest
-            # outcome; silently emitting a series the sidecar cannot declare would
-            # fail later with a much less obvious message.
-            failures.append((
-                factor_id,
-                "no window: the factor file cannot declare a windowless factor, "
-                "so this candidate cannot be validated (see Q11)",
-            ))
-            continue
-
-        try:
-            base_values = pd.Series(compile_formula(expression)(panel))
-        except UnsupportedOperatorError as exc:
-            failures.append((factor_id, f"unsupported operator: {exc}"))
-            continue
-        except Exception as exc:  # noqa: BLE001
-            failures.append((factor_id, f"{type(exc).__name__}: {exc}"))
-            continue
-
-        emit(factor_id, base_values)
-        factors_meta[factor_id] = {"window": int(base_window)}
-
-        windows = variant_windows(int(base_window), multipliers)
-        if all(window == int(base_window) for window in windows):
+    def apply(result: dict) -> None:
+        """Record and emit one candidate's outcome, in the original order."""
+        factor_id = result["factor_id"]
+        if "emitted" not in result:
+            failures.append((factor_id, result["failure"]))
+            return
+        for reason in result["failures"]:
+            failures.append((factor_id, reason))
+        factors_meta[factor_id] = {"window": result["window"]}
+        if result["vacuous"]:
             vacuous.append(factor_id)
-
-        for window in windows:
-            name = perturbation_factor_name(factor_id, window)
-            if window == int(base_window):
-                # Still emit it: the gate asks for this name and has no fallback.
-                values = base_values
-            else:
-                variant_expression, replacements = substitute_window(expression, int(base_window), window)
-                if replacements == 0:
-                    failures.append((factor_id, f"window {base_window} not found in the expression for variant {window}"))
-                    continue
-                if replacements > 1 and (factor_id, replacements) not in ambiguous:
-                    ambiguous.append((factor_id, replacements))
-                try:
-                    values = pd.Series(compile_formula(variant_expression)(panel))
-                except Exception as exc:  # noqa: BLE001
-                    failures.append((factor_id, f"variant {window}: {type(exc).__name__}: {exc}"))
-                    continue
+        replacements = result["ambiguous"]
+        if replacements is not None and (factor_id, replacements) not in ambiguous:
+            ambiguous.append((factor_id, replacements))
+        for name, values in result["emitted"]:
             emit(name, values)
 
-        if position % 25 == 0 or position == len(candidates):
-            elapsed = time.perf_counter() - started
-            rate = elapsed / position
-            print(f"  {position}/{len(candidates)}  {rate:.2f}s/factor  "
-                  f"eta {(len(candidates) - position) * rate / 60:.1f} min", flush=True)
+    # Installed in the parent too, so the serial path uses exactly the same code as the
+    # workers. The pool's initializer re-installs it per worker process.
+    _init_build_worker(panel, candidates, multipliers)
+
+    pool = None
+    context = None
+    if args.jobs and args.jobs > 1:
+        import multiprocessing
+
+        if "fork" not in multiprocessing.get_all_start_methods():
+            print("  --jobs ignored: the parallel build needs fork, which this platform lacks")
+        else:
+            context = multiprocessing.get_context("fork")
+            pool = context.Pool(
+                args.jobs,
+                initializer=_init_build_worker,
+                initargs=(panel, candidates, multipliers),
+            )
+
+    if pool is not None:
+        print(f"  building with {args.jobs} process(es); series are still emitted in order")
+        try:
+            # imap preserves submission order, so results are emitted exactly as the serial
+            # path would emit them and the written file is unchanged.
+            for position, result in enumerate(
+                pool.imap(compute_one_candidate, range(len(candidates)), chunksize=1), start=1
+            ):
+                apply(result)
+                if position % 25 == 0 or position == len(candidates):
+                    elapsed = time.perf_counter() - started
+                    rate = elapsed / position
+                    print(f"  {position}/{len(candidates)}  {rate:.2f}s/factor  "
+                          f"eta {(len(candidates) - position) * rate / 60:.1f} min", flush=True)
+        finally:
+            pool.close()
+            pool.join()
+    else:
+        for position, candidate in enumerate(candidates, start=1):
+            apply(compute_one_candidate(position - 1))
+            if position % 25 == 0 or position == len(candidates):
+                elapsed = time.perf_counter() - started
+                rate = elapsed / position
+                print(f"  {position}/{len(candidates)}  {rate:.2f}s/factor  "
+                      f"eta {(len(candidates) - position) * rate / 60:.1f} min", flush=True)
 
     writer.close()
     if series_count == 0:
