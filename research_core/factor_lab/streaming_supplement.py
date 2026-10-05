@@ -69,13 +69,28 @@ class StreamingSupplementError(RuntimeError):
     """Raised when the streaming layer cannot produce an honest statistic."""
 
 
+#: The panel columns this layer needs. The panel carries ~20; reading all of them costs
+#: several GB, and every per-factor call copies the frame, so the waste is paid hundreds of
+#: times. Only these four are ever touched.
+PANEL_COLUMNS = ("date", "code", "close", "industry")
+
+
 def prepare_panel(panel_path: str | Path, *, horizon: int) -> pd.DataFrame:
     """Panel sorted by ``(code, date)`` with the forward return the gates use.
 
     Identical in effect to the previous in-memory preparation, so the neutral IC stays
-    comparable to the rehearsal numbers.
+    comparable to the rehearsal numbers; it simply does not load the other sixteen columns.
     """
-    panel = pd.read_parquet(panel_path)
+    import pyarrow.parquet as pq
+
+    available = set(pq.ParquetFile(panel_path).schema_arrow.names)
+    for required in ("date", "code", "close"):
+        if required not in available:
+            raise StreamingSupplementError(
+                f"panel has no `{required}` column; industry-neutral retention cannot be computed"
+            )
+    columns = [name for name in PANEL_COLUMNS if name in available]
+    panel = pd.read_parquet(panel_path, columns=columns)
     if "industry" not in panel.columns:
         raise StreamingSupplementError(
             "panel has no `industry` column; industry-neutral retention cannot be computed"

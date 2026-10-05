@@ -119,7 +119,13 @@ def main(argv: list[str] | None = None) -> int:
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    panel = pd.read_parquet(panel_path)
+    # Only the columns the signal build reads; the panel carries ~20.
+    import pyarrow.parquet as pq
+
+    available = set(pq.ParquetFile(panel_path).schema_arrow.names)
+    panel = pd.read_parquet(
+        panel_path, columns=[name for name in ("date", "code", "close") if name in available]
+    )
     required = {"date", "code", "close"}
     missing = sorted(required - set(panel.columns))
     if missing:

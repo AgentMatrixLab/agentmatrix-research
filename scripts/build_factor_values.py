@@ -189,7 +189,11 @@ def main(argv: list[str] | None = None) -> int:
         candidates = candidates[: args.limit]
     print(f"candidates: {len(candidates)}   multipliers: {multipliers}")
 
-    schema_columns = pd.read_parquet(args.panel_file).columns.tolist()
+    # Column names come from the Parquet schema, not from the data. `pd.read_parquet(...)
+    # .columns` reads the entire 817 MB panel to produce a list of names, and this runs in
+    # every shard's build phase -- an hour of pure waste across 213 shards, plus a multi-GB
+    # spike for nothing.
+    schema_columns = list(pq.ParquetFile(args.panel_file).schema_arrow.names)
     expressions = [(c.metadata or {}).get("formula", "") for c in candidates]
     keep_columns = required_panel_columns(expressions, schema_columns)
     print(f"panel columns kept: {len(keep_columns)}/{len(schema_columns)} -> {keep_columns}")

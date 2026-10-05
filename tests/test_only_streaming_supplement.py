@@ -295,6 +295,32 @@ def test_only_parallel_retention_matches_the_single_process_path(tmp_path: Path)
         )
 
 
+def test_only_prepare_panel_reads_only_the_columns_it_needs(tmp_path: Path) -> None:
+    """The panel carries ~20 columns; this layer touches four.
+
+    Every per-factor call copies the frame, so loading the other sixteen is waste paid
+    hundreds of times -- and it is the kind of waste that comes back silently when someone
+    edits the loader, so it is pinned.
+    """
+    rng = np.random.default_rng(31)
+    frames = []
+    for code in CODES:
+        row = {
+            "date": DATES,
+            "code": code,
+            "close": 10.0 + np.cumsum(rng.normal(0, 0.1, len(DATES))),
+            "industry": "bank",
+        }
+        for extra in range(6):
+            row[f"unused_{extra}"] = rng.normal(size=len(DATES))
+        frames.append(pd.DataFrame(row))
+    panel_path = tmp_path / "panel.parquet"
+    pq.write_table(pa.Table.from_pandas(pd.concat(frames, ignore_index=True)), panel_path)
+
+    panel = prepare_panel(panel_path, horizon=1)
+    assert set(panel.columns) == {"date", "code", "close", "industry", "forward_return"}
+
+
 def test_only_refuses_a_panel_without_industry(tmp_path: Path) -> None:
     panel_path = tmp_path / "panel.parquet"
     pq.write_table(

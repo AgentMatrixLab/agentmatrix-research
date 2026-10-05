@@ -188,7 +188,13 @@ def main(argv: list[str] | None = None) -> int:
             "refusing to write synthetic strategy results into the published dashboard directory"
         )
 
-    panel = pd.read_parquet(panel_path)
+    # Only the columns this script touches. The panel carries ~20; the rest are several GB of
+    # dead weight, and the backtest subsets three of them anyway.
+    import pyarrow.parquet as pq
+
+    available = set(pq.ParquetFile(panel_path).schema_arrow.names)
+    panel_columns = [name for name in ("date", "code", "close", "industry") if name in available]
+    panel = pd.read_parquet(panel_path, columns=panel_columns)
     results = load_runs(runs_dir)
 
     passing = [item for item in results if not item.get("failed_gates")]

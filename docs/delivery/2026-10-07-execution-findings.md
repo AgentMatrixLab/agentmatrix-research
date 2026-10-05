@@ -69,6 +69,8 @@
 | 交付清单复用聚类 | **150 s / 18 GB → 1.03 s / 162 MB** | `rehearsal/run_neworder.log` |
 | oos 内存轨迹 | **锯齿形**：2–3 分钟一个周期，从 ~13 GB 升到 20–25 GB 再回落，峰值 25–28 GB | `rehearsal/rss_profile.log` |
 | 交叉验证 | **`finding_count: 0`**（独立重算 76 个 result_hash/manifest/report、面板与配置哈希） | `rehearsal/scope_check.log` |
+| 面板列裁剪 | `prepare_panel` 只读 4 列（原 20 列）：准备 6.9 s → **4.5 s**，每因子 `panel.copy()` 缩小约 4 倍 | `rehearsal/panel_cols.log` |
+| 列名等价性 | 由 Parquet schema 取列名与整表读取所得**完全一致**（`IDENTICAL COLUMN LISTS: True`），故该改动不会改变任何因子值 | 同上 |
 
 ### 关于并行度：为什么不能开到 2 路以上
 
