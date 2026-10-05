@@ -1,8 +1,11 @@
-﻿__pycache__/
+__pycache__/
 *.pyc
 .venv/
 .env
 .env.local
+# Server credentials and anything else secret. The delivery packager must never
+# be able to sweep these into a client-facing artifact.
+secrets/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
