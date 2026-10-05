@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -u
 RUN=/home/data/agentmatrix_run
-SHARDS=${1:-16}
-PARALLEL=${2:-8}
+SHARDS=${1:-54}
+PARALLEL=${2:-6}
 LOG=$RUN/logs/sharded_driver.log
 mkdir -p "$RUN/logs"
 

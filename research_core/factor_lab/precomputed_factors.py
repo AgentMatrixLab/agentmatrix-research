@@ -150,12 +150,35 @@ def _normalized_dates(values: pd.Series) -> pd.Series:
 
 
 def _string_column(frame: pd.DataFrame, column: str) -> pd.Series:
+    """Validate a string column, keeping low-cardinality ones categorical.
+
+    Measured cost of the obvious implementation on a real 369M-row factor file:
+    `object` dtype for `code` and `factor_name` is about 44 GB, and mapping a
+    Python predicate over every row adds another full boolean Series. The
+    validator loads the whole file, so that peak is what decides how small a shard
+    has to be -- and it was killing workers with signal 9.
+
+    A categorical column carries only its dictionary, so validating the few
+    thousand distinct values proves exactly what validating 369M repetitions of
+    them would, at a tiny fraction of the memory.
+    """
     values = frame[column]
-    if values.isna().any() or not ptypes.is_string_dtype(values.dtype):
+    if values.isna().any():
         raise PrecomputedFactorError(f"{column} must have a non-null string type")
-    if not values.map(lambda value: isinstance(value, str) and bool(value.strip())).all():
+
+    if isinstance(values.dtype, pd.CategoricalDtype):
+        categories = values.cat.categories
+        if not all(isinstance(value, str) and value.strip() for value in categories):
+            raise PrecomputedFactorError(f"{column} must contain non-empty strings")
+        return values
+
+    if not ptypes.is_string_dtype(values.dtype):
+        raise PrecomputedFactorError(f"{column} must have a non-null string type")
+    if not all(isinstance(value, str) and value.strip() for value in pd.unique(values)):
         raise PrecomputedFactorError(f"{column} must contain non-empty strings")
-    return values.astype(str)
+    # Downcast: these columns repeat a few thousand values across hundreds of
+    # millions of rows, which is exactly what a categorical is for.
+    return values.astype("category")
 
 
 def _validate_against_sidecar(frame: pd.DataFrame, sidecar: dict[str, Any]) -> None:
@@ -289,7 +312,13 @@ def load_precomputed_factors(
             f"sidecar row_count mismatch (expected {metadata['row_count']}, found {len(frame)})"
         )
 
-    frame = frame.copy()
+    # Downcast the two repeating string columns before anything else touches the
+    # frame. This is a fresh read, so no defensive copy is needed either: copying
+    # it doubled the peak for no benefit and was the other half of the OOM.
+    for column in ("code", "factor_name"):
+        if column in frame.columns and frame[column].dtype == object:
+            frame[column] = frame[column].astype("category")
+
     frame["date"] = _normalized_dates(frame["date"])
     frame["code"] = _string_column(frame, "code")
     frame["factor_name"] = _string_column(frame, "factor_name")
@@ -326,9 +355,12 @@ def load_precomputed_factors(
     series = {
         str(name): pd.Series(
             group["value"].to_numpy(dtype="float64"),
-            index=pd.MultiIndex.from_frame(group[["date", "code"]]),
+            index=pd.MultiIndex.from_arrays(
+                [group["date"].to_numpy(), group["code"].astype(str).to_numpy()],
+                names=["date", "code"],
+            ),
         )
-        for name, group in frame.groupby("factor_name", sort=True)
+        for name, group in frame.groupby("factor_name", sort=True, observed=True)
     }
     return PrecomputedFactorSet(
         path=data_path,
