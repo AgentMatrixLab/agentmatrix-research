@@ -68,30 +68,35 @@ step "2. 取得通过因子的因子值"
 # somewhere. `retain_passing_values.py` already saved the passing factors' base series
 # while each shard was still validating; only the shards it missed need a rebuild.
 PARTS_N=$(ls $PARTS/*.parquet 2>/dev/null | wc -l)
-if [ "$PARTS_N" -gt 0 ]; then
-  echo "  已有 $PARTS_N 个留存分片；仅为未覆盖的分片重建"
-  if [ "$PARTS_N" -ge "$OOS_OK" ]; then
-    echo "  留存覆盖全部已完成分片，跳过重建"
-    VALUES=$PARTS
+SOURCES="$PARTS"
+if [ "$PARTS_N" -gt 0 ] && [ "$PARTS_N" -ge "$OOS_OK" ]; then
+  echo "  留存覆盖全部 $OOS_OK 个已完成分片，无需重建"
+elif [ "$PARTS_N" -gt 0 ]; then
+  # Partial retention. The rebuild covers EVERY passing factor, not just the missing ones, so
+  # on success it replaces the parts rather than being merged with them -- concatenating both
+  # would write most factors twice and duplicate every (date, code, factor_name) key.
+  echo "  留存只有 $PARTS_N / $OOS_OK 个分片；重建全部通过因子以补齐"
+  if "$PY" -X utf8 -u scripts/rebuild_passing_factors.py \
+      --batch-manifest "$OUT/merged_oos/batch_manifest.json" \
+      --candidates "$RUN/candidate_list.csv" \
+      --panel-file "$PANEL" \
+      --config "$CONFIG" \
+      --output-dir "$REBUILD"; then
+    SOURCES="$REBUILD/factor_values.parquet"
+    echo "  因子值来源: 重建文件（覆盖全部通过因子）"
   else
-    echo "  重建（脚本会自行判断通过集合；失败不阻断，留存部分仍然可用）"
-    "$PY" -X utf8 -u scripts/rebuild_passing_factors.py \
-        --batch-manifest "$OUT/merged_oos/batch_manifest.json" \
-        --candidates "$RUN/candidate_list.csv" \
-        --panel-file "$PANEL" \
-        --config "$CONFIG" \
-        --output-dir "$REBUILD" || echo "  REBUILD FAILED -- 继续用留存 parts"
-    VALUES="$PARTS"
+    SOURCES="$PARTS"
+    echo "  REBUILD FAILED -- 仅用留存 parts（覆盖不完整，交付清单会把缺失因子显示为空）"
   fi
 else
-  echo "  没有留存 parts；回退到重建全部通过因子（约 4 小时）"
+  echo "  没有留存 parts；回退到重建全部通过因子"
   "$PY" -X utf8 -u scripts/rebuild_passing_factors.py \
       --batch-manifest "$OUT/merged_oos/batch_manifest.json" \
       --candidates "$RUN/candidate_list.csv" \
       --panel-file "$PANEL" \
       --config "$CONFIG" \
       --output-dir "$REBUILD" || { echo "REBUILD FAILED"; exit 1; }
-  VALUES=$REBUILD/factor_values.parquet
+  SOURCES="$REBUILD/factor_values.parquet"
 fi
 
 step "2b. 合并为单一因子值文件（demo 与 cross_check 都要求带 sidecar 的单文件）"
@@ -99,8 +104,9 @@ step "2b. 合并为单一因子值文件（demo 与 cross_check 都要求带 sid
 # a sibling <factor-file>.json sidecar, and the cross-check verifies a digest against a named
 # file. Consolidating is a row-group copy -- bounded in memory, unlike a rebuild.
 CONSOLIDATED=$REBUILD/factor_values.parquet
+# shellcheck disable=SC2086
 "$PY" -X utf8 -u scripts/consolidate_factor_values.py \
-    --parts "$VALUES" --output "$CONSOLIDATED" || { echo "CONSOLIDATE FAILED"; exit 1; }
+    --parts $SOURCES --output "$CONSOLIDATED" || { echo "CONSOLIDATE FAILED"; exit 1; }
 VALUES=$CONSOLIDATED
 echo "  因子值来源: $VALUES"
 

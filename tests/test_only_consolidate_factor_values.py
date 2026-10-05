@@ -94,6 +94,50 @@ def test_only_accepts_a_single_part_file(tmp_path: Path) -> None:
     assert pq.read_table(output).num_rows == ROWS
 
 
+def test_only_accepts_several_sources_at_once(tmp_path: Path) -> None:
+    """Retention covers most shards; anything it missed is rebuilt. Both must reach the file."""
+    retained = tmp_path / "parts"
+    retained.mkdir()
+    _part(retained / "shard000.parquet", ["alpha_a"])
+    rebuilt = tmp_path / "rebuild.parquet"
+    _part(rebuilt, ["alpha_b", "alpha_c"])
+
+    output = tmp_path / "out.parquet"
+    assert main(["--parts", str(retained), str(rebuilt), "--output", str(output)]) == 0
+    table = pq.read_table(output)
+    assert sorted(set(table.column("factor_name").to_pylist())) == ["alpha_a", "alpha_b", "alpha_c"]
+
+
+def test_only_does_not_double_count_a_source_named_twice(tmp_path: Path) -> None:
+    """Passing a directory and a file inside it must not duplicate rows."""
+    parts = tmp_path / "parts"
+    parts.mkdir()
+    _part(parts / "shard000.parquet", ["alpha_a"])
+
+    output = tmp_path / "out.parquet"
+    assert main([
+        "--parts", str(parts), str(parts / "shard000.parquet"), "--output", str(output),
+    ]) == 0
+    assert pq.read_table(output).num_rows == ROWS
+
+
+def test_only_refuses_two_sources_holding_the_same_factor(tmp_path: Path) -> None:
+    """A rebuild covers every passer, so merging it with the parts would duplicate keys.
+
+    The freeze rejects duplicate (date, code, factor_name) keys, but only after the whole file
+    has been written -- so this has to be caught while copying, and the caller has to be told
+    that a successful rebuild REPLACES the retained parts.
+    """
+    parts = tmp_path / "parts"
+    parts.mkdir()
+    _part(parts / "shard000.parquet", ["alpha_a", "alpha_b"])
+    duplicated = tmp_path / "rebuild.parquet"
+    _part(duplicated, ["alpha_b", "alpha_c"])
+
+    with pytest.raises(ConsolidateError, match="appears in both"):
+        main(["--parts", str(parts), str(duplicated), "--output", str(tmp_path / "out.parquet")])
+
+
 def test_only_refuses_an_empty_directory(tmp_path: Path) -> None:
     empty = tmp_path / "parts"
     empty.mkdir()

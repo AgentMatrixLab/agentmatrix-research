@@ -46,22 +46,45 @@ def sha256_file(path: Path, chunk: int = 1024 * 1024) -> str:
     return digest.hexdigest()
 
 
-def resolve_parts(parts: str | Path) -> list[Path]:
-    path = Path(parts)
-    if path.is_dir():
-        found = sorted(path.glob("*.parquet"))
-    elif path.is_file():
-        found = [path]
-    else:
-        raise ConsolidateError(f"factor value parts not found: {path}")
+def resolve_parts(parts: Iterable[str | Path]) -> list[Path]:
+    """Expand each argument (a directory, or a file) into parquet paths, deduplicated.
+
+    Accepts several sources because the values can arrive two ways at once: the retention
+    daemon covers most shards, and any shard it missed is rebuilt. Both have to end up in the
+    single file the demo and the cross-check read.
+    """
+    if isinstance(parts, (str, Path)):
+        parts = [parts]
+    found: list[Path] = []
+    for raw in parts:
+        path = Path(raw)
+        if path.is_dir():
+            found.extend(sorted(path.glob("*.parquet")))
+        elif path.is_file():
+            found.append(path)
+        else:
+            raise ConsolidateError(f"factor value part not found: {path}")
     if not found:
-        raise ConsolidateError(f"no parquet parts under {path}")
-    return found
+        raise ConsolidateError("no parquet parts were found")
+    seen: set[Path] = set()
+    unique: list[Path] = []
+    for path in found:
+        resolved = path.resolve()
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        unique.append(path)
+    return unique
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--parts", required=True, help="directory of parts, or a single parquet")
+    parser.add_argument(
+        "--parts",
+        required=True,
+        nargs="+",
+        help="one or more directories of parts, or parquet files",
+    )
     parser.add_argument("--output", required=True)
     parser.add_argument("--batch-rows", type=int, default=1_048_576)
     args = parser.parse_args(argv)
@@ -75,6 +98,7 @@ def main(argv: list[str] | None = None) -> int:
     writer: pq.ParquetWriter | None = None
     rows = 0
     series: dict[str, int] = {}
+    origin: dict[str, str] = {}
     data_start: str | None = None
     data_end: str | None = None
     try:
@@ -99,6 +123,18 @@ def main(argv: list[str] | None = None) -> int:
                             "consolidated file is defined to carry base series only"
                         )
                     series[name] = series.get(name, 0) + 1
+                # A factor must appear in exactly one source. Two sources holding the same factor
+                # would duplicate every (date, code, factor_name) key, which the freeze rejects --
+                # but only after the whole file has been written. Catch it while copying.
+                for name in set(names):
+                    previous = origin.setdefault(name, part.name)
+                    if previous != part.name:
+                        raise ConsolidateError(
+                            f"factor {name!r} appears in both {previous} and {part.name}; "
+                            "consolidating them would duplicate its keys. A rebuild covers every "
+                            "passing factor, so it replaces the retained parts rather than "
+                            "being merged with them."
+                        )
                 writer.write_batch(batch)
                 rows += len(names)
                 dates = batch.column("date")
