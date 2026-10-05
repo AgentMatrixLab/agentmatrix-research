@@ -103,6 +103,34 @@ build 是唯一能利用空闲 CPU 的相位（机器 14/16 核空闲，train/oo
 
 ## 四、验证方式
 
+### 守护进程：一个「看起来在保护、其实什么都没做」的安全网
+
+分片作业要无人值守跑约 17 小时，所以我加了 `pool_watchdog.sh`：pool 死了就按 pinned commit 重启。**它连续两版都是完全无效的，而且两版看起来都正常**——启动、写日志、然后永远睡下去。
+
+原因都是「检测器把自己数进去了」：
+
+| 版本 | 失效原因 |
+|---|---|
+| v1 | `pgrep -f pool_watchdog.sh` 匹配到脚本自己的命令行 → 报「已在运行」→ **根本没启动**（日志空白） |
+| v2 | `awk -v pat="$MARKER"` 把 marker 放进了 **awk 自己的参数** → `index($0, pat)` 匹配到 awk 那一行 → 永远认为「pool 正在运行」→ **永不重启** |
+
+v2 是靠 `bash -x` 追踪定位的：用一个**在机器上根本不存在**的 marker，`pool_running` 仍返回 1。生产上 marker 是 `run_pool.sh`，所以它一直在「启动 → 记一行日志 → 长睡」。
+
+这正是安全网最不该有的失效方式：**存在、可信、但不起作用**。
+
+修法：marker 改走**环境变量**（`ps -eo args` 看不到），并按 pid、脚本名、awk 进程三重排除自身。**在沙箱里证明重启真的会发生**，而不是杀掉生产 pool 去试：
+
+```
+pool is down with 2/5 shards done -- restarting with pinned stamp
+restart #1 issued; now running=1 workers=0
+STUB POOL LAUNCHED ... stamp=WDTEST args=5 2
+```
+
+检测语义也双向验证：不存在的 marker → 0，真实生产 pool → 1。
+
+另外两处由这次实测暴露：**信号陷阱只清理、不退出**，导致 SIGTERM 被忽略（`timeout 60` 发出后进程又跑了十分钟）——一个停不下来的守护进程会在最终交付时把 pool 在链底下重新拉起；以及 `stop_and_deliver.sh` 现在**先停 watchdog 再停 pool**（行 80 早于行 100），否则两者之间那段空隙里 watchdog 会看到「没有 pool、也没有链」而重启一个。
+
+
 ### 「已提交但未部署」——本轮最严重的一处，靠跑完整条链才抓到
 
 `research_core/factor_lab/delivery_manifest.py` 的口径修正**在 git 里是对的，服务器上却是旧的**：进包判断仍带着「打分卡 tier 必须是 S/A」这条门槛。后果是交付清单把「过闸且 tier S/A」当成了交付数量：

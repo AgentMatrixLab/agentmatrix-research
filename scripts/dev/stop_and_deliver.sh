@@ -67,7 +67,37 @@ if [ "$WAIT_MINUTES" -gt 0 ] && [ "$RUNNING" -gt 0 ]; then
 fi
 
 echo
-echo "=== 3. 停止 pool（按进程组）==="
+echo "=== 3. 先停 watchdog，再停 pool ==="
+# Order matters now that the watchdog actually works. If the pool is stopped first, the
+# watchdog sees "no pool, no chain" in the gap before the chain starts and restarts a pool
+# underneath it -- which is precisely the memory contention that killed shards 004/005. So the
+# watchdog is told to stand down before the pool is touched.
+WDLOCK=$RUN/logs/pool_watchdog.lock
+WDPID=$(cat "$WDLOCK/pid" 2>/dev/null || echo "")
+if [ -z "$WDPID" ]; then
+  echo "  watchdog 未运行（无锁文件）"
+else
+  echo "  停止 watchdog pid=$WDPID"
+  kill -TERM "$WDPID" 2>/dev/null
+  for _ in 1 2 3 4 5 6; do
+    kill -0 "$WDPID" 2>/dev/null || break
+    sleep 2
+  done
+  if kill -0 "$WDPID" 2>/dev/null; then
+    echo "  未响应 TERM，改用 KILL"
+    kill -KILL "$WDPID" 2>/dev/null
+  fi
+  sleep 2
+  if kill -0 "$WDPID" 2>/dev/null; then
+    echo "  中止：watchdog 无法停止，继续跑链会被它在下面重启 pool"
+    exit 1
+  fi
+  echo "  watchdog 已停止"
+fi
+rm -rf "$WDLOCK" 2>/dev/null
+
+echo
+echo "=== 4. 停止 pool（按进程组）==="
 POOL_PID=$(ps -eo pid,args | awk -v m="$MARK" '$0 !~ m && /run_pool\.sh/ {print $1; exit}')
 if [ -z "$POOL_PID" ]; then
   echo "  没有找到 run_pool.sh（可能已结束）"
@@ -94,7 +124,7 @@ STILL_MISSING=$(ls -d "$RUN"/shards/shard* 2>/dev/null | wc -l)
 echo "  分片目录 $STILL_MISSING 个，其中完成 $OOS_OK 个（未完成的会在下次 run_pool.sh 时重排）"
 
 echo
-echo "=== 4. 下游全链 ==="
+echo "=== 5. 下游全链 ==="
 cd "$REPO" || exit 1
 export PYTHONPATH="$REPO"
 sed -i 's/\r$//' scripts/dev/run_downstream.sh
@@ -102,7 +132,7 @@ bash scripts/dev/run_downstream.sh "$RUN"
 STATUS=$?
 
 echo
-echo "=== 5. 结果 ==="
+echo "=== 6. 结果 ==="
 if [ -f "$RUN/delivery/delivery_manifest.csv" ]; then
   "$PY" -X utf8 - "$RUN/delivery/delivery_manifest.csv" <<'PYEOF'
 import csv, sys

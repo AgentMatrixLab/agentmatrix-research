@@ -27,6 +27,10 @@ INTERVAL=300
 COOLDOWN=900
 MAX_RESTARTS=30
 STAMP=71760b4138e350338299a6f48f269099ebbfab5c
+#: What counts as "a pool" and "a shard worker". Overridable so the decision logic can be
+#: exercised against a stub in a sandbox instead of by killing the real run to see what happens.
+POOL_MARKER=run_pool.sh
+SHARD_MARKER='run_one_shard\.sh [0-9]'
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -35,6 +39,8 @@ while [ $# -gt 0 ]; do
     --interval) INTERVAL="$2"; shift 2 ;;
     --cooldown) COOLDOWN="$2"; shift 2 ;;
     --stamp) STAMP="$2"; shift 2 ;;
+    --pool-marker) POOL_MARKER="$2"; shift 2 ;;
+    --shard-marker) SHARD_MARKER="$2"; shift 2 ;;
     *) echo "unknown argument: $1"; exit 2 ;;
   esac
 done
@@ -59,20 +65,46 @@ if ! mkdir "$LOCK" 2>/dev/null; then
   mkdir "$LOCK" 2>/dev/null || { echo "could not acquire the watchdog lock"; exit 1; }
 fi
 echo $$ > "$LOCK/pid"
-trap 'rm -rf "$LOCK"' EXIT INT TERM
+# A trap that cleans up but does NOT exit makes the shell ignore SIGTERM and keep looping --
+# which is what happened here: `timeout 60` fired, the lock was removed, and the watchdog
+# carried on running for another ten minutes. An unstoppable daemon is a problem in its own
+# right: the final hand-off stops the pool before running the chain, and a watchdog that cannot
+# be told to stand down would restart the pool underneath it.
+release() { rm -rf "$LOCK"; }
+on_signal() { release; echo "$(date -Is)  received a stop signal; watchdog exiting" >> "$LOG"; exit 0; }
+trap release EXIT
+trap on_signal INT TERM
 
 log() { echo "$(date -Is)  $*" >> "$LOG"; }
 
 completed() { ls "$RUN"/shards/shard*/oos/batch_manifest.json 2>/dev/null | wc -l; }
-pool_running() {
-  ps -eo args | awk -v m="$MARK" '$0 !~ m && /run_pool\.sh/ {c++} END {print c+0}'
+# Detection must not count the DETECTOR. Two earlier versions got this wrong in ways that made
+# the watchdog silently useless -- it started, logged, and slept forever without ever
+# restarting anything:
+#
+#   v1  `pgrep -f pool_watchdog.sh` matched the script's own command line, so it reported
+#       "already running" and never started at all.
+#   v2  `awk -v pat="$MARKER"` put the marker in the awk process's OWN arguments, so
+#       `index($0, pat)` matched the awk line itself and the watchdog concluded a pool was
+#       always running. The trace showed `pool_running` returning 1 for a marker that matched
+#       nothing on the box.
+#
+# So the marker travels in the ENVIRONMENT, which `ps -eo args` does not show, and the
+# watchdog excludes itself by pid and by script name.
+_PAT_ENV=WD_PATTERN
+scan() {
+  # $1 = shell pattern/regex for awk, $2 = "regex" to use ~ instead of index()
+  WD_PATTERN="$1" ps -eo pid,args | WD_PATTERN="$1" awk -v me="$$" -v mode="$2" '
+    BEGIN { pat = ENVIRON["WD_PATTERN"] }
+    $1 == me { next }
+    $0 ~ /pool_watchdog/ { next }
+    $0 ~ /[a]wk -v me=/ { next }
+    mode == "regex" ? ($0 ~ pat) : (index($0, pat) > 0) { c++ }
+    END { print c+0 }'
 }
-shard_running() {
-  ps -eo args | awk -v m="$MARK" '$0 !~ m && /run_one_shard\.sh [0-9]/ {c++} END {print c+0}'
-}
-chain_running() {
-  ps -eo args | awk -v m="$MARK" '$0 !~ m && /run_downstream\.sh/ {c++} END {print c+0}'
-}
+pool_running() { scan "$POOL_MARKER" literal; }
+shard_running() { scan "$SHARD_MARKER" regex; }
+chain_running() { scan 'run_downstream\.sh' regex; }
 
 restarts=0
 [ -f "$STATE" ] && restarts=$(cat "$STATE" 2>/dev/null || echo 0)
