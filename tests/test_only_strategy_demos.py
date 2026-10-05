@@ -61,7 +61,7 @@ def _write_inputs(tmp_path: Path, source: str) -> dict[str, Path]:
                 "factor_id": "REH_A",
                 "failed_gates": [],
                 "rank_ic": {"10d": {"mean": 0.02, "ic_ir": 0.5, "t_stat": 4.0, "days": 420, "yearly": {}}},
-                "training": {"primary_rank_ic_mean": 0.02},
+                "training": {"primary_rank_ic_mean": 0.02, "direction": 1.0},
                 "style": {"retention": 0.8},
                 "portfolio": {
                     "gross_annualized": 0.15,

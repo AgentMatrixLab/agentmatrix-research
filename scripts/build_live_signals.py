@@ -47,6 +47,7 @@ from research_core.factor_lab.scoring import score_batch  # noqa: E402
 from research_core.factor_lab.streaming_supplement import (  # noqa: E402
     composite_scores,
     ranked_block,
+    unoriented_factors,
 )
 from research_core.strategy_operations.signal_pipeline import (  # noqa: E402
     SignalError,
@@ -146,10 +147,31 @@ def main(argv: list[str] | None = None) -> int:
             "Trading a different set than the one delivered would misrepresent the signals."
         )
 
+    # Orient each factor by the validator's training-segment direction before scoring. Without
+    # this the orders are placed on the wrong side for every reverse-signalled factor, which is
+    # about half of them -- a file of confident-looking but inverted orders.
+    directions: dict[str, float] = {}
+    for result in results:
+        factor_id = str(result.get("factor_id", ""))
+        value = (result.get("training") or {}).get("direction")
+        if factor_id and value is not None:
+            try:
+                directions[factor_id] = float(value)
+            except (TypeError, ValueError):
+                continue
+    missing_direction = unoriented_factors(core, directions)
+    if missing_direction:
+        raise LiveSignalError(
+            f"{len(missing_direction)} factor(s) in the delivered core set carry no training "
+            f"direction, so their sign is unknown: {missing_direction[:5]}"
+        )
+    reverse = sorted(fid for fid in core if directions[fid] < 0)
+    print(f"  directions known for {len(core)} factor(s); {len(reverse)} reverse-signalled")
+
     trade_date = (
         pd.Timestamp(args.trade_date) if args.trade_date else panel["date"].max()
     )
-    composite = composite_scores(block)
+    composite = composite_scores(block, columns=core, directions=directions)
     on_date = composite[composite["date"] == trade_date]
     if on_date.empty:
         raise LiveSignalError(f"no composite scores on {trade_date.date()}")
@@ -232,6 +254,10 @@ def main(argv: list[str] | None = None) -> int:
         "total_value": args.total_value,
         "top_n": args.top_n,
         "core_factors": core,
+        "factor_directions": {fid: directions.get(fid) for fid in core},
+        "direction_source": (
+            "frozen validator `training.direction`, measured on the training split only"
+        ),
         "n_targets": len(targets),
         "n_orders": len(orders),
         "n_buys": buys,

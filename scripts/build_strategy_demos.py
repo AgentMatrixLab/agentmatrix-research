@@ -52,6 +52,7 @@ from research_core.factor_lab.streaming_supplement import (  # noqa: E402
     composite_scores,
     correlation_from_block,
     ranked_block,
+    unoriented_factors,
 )
 from research_core.strategy_operations.strategy_backtest import (  # noqa: E402
     DEFAULT_ROUND_TRIP_COST,
@@ -203,6 +204,24 @@ def main(argv: list[str] | None = None) -> int:
     ranked_factors = [item["factor_id"] for item in batch["factors"]]
     print(f"scored {batch['n_scored']} factor(s); tiers={batch['tier_counts']}")
 
+    # Trading direction per factor, from the frozen validator's TRAINING-segment measurement.
+    # Half the delivered factors are reverse-signalled (10 of the first 18), and the composite
+    # below buys the top of the average rank, so without this those factors are traded on the
+    # wrong side -- which is exactly what the first rehearsal measured as a -0.58 excess return.
+    # Using the training segment (not the OOS IC) keeps the out-of-sample backtest honest.
+    directions: dict[str, float] = {}
+    for result in results:
+        factor_id = str(result.get("factor_id", ""))
+        training = result.get("training") or {}
+        value = training.get("direction")
+        if factor_id and value is not None:
+            try:
+                directions[factor_id] = float(value)
+            except (TypeError, ValueError):
+                continue
+    reverse = [fid for fid, value in directions.items() if value < 0]
+    print(f"  directions: {len(directions)} known, {len(reverse)} reverse-signalled")
+
     # ONE streaming pass over the factor table builds the ranked block that both the
     # composite score and the redundancy clustering need. This replaces a whole-table
     # `read_parquet` plus a `pivot_table` per variant: at the delivery scale the table is
@@ -216,6 +235,14 @@ def main(argv: list[str] | None = None) -> int:
     available = [fid for fid in ranked_factors if fid not in set(block.factors_missing)]
     if not available:
         raise SystemExit("none of the scored factors has base values in the factor table")
+    missing_direction = unoriented_factors(available, directions)
+    if missing_direction:
+        raise SystemExit(
+            f"{len(missing_direction)} factor(s) with values carry no training direction, so "
+            f"their sign is unknown and trading them would be a coin flip: "
+            f"{missing_direction[:5]}. The frozen validator records `training.direction`; a "
+            "result without it cannot be traded."
+        )
     print(f"ranked block: {block.n_rows:,} rows x {len(block.factor_ids)} factor(s)")
 
     # Cluster the passers so a low-correlation core can be carved out.
@@ -270,6 +297,7 @@ def main(argv: list[str] | None = None) -> int:
             block, None if name == "all_passers" else
             {fid: scores_by_factor[fid]["composite"] for fid in factor_ids},
             columns=factor_ids,
+            directions=directions,
         )
         # Only names the price panel can actually value.
         stock_scores = stock_scores[stock_scores["code"].astype(str).isin(priced_codes)]
@@ -367,6 +395,12 @@ def main(argv: list[str] | None = None) -> int:
                 ),
                 "missing_price_policy": "last_close",
                 "priced_names": len(priced_codes),
+                "factor_directions": {
+                    fid: directions.get(fid) for fid in ranked_factors
+                },
+                "direction_source": (
+                    "frozen validator `training.direction`, measured on the training split only"
+                ),
                 "top_n": args.top_n,
                 "clusters": clusters,
                 "results": backtest_results,

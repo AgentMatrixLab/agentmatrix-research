@@ -42,6 +42,7 @@ is not scored against a different universe than its peers.
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterable, Mapping, Sequence
@@ -255,12 +256,20 @@ def composite_scores(
     block: RankedBlock,
     weights: Mapping[str, float] | None = None,
     columns: Iterable[str] | None = None,
+    directions: Mapping[str, float] | None = None,
 ) -> pd.DataFrame:
     """Mean cross-sectional rank per (date, code) -- the demo's stock score.
 
     Reproduces `build_strategy_demos.composite_stock_scores` without the pivot: the mean skips
     missing factors, and when weights are supplied the weighted values are averaged over the
     factors actually present rather than renormalised by the weight sum.
+
+    ``directions`` orients each factor before averaging. This is not cosmetic: a factor whose
+    training-segment IC is negative predicts a LOW return when its value is high, so buying the
+    top of its raw rank trades the wrong side. About half the delivered factors are like this
+    (10 of the first 18), and averaging oriented and unoriented ranks together is meaningless.
+    The direction comes from the frozen validator's ``training.direction``, which is measured on
+    the training split only -- so orienting by it leaks nothing into an out-of-sample backtest.
     """
     if block.n_rows == 0 or not block.factor_ids:
         return pd.DataFrame({"date": [], "code": [], "score": []})
@@ -274,19 +283,41 @@ def composite_scores(
     if not indices:
         raise StreamingSupplementError("no factor column was selected for the composite score")
 
-    matrix = block.ranks[:, indices].astype(np.float64, copy=False)
+    matrix = block.ranks[:, indices].astype(np.float64, copy=True)
+    for position, index in enumerate(indices):
+        value = None if directions is None else directions.get(block.factor_ids[index])
+        if value is not None and float(value) < 0:
+            column = matrix[:, position]
+            matrix[:, position] = np.where(np.isnan(column), np.nan, 1.0 - column)
+
     if weights:
         factor = np.array(
             [weights.get(block.factor_ids[index], 1.0) for index in indices], dtype=np.float64
         )
         matrix = matrix * factor
 
-    with np.errstate(invalid="ignore"):
+    # Rows where no selected factor has a value are expected (a name can be missing from every
+    # series); the mean of an all-NaN row is NaN and the row is dropped, so the warning is noise.
+    with np.errstate(invalid="ignore"), warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
         score = np.nanmean(matrix, axis=1)
     frame = pd.DataFrame(
         {"date": block.dates, "code": block.codes, "score": score}
     ).dropna(subset=["score"])
     return frame.reset_index(drop=True)
+
+
+def unoriented_factors(
+    factor_ids: Iterable[str], directions: Mapping[str, float] | None
+) -> list[str]:
+    """Factors with no usable direction, which a caller must not silently treat as positive."""
+    if not directions:
+        return [str(factor_id) for factor_id in factor_ids]
+    return [
+        str(factor_id)
+        for factor_id in factor_ids
+        if directions.get(str(factor_id)) is None
+    ]
 
 
 @dataclass

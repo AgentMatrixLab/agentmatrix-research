@@ -62,7 +62,10 @@ def _write_inputs(root: Path, *, with_core_values: bool = True) -> dict:
     pq.write_table(pa.Table.from_pandas(pd.concat(series, ignore_index=True)), factor_path)
 
     runs = root / "runs"
-    for factor_id in CORE:
+    # `training.direction` is the field the frozen validator actually writes; the signal
+    # producer refuses to trade a factor without it. One factor is reverse-signalled so the
+    # orientation path is exercised rather than assumed.
+    for position, factor_id in enumerate(CORE):
         target = runs / factor_id
         target.mkdir(parents=True, exist_ok=True)
         (target / "validation_result.json").write_text(
@@ -73,6 +76,10 @@ def _write_inputs(root: Path, *, with_core_values: bool = True) -> dict:
                     "failed_gates": [],
                     "result_hash": "a" * 64,
                     "rank_ic": {"10d": {"mean": 0.04, "ic_ir": 0.3, "t_stat": 3.0, "yearly": {}}},
+                    "training": {
+                        "primary_rank_ic_mean": 0.02,
+                        "direction": 1.0 if position == 0 else -1.0,
+                    },
                 }
             ),
             encoding="utf-8",
