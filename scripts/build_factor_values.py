@@ -45,6 +45,8 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pq
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -70,6 +72,64 @@ VALUE_DEFINITION = (
 
 class FactorValueError(RuntimeError):
     """Raised when the factor-value dataset cannot be built."""
+
+
+def _series_arrow_schema() -> "pa.Schema":
+    """The four columns the factor_values dataset is defined to carry."""
+    return pa.schema([
+        pa.field("date", pa.timestamp("ns")),
+        pa.field("code", pa.string()),
+        pa.field("factor_name", pa.string()),
+        pa.field("value", pa.float64()),
+    ])
+
+
+def _fields_used(expressions: list[str]) -> set[str]:
+    from research_core.factor_lab.catalog_readiness import classify_expression
+
+    names: set[str] = set()
+    for expression in expressions:
+        try:
+            names.update(classify_expression(expression).fields_used)
+        except Exception:  # noqa: BLE001
+            continue
+    return names
+
+
+def required_panel_columns(expressions: list[str], available: list[str]) -> list[str]:
+    """The panel columns this shard's expressions actually read, plus the keys.
+
+    Measured on the real 9.44M-row panel a single worker held 14.9 GB, because
+    every `df.assign(...)` in the generated code copies the whole frame and so
+    copies every unused column with it. Loading only what the shard needs cuts
+    both the resident size and the cost of those copies.
+
+    `date` and `code` are always kept. Anything still missing surfaces later as a
+    KeyError with a real message, which is the behaviour the computability guard
+    already pins.
+    """
+    from research_core.factor_lab.formula_compiler import DEFAULT_FIELD_MAP
+
+    present = set(available)
+    keep = {"date", "code"}
+    fields = _fields_used(expressions)
+    for field in fields:
+        column = DEFAULT_FIELD_MAP.get(field.upper(), field.lower())
+        if column in present:
+            keep.add(column)
+    # Fields the generator builds itself: the columns they derive from never
+    # appear as a field name in the expression.
+    if any(name.startswith("ADV") for name in fields):
+        if "total_turnover" in present:
+            keep.add("total_turnover")
+        keep.add("volume")
+    if any(name in ("RETURNS", "DAILY_RETURN") for name in fields):
+        keep.add("close")
+    # indneutralize reads the industry column even when the expression reaches it
+    # through IndClass.sector, which the classifier reports under its own name.
+    if any("indneutralize" in expression.lower() for expression in expressions):
+        keep.add("industry")
+    return sorted(keep & present)
 
 
 def sha256_file(path: Path) -> str:
@@ -123,7 +183,12 @@ def main(argv: list[str] | None = None) -> int:
         candidates = candidates[: args.limit]
     print(f"candidates: {len(candidates)}   multipliers: {multipliers}")
 
-    panel = pd.read_parquet(args.panel_file)
+    schema_columns = pd.read_parquet(args.panel_file).columns.tolist()
+    expressions = [(c.metadata or {}).get("formula", "") for c in candidates]
+    keep_columns = required_panel_columns(expressions, schema_columns)
+    print(f"panel columns kept: {len(keep_columns)}/{len(schema_columns)} -> {keep_columns}")
+
+    panel = pd.read_parquet(args.panel_file, columns=keep_columns)
     for column in (args.date_column, args.code_column):
         if column not in panel.columns:
             raise FactorValueError(f"panel is missing the {column!r} column")
@@ -216,16 +281,24 @@ def main(argv: list[str] | None = None) -> int:
     if not frames:
         raise FactorValueError("nothing was computed; refusing to write an empty dataset")
 
-    table = pd.concat(frames, ignore_index=True)
-    table["value"] = pd.to_numeric(table["value"], errors="coerce")
-    table = table.replace([np.inf, -np.inf], np.nan)
-    table = table.sort_values([args.date_column, args.code_column, "factor_name"], kind="stable")
-
+    # Write each series as its own row group instead of concatenating everything
+    # and writing once. Accumulating a whole shard costs roughly 12 GB on top of
+    # the panel (159 series x 9.44M values x 8 bytes), which is what capped
+    # parallelism at about four workers.
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     if output.exists():
         output.unlink()
-    table.to_parquet(output, index=False)
+
+    writer = pq.ParquetWriter(output, schema=_series_arrow_schema(), compression="zstd")
+    total_rows = 0
+    try:
+        for frame in frames:
+            frame = frame.replace([np.inf, -np.inf], np.nan)
+            writer.write_table(pa.Table.from_pandas(frame, schema=_series_arrow_schema(), preserve_index=False))
+            total_rows += len(frame)
+    finally:
+        writer.close()
 
     sidecar_path = Path(args.sidecar) if args.sidecar else Path(f"{output}.json")
     sidecar = {
@@ -233,7 +306,7 @@ def main(argv: list[str] | None = None) -> int:
         "dataset": DATASET,
         "data_start": str(dates.min().date()),
         "data_end": str(dates.max().date()),
-        "row_count": int(len(table)),
+        "row_count": int(total_rows),
         "sha256": sha256_file(output),
         "factors": factors_meta,
         "value_definition": VALUE_DEFINITION,
@@ -241,14 +314,14 @@ def main(argv: list[str] | None = None) -> int:
         "candidates_file": str(args.candidates),
         "configuration_file": str(args.config),
         "multipliers": multipliers,
-        "variant_rows": int(len(table) - sum(1 for _, group in table.groupby("factor_name", sort=False))),
+        "panel_columns_used": keep_columns,
     }
     sidecar_path.write_text(json.dumps(sidecar, ensure_ascii=False, indent=2), encoding="utf-8")
 
     print(f"\nwrote {output}")
-    print(f"  rows       : {len(table):,}")
+    print(f"  rows       : {total_rows:,}")
     print(f"  base factor: {len(factors_meta)}")
-    print(f"  total series: {table['factor_name'].nunique():,}")
+    print(f"  series     : {len(frames):,}")
     print(f"  shared with: {sidecar_path}")
 
     if vacuous:
@@ -270,9 +343,10 @@ def main(argv: list[str] | None = None) -> int:
     report = {
         "candidates": len(candidates),
         "base_factors": len(factors_meta),
-        "series": int(table["factor_name"].nunique()),
-        "rows": int(len(table)),
+        "series": len(frames),
+        "rows": int(total_rows),
         "multipliers": multipliers,
+        "panel_columns_used": keep_columns,
         "vacuous_perturbation": vacuous,
         "ambiguous_window_substitutions": [{"factor_id": f, "occurrences": c} for f, c in ambiguous],
         "failures": [{"factor_id": f, "reason": r} for f, r in failures],
