@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import re
 import subprocess
 from dataclasses import dataclass
 from datetime import date
@@ -115,9 +116,30 @@ def _git_commit() -> str:
     ).stdout.strip()
 
 
+#: Characters no mainstream filesystem accepts, plus the Windows reserved set.
+_UNSAFE_PATH_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+
+
+def safe_factor_directory_name(factor_id: str) -> str:
+    """Make a factor id usable as a directory name.
+
+    Catalog ids are ``FAMILY:name``, and a colon is illegal in a Windows path:
+    ``validation_runs/ALPHA101:alpha1`` raised NotADirectoryError and every one of
+    30 real candidates errored. On Linux the colon is fine, which is exactly why
+    this stayed hidden -- the early rehearsals used hand-written ``REH_*`` ids
+    with no colon, so only the first run with real catalog ids could surface it.
+
+    Sanitising changes only where artifacts land, never what is computed. The
+    factor id itself is still written inside every artifact, and readers take it
+    from there rather than from the directory name.
+    """
+    cleaned = _UNSAFE_PATH_CHARS.sub("_", str(factor_id)).strip(" .")
+    return cleaned or "_unnamed"
+
+
 def _paths(config: dict[str, Any], factor_id: str, *, segment: str = "oos") -> ValidationPaths:
     output = config["output"]
-    root = PROJECT_ROOT / output["root"] / factor_id
+    root = PROJECT_ROOT / output["root"] / safe_factor_directory_name(factor_id)
     if segment != "oos":
         root = root / segment
     return ValidationPaths(

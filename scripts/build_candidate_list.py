@@ -127,9 +127,18 @@ def primary_window(expression: str) -> int | None:
     return min(value for value, count in candidates.items() if count == best)
 
 
-def build_rows(factors: list[dict], *, include_not_runnable: bool) -> tuple[list[dict], dict]:
+def build_rows(
+    factors: list[dict], *, include_not_runnable: bool, include_windowless: bool = False
+) -> tuple[list[dict], dict]:
     rows: list[dict] = []
     stats: Counter = Counter()
+    # Seed the counters a reader will look for, so a caller never has to guess
+    # whether a missing key means "zero" or "not measured".
+    stats["with_window"] = 0
+    stats["without_window"] = 0
+    stats["risk_exposure"] = 0
+    stats["skipped_not_runnable"] = 0
+    stats["skipped_windowless"] = 0
     skipped: list[tuple[str, str]] = []
 
     for factor in factors:
@@ -144,6 +153,17 @@ def build_rows(factors: list[dict], *, include_not_runnable: bool) -> tuple[list
             continue
 
         window = primary_window(expression)
+        if window is None and not include_windowless:
+            # Structural, not a threshold: the factor file's sidecar requires a
+            # positive integer window for every declared factor, so a windowless
+            # candidate cannot be represented, cannot be given a base window by
+            # the validator, and cannot be delivered. Leaving it in the candidate
+            # list would make validate-batch error on a factor missing from the
+            # factor file, or fail its perturbation gate as unmeasured.
+            stats["skipped_windowless"] += 1
+            skipped.append((factor_id, "no window: cannot be declared in the factor file (see Q11)"))
+            continue
+
         stats["with_window" if window else "without_window"] += 1
         if family in RISK_FAMILIES:
             stats["risk_exposure"] += 1
@@ -174,6 +194,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="emit factors the engine cannot compute; they will only ever be not_run",
     )
+    parser.add_argument(
+        "--include-windowless",
+        action="store_true",
+        help="emit windowless factors, which the factor file cannot declare and therefore cannot deliver",
+    )
     args = parser.parse_args(argv)
 
     factors = json.loads(Path(args.catalog).read_text(encoding="utf-8"))["factors"]
@@ -181,7 +206,11 @@ def main(argv: list[str] | None = None) -> int:
     if wanted:
         factors = [f for f in factors if f["factor_id"].split(":")[0].upper() in wanted]
 
-    rows, report = build_rows(factors, include_not_runnable=args.include_not_runnable)
+    rows, report = build_rows(
+        factors,
+        include_not_runnable=args.include_not_runnable,
+        include_windowless=args.include_windowless,
+    )
 
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -199,8 +228,8 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  candidates          : {candidates}")
     print(f"  countable as alpha  : {alpha}   (risk exposures: {stats.get('risk_exposure', 0)})")
     print(f"  with a window       : {windowed}")
-    print(f"  without a window    : {stats.get('without_window', 0)}  "
-          "(parameter_perturbation will be unmeasurable -> not passed)")
+    print(f"  excluded, windowless: {stats.get('skipped_windowless', 0)}  "
+          "(the factor file cannot declare them; see Q11)")
     print(f"  excluded, uncomputable: {stats.get('skipped_not_runnable', 0)}")
     print()
     print("THE ARITHMETIC THAT MATTERS")
@@ -215,8 +244,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if stats.get("skipped_not_runnable"):
         print()
-        print("  first few excluded:")
-        for factor_id, reason in report["skipped"][:5]:
+        print("  first few uncomputable:")
+        for factor_id, reason in [s for s in report["skipped"] if "no window" not in s[1]][:5]:
             print(f"    {factor_id}: {reason[:80]}")
 
     return 0

@@ -75,7 +75,10 @@ def _factor(factor_id: str, expression: str, name_cn: str = "名") -> dict:
 def test_risk_families_are_flagged_not_dropped() -> None:
     """The ruling: exposures run and report, but never count as alpha."""
     rows, report = builder.build_rows(
-        [_factor("BARRA:size", "Mean($close, 20)"), _factor("ALPHA158:KMID", "($close-$open)/$open")],
+        [
+            _factor("BARRA:size", "Mean($close, 20)"),
+            _factor("ALPHA158:KMID", "Mean(($close-$open)/$open, 20)"),
+        ],
         include_not_runnable=False,
     )
     by_id = {row["factor_id"]: row for row in rows}
@@ -107,29 +110,56 @@ def test_uncomputable_factors_are_omitted_by_default() -> None:
     )
     assert [row["factor_id"] for row in rows] == ["X:ok"]
     assert report["stats"]["skipped_not_runnable"] == 1
-    assert report["skipped"][0][0] == "X:bad"
+    assert any(factor_id == "X:bad" for factor_id, _ in report["skipped"])
 
 
 def test_uncomputable_factors_can_be_included_explicitly() -> None:
+    """The blocked operator is not a window operator, so its factor is windowless too.
+
+    Both exclusions have to be lifted for the row to appear, which is the point:
+    a factor the engine cannot compute is refused for two independent reasons.
+    """
     blocked = f"{_unimplemented_operator()}($close, 12)"
     rows, _ = builder.build_rows(
-        [_factor("X:bad", blocked)], include_not_runnable=True
+        [_factor("X:bad", blocked)],
+        include_not_runnable=True,
+        include_windowless=True,
     )
     assert [row["factor_id"] for row in rows] == ["X:bad"]
 
 
-def test_windowless_candidates_are_counted_separately() -> None:
-    """They will fail parameter_perturbation, and that must be visible up front."""
-    _, report = builder.build_rows(
+def test_windowless_candidates_are_excluded_by_default() -> None:
+    """Structural, not a threshold.
+
+    The factor file's sidecar requires a positive integer window for every
+    declared factor, so a windowless candidate cannot be represented in it and the
+    validator cannot obtain a base window. Leaving it in the candidate list would
+    make validate-batch error on a factor missing from the factor file.
+    """
+    rows, report = builder.build_rows(
         [_factor("X:w", "Mean($close, 20)"), _factor("X:now", "$close / $open")],
         include_not_runnable=False,
     )
-    assert report["stats"]["with_window"] == 1
+    assert [row["factor_id"] for row in rows] == ["X:w"]
+    assert report["stats"]["skipped_windowless"] == 1
+    assert any("no window" in reason for _, reason in report["skipped"])
+
+
+def test_windowless_candidates_can_be_emitted_for_inspection() -> None:
+    rows, report = builder.build_rows(
+        [_factor("X:now", "$close / $open")],
+        include_not_runnable=False,
+        include_windowless=True,
+    )
+    assert [row["factor_id"] for row in rows] == ["X:now"]
+    assert report["stats"]["with_window"] == 0
     assert report["stats"]["without_window"] == 1
 
 
 def test_required_fields_come_from_the_classifier() -> None:
-    rows, _ = builder.build_rows([_factor("X:f", "($high-$low)/$open")], include_not_runnable=False)
+    rows, _ = builder.build_rows(
+        [_factor("X:f", "Mean(($high-$low)/$open, 20)")], include_not_runnable=False
+    )
     fields = set(rows[0]["required_fields"].split(";"))
     assert {"HIGH", "LOW", "OPEN"} <= fields
 
@@ -138,7 +168,10 @@ def test_required_fields_come_from_the_classifier() -> None:
 
 def test_the_written_list_loads_through_the_batch_validator(tmp_path: Path) -> None:
     rows, _ = builder.build_rows(
-        [_factor("X:a", "Mean($close, 20)"), _factor("X:b", "($close-$open)/$open")],
+        [
+            _factor("X:a", "Mean($close, 20)"),
+            _factor("X:b", "Mean(($close-$open)/$open, 5)"),
+        ],
         include_not_runnable=False,
     )
     path = tmp_path / "candidate_list.csv"
@@ -152,8 +185,28 @@ def test_the_written_list_loads_through_the_batch_validator(tmp_path: Path) -> N
     candidates = load_candidate_list(path)
     assert [c.factor_id for c in candidates] == ["X:a", "X:b"]
     assert candidates[0].window == 20
-    assert candidates[1].window is None
+    assert candidates[1].window == 5
     assert all(c.risk_exposure is False for c in candidates)
+
+
+def test_a_windowless_row_survives_the_round_trip_when_explicitly_emitted(tmp_path: Path) -> None:
+    """The loader accepts an empty window; the factor *file* is what cannot."""
+    rows, _ = builder.build_rows(
+        [_factor("X:now", "$close / $open")],
+        include_not_runnable=False,
+        include_windowless=True,
+    )
+    path = tmp_path / "candidate_list.csv"
+    import csv
+
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=list(builder.COLUMNS))
+        writer.writeheader()
+        writer.writerows(rows)
+
+    candidates = load_candidate_list(path)
+    assert [c.factor_id for c in candidates] == ["X:now"]
+    assert candidates[0].window is None
 
 
 def test_the_column_set_is_frozen() -> None:

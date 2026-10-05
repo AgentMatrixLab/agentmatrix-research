@@ -63,7 +63,11 @@ def _entry_from_result_files(factor_dir: Path) -> dict[str, Any] | None:
             "artifacts": {"needs_human": str(needs_human_path)},
         }
     payload = json.loads(result_path.read_text(encoding="utf-8"))
+    # Take the id from inside the artifact. Directory names are sanitised for the
+    # filesystem (a catalog id like `ALPHA101:alpha1` contains a colon, which is
+    # illegal on Windows), so the folder name is not a reliable factor id.
     return {
+        "factor_id": str(payload.get("factor_id", factor_dir.name)),
         "status": str(payload.get("status", STATUS_NOT_RUN)),
         "failed_gates": list(payload.get("failed_gates") or []),
         "reason": _rejection_reason(payload),
@@ -88,7 +92,7 @@ def index_from_results_root(results_root: str | Path) -> dict[str, dict[str, Any
     for factor_dir in sorted(path for path in root.iterdir() if path.is_dir()):
         entry = _entry_from_result_files(factor_dir)
         if entry is not None:
-            index[factor_dir.name] = entry
+            index[entry.get("factor_id") or factor_dir.name] = entry
     return index
 
 

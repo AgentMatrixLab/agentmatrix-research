@@ -126,9 +126,29 @@ python -X utf8 scripts/merge_batch_manifests.py \
 
 ## D1 · 10/6（周二）—— 全量 OOS + 打分 + 策略
 
+### 1.0 ⚠️ 生成因子值数据集（曾经整条链路缺这一步）
+
+```bash
+python -X utf8 scripts/build_factor_values.py \
+    --candidates data/factor_lab/candidate_list.csv \
+    --panel-file data/factor_lab/validation_panel.parquet \
+    --config configs/validation_gates.yaml \
+    --output data/factor_lab/factor_values.parquet
+```
+
+> **这一步以前根本不存在。** `validate-batch` 需要 `--factor-file`，而全仓库里只有**测试夹具和彩排脚本**会生成它 —— 没有任何生产脚本。
+>
+> 更严重的是：如果生成的因子文件**不含扰动变体**（这正是「没有生产脚本」的自然后果），那么**每一个**候选因子都会把 `parameter_perturbation` 记成「无法测量 → 不通过」，**交付结果是 0 个因子** —— 和真实数据质量无关，纯粹是机械原因。
+>
+> `build_factor_values.py` 实现了两个必须遵守的约定：
+> 1. 变体窗口必须用**与冻结门槛完全相同的算式**推导，**包括 `max(1, ...)` 截断**，否则名字对不上
+> 2. **变体窗口等于基准窗口时也照样写入** —— 基准为 2 时 0.8 和 1.2 都回到 2，全目录有 **37 个**候选处于这种情况；跳过就等于把该因子判死
+
+实测速率：**0.65 秒/因子**（含全部扰动变体），961 个候选约 10 分钟。
+
 ### 1.1 分片并行跑全量 OOS
 
-同上，把 `--segment train` 换成 `--segment oos`。**预计小时级，早上开跑。**
+**先跑 train**（`--segment train`），再跑 oos。**预计小时级，早上开跑。**
 
 ### 1.2 追加稳健性层
 
