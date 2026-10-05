@@ -197,6 +197,12 @@ step "8. 交付一致性交叉验证（独立重算每个哈希）"
     --config "$CONFIG" \
     --output "$OUT/cross_check.json" || echo "  CROSS-CHECK REPORTED INCONSISTENCIES -- see $OUT/cross_check.json"
 
+step "9. 交付说明（由产物生成，避免数字过期）"
+# Generated rather than written by hand: a static page would carry counts that go stale the
+# moment the chain re-runs, and the two things it must never get wrong are the delivered count
+# and whether 300 was met.
+"$PY" -X utf8 -u scripts/build_delivery_readme.py --delivery-dir "$OUT" || echo "  README FAILED"
+
 echo
 echo "########## 完成 ##########"
 echo "产物在 $OUT"
