@@ -2,7 +2,7 @@
 set -u
 RUN=/home/data/agentmatrix_run
 SHARDS=${1:-16}
-PARALLEL=${2:-4}
+PARALLEL=${2:-8}
 LOG=$RUN/logs/sharded_driver.log
 mkdir -p "$RUN/logs"
 

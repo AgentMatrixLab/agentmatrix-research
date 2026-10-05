@@ -1,17 +1,22 @@
 #!/usr/bin/env bash
 # Sharded full validation run on the 115 server.
 #
-# Why sharded: on the real 9,444,457-row panel one candidate costs roughly 40-60
+# Why sharded: on the real 9,444,457-row panel one candidate costs roughly 60-160
 # seconds end to end (base expression plus both perturbation variants). 849 of
 # them would also need about 183 GB of factor values against 139 GB free, so the
 # run has to be both parallel and self-cleaning. Each shard builds its own factor
 # values, runs train and oos validation, keeps only the small results, and deletes
 # the multi-GB factor file. Peak disk is one shard, not the whole run.
 #
-# Wave size is a parameter because it has to come from measured RSS (~8.5 GB per
-# worker with column pruning), not from nproc.
+# Shard size is driven by the VALIDATOR's memory, not the builder's. The builder
+# peaked at 7 GB for a 54-factor shard, but validating that shard's 158-series
+# factor file reached 48 GB and was killed by the OOM killer (signal 9). The
+# validator loads the whole file, so shard size sets the ceiling. 16 factors per
+# shard keeps the file near 300M rows, which measured comfortably.
 #
-# Usage:  run_sharded.sh <shards> <parallel>
+# Wave size is a parameter because it has to come from measured RSS, not nproc.
+#
+# Usage:  run_sharded.sh <shards> <parallel> [emit_start]
 set -u
 
 RUN=/home/data/agentmatrix_run
@@ -19,8 +24,9 @@ REPO=$RUN/agentmatrix
 PY=/home/data/conda-envs/rqsdk/bin/python
 PANEL=$RUN/panel/validation_panel.parquet
 CONFIG=$REPO/configs/validation_gates.yaml
-SHARDS=${1:-16}
-PARALLEL=${2:-4}
+SHARDS=${1:-53}
+PARALLEL=${2:-6}
+EMIT_START=${3:-2020-01-02}
 LOGS=$RUN/logs
 
 mkdir -p "$LOGS" "$RUN/shards"
@@ -64,7 +70,8 @@ run_shard() {
         --panel-file "$PANEL" \
         --config "$CONFIG" \
         --output "$dir/factor_values.parquet" \
-        --report "$dir/build_report.json" || { echo "BUILD FAILED"; return 1; }
+        --report "$dir/build_report.json" \
+        --emit-start "$EMIT_START" || { echo "BUILD FAILED"; return 1; }
 
     echo "--- validate train ---"
     /usr/bin/time -f "train wall=%es maxrss=%MkB" \

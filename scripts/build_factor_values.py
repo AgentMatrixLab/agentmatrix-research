@@ -173,6 +173,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--code-column", default="code")
     parser.add_argument("--date-column", default="date")
     parser.add_argument("--limit", type=int, default=0)
+    parser.add_argument(
+        "--emit-start",
+        default="",
+        help="only store rows on or after this date; earlier rows are computed "
+             "for warm-up but never written",
+    )
     parser.add_argument("--report", default="", help="where to write the build report JSON")
     args = parser.parse_args(argv)
 
@@ -219,21 +225,49 @@ def main(argv: list[str] | None = None) -> int:
     writer = pq.ParquetWriter(output, schema=_series_arrow_schema(), compression="zstd")
     series_count = 0
     total_rows = 0
+    emitted_start = None
+    emitted_end = None
+
+    # Rows before the frozen train start are warm-up: needed to compute the values,
+    # never read by the validator, and expensive to carry in a file that has to be
+    # loaded whole.
+    if args.emit_start:
+        emit_mask = (dates >= pd.Timestamp(args.emit_start)).to_numpy()
+        print(f"emit filter: keeping rows on/after {args.emit_start} "
+              f"({int(emit_mask.sum()):,}/{len(emit_mask):,} = {emit_mask.mean():.1%})", flush=True)
+    else:
+        emit_mask = None
 
     def emit(name: str, values: pd.Series) -> None:
-        """Write one factor series and release it immediately."""
-        nonlocal series_count, total_rows
+        """Write one factor series and release it immediately.
+
+        Only rows inside the frozen split are written. The panel starts in 2018
+        for warm-up, but the validator never looks before train_start, and those
+        extra rows are not free: they inflate the file the validator has to load
+        whole, which is what pushed a 158-series shard to 48 GB and got it killed
+        by the OOM killer.
+        """
+        nonlocal series_count, total_rows, emitted_start, emitted_end
+        series = pd.to_numeric(pd.Series(values), errors="coerce").to_numpy(dtype=float)
         frame = pd.DataFrame({
             args.date_column: dates,
             args.code_column: codes,
             "factor_name": name,
-            "value": pd.to_numeric(pd.Series(values), errors="coerce").to_numpy(dtype=float),
-        }).replace([np.inf, -np.inf], np.nan)
+            "value": series,
+        })
+        if emit_mask is not None:
+            frame = frame[emit_mask]
+        frame = frame.replace([np.inf, -np.inf], np.nan)
         writer.write_table(
             pa.Table.from_pandas(frame, schema=_series_arrow_schema(), preserve_index=False)
         )
         series_count += 1
         total_rows += len(frame)
+        if len(frame):
+            block_start = frame[args.date_column].min()
+            block_end = frame[args.date_column].max()
+            emitted_start = block_start if emitted_start is None else min(emitted_start, block_start)
+            emitted_end = block_end if emitted_end is None else max(emitted_end, block_end)
 
     for position, candidate in enumerate(candidates, start=1):
         factor_id = candidate.factor_id
@@ -306,8 +340,8 @@ def main(argv: list[str] | None = None) -> int:
     sidecar = {
         "source": f"scripts/build_factor_values.py from {Path(args.panel_file).name}",
         "dataset": DATASET,
-        "data_start": str(dates.min().date()),
-        "data_end": str(dates.max().date()),
+        "data_start": str((emitted_start or dates.min()).date()),
+        "data_end": str((emitted_end or dates.max()).date()),
         "row_count": int(total_rows),
         "sha256": sha256_file(output),
         "factors": factors_meta,
