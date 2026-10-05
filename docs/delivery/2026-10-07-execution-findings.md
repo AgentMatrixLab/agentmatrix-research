@@ -67,6 +67,13 @@
 | `cluster_factors` | n^3.15：450 因子约 10 min、600 因子约 25 min | `scripts/dev/benchmark_clustering.py` |
 | 25 因子块 | 峰值 **3.7 GB**；全 25 因子 composite 7.8 s；相关矩阵 4.4 s | `rehearsal/memcheck.log` |
 | 交付清单复用聚类 | **150 s / 18 GB → 1.03 s / 162 MB** | `rehearsal/run_neworder.log` |
+| oos 内存轨迹 | **锯齿形**：2–3 分钟一个周期，从 ~13 GB 升到 20–25 GB 再回落，峰值 25–28 GB | `rehearsal/rss_profile.log` |
+| 交叉验证 | **`finding_count: 0`**（独立重算 76 个 result_hash/manifest/report、面板与配置哈希） | `rehearsal/scope_check.log` |
+
+### 关于并行度：为什么不能开到 2 路以上
+
+oos 锁不是保守起见，是实测结论。RSS 剖面显示 oos 内存呈**锯齿循环**（约每 2–3 分钟升到 20–25 GB 再回落），而加载器只占其中约 1.8–4 GB——**其余在冻结的 oos 计算里**，不可修改。两个 oos 相位即使相位错开，也会周期性地同时到达峰值：2 × 28 GB + 其他用户 ~8 GB > 62 GB，这正是 `shard004/005` 被 signal 9 杀死的原因。因此 oos 串行化是必要条件，吞吐上限约 **5.3–6.6 片/小时**。
+
 
 ---
 
@@ -78,6 +85,9 @@
 4. **provenance 范围可查**：`git diff 71760b4..HEAD` 只涉及后处理路径，不含验证器/门槛/`cli`/`scoring`，因此所有分片执行的验证代码相同。
 5. **全量测试**：**575 passed, 1 skipped**（并行等价性测试在无 `fork` 的 Windows 上按设计跳过，服务器上已实测）。
 6. **诚实守卫**：因子无方向时策略与信号**拒绝运行**；缺因子值时警告而非静默少交易；合成数据默认拒绝出图。
+7. **交付一致性交叉验证**：`cross_check_delivery.py` 独立重算批次自身的每一个哈希（逐因子 `result_hash`、manifest/report 产物、面板与配置摘要）与全部计数/名单。真实数据上 76 个因子结果 **`finding_count: 0`**、退出码 0。
+   - 一处原先必然误报的地方已修正：批次的范围是**已完成分片的并集**，而不是授权的 849 个候选。用全量清单会让批次声称 849 个候选却只有约 560 条结果，交叉验证会（正确地）报不一致。`build_batch_candidates.py` 写出批次清单供 merge 与 cross_check 使用；交付清单仍用全量 849，未评估的候选如实显示为 `not_run`。
+
 
 ---
 

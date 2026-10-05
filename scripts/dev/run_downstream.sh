@@ -58,9 +58,19 @@ if [ ! -d "$RUNS" ]; then
 fi
 
 step "1. 合并分片 manifest"
+# The batch is the union of the shards that FINISHED, not the full 849-candidate list the run
+# was authorised for. Handing the merge the full list makes the batch claim 849 candidates
+# while its results hold only those the shards covered, and cross_check reports that -- 
+# correctly -- as an inconsistency. The delivery manifest still uses the full list, so the
+# candidates that were never evaluated appear as `not_run` rather than vanishing.
+BATCH_CANDIDATES=$OUT/merged_oos/batch_candidates.csv
+"$PY" -X utf8 -u scripts/build_batch_candidates.py \
+    --run "$RUN" \
+    --candidates "$RUN/candidate_list.csv" \
+    --output "$BATCH_CANDIDATES" || { echo "BATCH SCOPE FAILED"; exit 1; }
 "$PY" -X utf8 -u scripts/merge_batch_manifests.py \
     --shards "$RUN"/shards/shard*/oos/batch_manifest.json \
-    --candidates "$RUN/candidate_list.csv" \
+    --candidates "$BATCH_CANDIDATES" \
     --output-dir "$OUT/merged_oos" || { echo "MERGE FAILED"; exit 1; }
 
 step "2. 取得通过因子的因子值"
@@ -161,7 +171,30 @@ step "5. 实盘信号（文件单 / 条件单 / Supabase 行）"
     --delivery-manifest "$OUT/delivery_manifest.csv" \
     --out-dir "$OUT/live_signals" || { echo "SIGNALS FAILED"; exit 1; }
 
+step "6. 交付一致性交叉验证（独立重算每个哈希）"
+# Independent re-derivation of the batch's own artifacts. Exit 5 means it found an
+# inconsistency, which must be looked at rather than shipped.
+"$PY" -X utf8 -u scripts/cross_check_delivery.py \
+    --batch-manifest "$OUT/merged_oos/batch_manifest.json" \
+    --panel-file "$PANEL" \
+    --candidates "$BATCH_CANDIDATES" \
+    --config "$CONFIG" \
+    --output "$OUT/cross_check.json" || echo "  CROSS-CHECK REPORTED INCONSISTENCIES -- see $OUT/cross_check.json"
+
 echo
 echo "########## 完成 ##########"
 echo "产物在 $OUT"
 ls -la "$OUT"
+echo
+echo "--- 在交付包中的因子数 ---"
+"$PY" -X utf8 - "$OUT/delivery_manifest.csv" <<'PYEOF'
+import csv, sys
+rows = list(csv.DictReader(open(sys.argv[1], encoding="utf-8-sig")))
+inside = [r for r in rows if r["in_delivery_package"] == "true"]
+print(f"  IN DELIVERY PACKAGE: {len(inside)}")
+print(f"  fdr_accepted=true  : {sum(1 for r in rows if r['fdr_accepted'] == 'true')}")
+print(f"  交付簇数           : {len({r['cluster_id'] for r in inside if r['cluster_id']})}")
+if len(inside) < 300:
+    print(f"  WARNING: 交付包只有 {len(inside)} 个因子，低于 300 的目标。"
+          "不要放宽任何冻结门槛；应继续运行分片或如实上报。")
+PYEOF
