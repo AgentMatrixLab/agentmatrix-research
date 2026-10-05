@@ -69,7 +69,9 @@ DEPLOYMENT_COUPLED_FILES = {
     "scripts/dev/verify_loader_memory.sh",
     "scripts/dev/retain_passing_values.py",
     "scripts/dev/mirror_runtime_data.py",
+    "scripts/build_batch_candidates.py",
     "docs/delivery/2026-10-05-server-recon.md",
+    "docs/delivery/2026-10-07-execution-findings.md",
 }
 DEPLOYMENT_COUPLED_PREFIXES = ("scripts/dev/recon/",)
 
