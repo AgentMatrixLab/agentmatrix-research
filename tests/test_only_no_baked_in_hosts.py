@@ -62,9 +62,13 @@ DEPLOYMENT_COUPLED_FILES = {
     "scripts/dev/upload_repo.py",
     "scripts/dev/test_server_access.py",
     "scripts/dev/run_sharded.sh",
+    "scripts/dev/run_pool.sh",
+    "scripts/dev/run_one_shard.sh",
     "scripts/dev/run_downstream.sh",
     "scripts/dev/resume_after_reboot.sh",
     "scripts/dev/verify_loader_memory.sh",
+    "scripts/dev/retain_passing_values.py",
+    "scripts/dev/mirror_runtime_data.py",
     "docs/delivery/2026-10-05-server-recon.md",
 }
 DEPLOYMENT_COUPLED_PREFIXES = ("scripts/dev/recon/",)

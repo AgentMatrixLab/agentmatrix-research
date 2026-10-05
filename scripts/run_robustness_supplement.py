@@ -41,9 +41,11 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from research_core.factor_lab.streaming_supplement import (  # noqa: E402
+    neutral_retention_by_factor,
+)
 from research_core.factor_lab.supplementary import (  # noqa: E402
     build_supplementary_report,
-    industry_neutral_retention,
     render_markdown,
 )
 
@@ -85,47 +87,26 @@ def compute_neutral_ic(
     horizon: int,
     neutralize_returns: bool,
 ) -> dict:
-    """Industry-neutral retention per factor, using the exported panel."""
-    panel = pd.read_parquet(panel_path)
-    if "industry" not in panel.columns:
-        raise SystemExit(
-            "panel has no `industry` column. Re-export with "
-            "scripts/export_rqsdk_panel.py (industry is part of the extended contract)."
-        )
-    panel = panel.sort_values(["code", "date"]).reset_index(drop=True)
+    """Industry-neutral retention per factor, without loading the whole factor table.
 
-    # Forward return over the same horizon the gates used.
-    grouped = panel.groupby("code", sort=False)["close"]
-    panel["forward_return"] = grouped.shift(-horizon) / panel["close"] - 1.0
-
-    values = pd.read_parquet(factor_path)
-    required = {"date", "code", "factor_name", "value"}
-    missing = sorted(required - set(values.columns))
-    if missing:
-        raise SystemExit(f"factor table is missing columns: {', '.join(missing)}")
-
-    keys = panel[["date", "code"]].reset_index().rename(columns={"index": "_row"})
-    output: dict[str, dict | None] = {}
+    This used to ``pd.read_parquet`` the entire long table and then filter it once per
+    factor. That is a full scan per factor -- ~450 scans of a table that reaches ten billion
+    rows at the delivery scale -- and the initial load alone needs more memory than the box
+    has. `neutral_retention_by_factor` streams one factor's series at a time instead, and
+    aligns each to the panel by ``(date, code)`` exactly as before, so the numbers are
+    unchanged.
+    """
     factor_ids = [str(result["factor_id"]) for result in results]
-
-    for factor_id in factor_ids:
-        subset = values[(values["factor_name"] == factor_id) & (~values["factor_name"].str.contains(r"\|window=", regex=True))]
-        if subset.empty:
-            output[factor_id] = None
-            continue
-        merged = keys.merge(subset[["date", "code", "value"]], on=["date", "code"], how="left")
-        series = merged.sort_values("_row")["value"].reset_index(drop=True)
-        series.index = panel.index
-        output[factor_id] = industry_neutral_retention(
-            panel,
-            factor_values=series,
-            factor_col="_factor",
-            return_col="forward_return",
-            neutralize_returns=neutralize_returns,
-        )
-        print(f"    neutral-IC {factor_id}: {output[factor_id] is not None}", flush=True)
-
-    return output
+    print(f"  streaming {len(factor_ids)} factor(s) from {factor_path}")
+    return neutral_retention_by_factor(
+        factor_path,
+        panel_path=panel_path,
+        horizon=horizon,
+        neutralize_returns=neutralize_returns,
+        factor_ids=factor_ids,
+        allow_missing=True,
+        progress=lambda factor_id: print(f"    neutral-IC {factor_id}", flush=True),
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:

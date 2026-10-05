@@ -41,6 +41,9 @@ from research_core.factor_lab.scoring import (  # noqa: E402
     score_batch,
     select_representatives,
 )
+from research_core.factor_lab.streaming_supplement import (  # noqa: E402
+    cross_sectional_correlation,
+)
 
 CN_TZ = timezone(timedelta(hours=8))
 
@@ -55,19 +58,40 @@ def load_runs(runs_dir: Path) -> list[dict]:
 
 
 def compute_clusters(factor_file: Path, factor_ids: list[str], threshold: float) -> tuple[dict, list]:
-    """Average cross-sectional rank correlation, then cluster and pick representatives."""
-    table = pd.read_parquet(factor_file)
-    base = table[~table["factor_name"].str.contains(r"\|window=", regex=True)]
-    base = base[base["factor_name"].isin(factor_ids)]
-    if base["factor_name"].nunique() < 2:
+    """Redundancy clusters from a bounded-memory correlation matrix.
+
+    This used to pivot the whole long table into a dense ``(date, code) x factor`` frame and
+    run Spearman on it. At the delivery scale that pivot is ~28 GB and pandas then needs
+    further full-size copies inside ``rank`` and ``corr``, so it cannot run at all.
+    `cross_sectional_correlation` streams each factor into one column of a float32 block and
+    accumulates per-date statistics, which is the same statistic at a fraction of the memory.
+
+    The matrix handed to `cluster_factors` is the daily cross-sectional Spearman averaged
+    over dates, which is what `docs/delivery/methodology.md` specifies; the previous pooled
+    figure is printed alongside so the substitution is visible in the run log.
+    """
+    if len(factor_ids) < 2:
         return {"n_clusters": 0, "clusters": []}, []
 
-    wide = base.pivot_table(index=["date", "code"], columns="factor_name", values="value")
-    if isinstance(wide.columns, pd.MultiIndex):
-        wide.columns = wide.columns.get_level_values(-1)
-    ranks = wide.groupby(level="date").rank(pct=True)
-    correlation = ranks.corr(method="spearman", min_periods=20)
-    clusters = cluster_factors(correlation, threshold=threshold)
+    print(f"  computing cross-sectional correlation for {len(factor_ids)} factor(s)")
+    result = cross_sectional_correlation(factor_file, factor_ids=factor_ids)
+    if result.correlation.empty or result.n_rows == 0:
+        print("  no factor series were found; clustering is skipped")
+        return {"n_clusters": 0, "clusters": []}, []
+    if result.factors_missing:
+        print(
+            f"  WARNING: {len(result.factors_missing)} factor(s) have no series and are not "
+            f"clustered: {result.factors_missing[:5]}"
+        )
+    print(
+        f"  correlation: {result.n_rows:,} rows, {result.dates_used} date(s) used, "
+        f"{result.dates_skipped} skipped; "
+        f"max |daily-average - pooled| = {result.max_pooled_difference:.4f}"
+    )
+
+    available = [factor_id for factor_id in factor_ids if factor_id not in set(result.factors_missing)]
+    matrix = result.correlation.loc[available, available]
+    clusters = cluster_factors(matrix, threshold=threshold)
     return clusters, []  # representatives are chosen below once scores exist
 
 

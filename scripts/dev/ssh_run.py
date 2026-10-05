@@ -62,6 +62,13 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", nargs="?", default="")
     parser.add_argument("--file", default="", help="run a local script on the server")
+    parser.add_argument(
+        "--put",
+        action="append",
+        default=[],
+        metavar="LOCAL:REMOTE",
+        help="upload a local file before running (repeatable; splits on the last colon)",
+    )
     parser.add_argument("--timeout", type=int, default=600)
     parser.add_argument("--quiet-stderr", action="store_true")
     args = parser.parse_args(argv)
@@ -70,12 +77,28 @@ def main(argv: list[str] | None = None) -> int:
         command = Path(args.file).read_text(encoding="utf-8")
     elif args.command:
         command = args.command
+    elif args.put:
+        command = "true"
     else:
-        parser.error("give a command or --file")
+        parser.error("give a command, --file, or --put")
 
     creds = load_credentials(CREDENTIALS)
     client = connect(creds)
     try:
+        if args.put:
+            sftp = client.open_sftp()
+            try:
+                for spec in args.put:
+                    local_name, _, remote_name = spec.rpartition(":")
+                    if not local_name or not remote_name:
+                        parser.error(f"--put wants LOCAL:REMOTE, got {spec!r}")
+                    local_path = Path(local_name)
+                    if not local_path.is_file():
+                        parser.error(f"local file does not exist: {local_path}")
+                    sftp.put(str(local_path), remote_name)
+                    print(f"put {local_path.name} -> {remote_name}", file=sys.stderr)
+            finally:
+                sftp.close()
         code, out, err = run(client, command, args.timeout)
     finally:
         client.close()

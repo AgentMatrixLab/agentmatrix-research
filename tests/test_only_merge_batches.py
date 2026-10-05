@@ -93,6 +93,55 @@ def _write_shard(
     return path
 
 
+def test_only_merges_shards_that_each_have_their_own_factor_file(tmp_path: Path) -> None:
+    """A real sharded run gives every shard its own factor file, so the digests differ.
+
+    Requiring `factor_file_sha256` equality made every sharded run unmergeable: the field is
+    split-dependent by construction. The digests must still be recorded per shard.
+    """
+    shard_a = _write_shard(
+        tmp_path,
+        "shard_a",
+        [("reversal_1m", "validated", False)],
+        identity_overrides={"factor_file_sha256": "a" * 64, "factor_file": "shard_a.parquet"},
+    )
+    shard_b = _write_shard(
+        tmp_path,
+        "shard_b",
+        [("rsi_6", "validated", False)],
+        identity_overrides={"factor_file_sha256": "b" * 64, "factor_file": "shard_b.parquet"},
+    )
+
+    payload = merge_batch_manifests([shard_a, shard_b], output_dir=tmp_path / "merged_split")
+
+    assert payload["shard_count"] == 2
+    assert payload["counts"]["validated"] == 2
+    # No single factor file exists for a merged batch, so the top-level digest must not claim one.
+    assert payload["factor_file_sha256"] is None
+    assert payload["factor_file"] is None
+    recorded = {
+        entry["batch_id"]: entry["factor_file_sha256"] for entry in payload["shards"]
+    }
+    assert recorded == {"shard_a": "a" * 64, "shard_b": "b" * 64}
+    assert payload["factor_files_by_shard"]["shard_b"]["factor_file"] == "shard_b.parquet"
+    # Dropping the per-file digest must not drop the coverage contract that makes shards comparable.
+    assert payload["identity"]["factor_sidecar_data_start"] == IDENTITY["factor_sidecar_data_start"]
+
+
+def test_only_refuses_shards_with_different_factor_coverage(tmp_path: Path) -> None:
+    """The compensating check: different declared factor coverage is still refused."""
+    shard_a = _write_shard(tmp_path, "shard_a", [("reversal_1m", "validated", False)])
+    shard_b = _write_shard(
+        tmp_path,
+        "shard_b",
+        [("rsi_6", "validated", False)],
+        identity_overrides={"factor_sidecar_data_end": "2025-01-01"},
+    )
+
+    with pytest.raises(MergeError, match="factor_sidecar_data_end"):
+        merge_batch_manifests([shard_a, shard_b], output_dir=tmp_path / "merged_bad_coverage")
+
+
 def test_only_merges_disjoint_shards_and_recomputes_counts(tmp_path: Path) -> None:
     shard_a = _write_shard(
         tmp_path,

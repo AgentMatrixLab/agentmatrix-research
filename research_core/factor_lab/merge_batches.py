@@ -10,16 +10,32 @@ from typing import Any, Iterable
 
 # Fields that must be byte-identical across shards, otherwise the shards are not comparable and
 # merging them would fabricate a single run that never happened.
+#
+# `factor_file_sha256` is deliberately NOT here. A shard is handed its own slice of the candidate
+# list and therefore writes its OWN factor file, so that digest is **split-dependent by
+# construction**: N honest shards produce N different digests, and requiring equality made every
+# real sharded run unmergeable. The digests are still recorded, per shard, in
+# `factor_files_by_shard` -- provenance is preserved, it just is not an equality constraint.
+#
+# What actually has to agree for the verdicts to be comparable is the *coverage contract* of those
+# files: the same panel, the same gate configuration, the same snapshot, the same declared data
+# range and the same price basis. All of those remain in the list below, so dropping the raw
+# per-file digest removes an impossible constraint without removing a real one.
 IDENTITY_FIELDS = (
     "code_commit",
     "segment",
     "panel_file_sha256",
-    "factor_file_sha256",
     "configuration_sha256",
     "data_snapshot_hash",
     "factor_sidecar_data_start",
     "factor_sidecar_data_end",
     "panel_price_basis",
+)
+
+# Split-dependent: recorded per shard, never compared for equality across shards.
+PER_SHARD_FIELDS = (
+    "factor_file",
+    "factor_file_sha256",
 )
 
 
@@ -148,9 +164,22 @@ def merge_batch_manifests(
                 "batch_id": shard.payload.get("batch_id"),
                 "candidate_count": shard.payload.get("candidate_count"),
                 "counts": shard.payload.get("counts"),
+                # Split-dependent, so recorded per shard rather than asserted equal.
+                "factor_file": shard.payload.get("factor_file"),
+                "factor_file_sha256": shard.payload.get("factor_file_sha256"),
             }
             for shard in shards
         ],
+        # Explicit, because the top-level `factor_file_sha256` below is None: a merged batch does
+        # not have one factor file, it has one per shard, and pretending otherwise would let the
+        # cross-check verify a digest that no shard ever produced.
+        "factor_files_by_shard": {
+            str(shard.payload.get("batch_id") or shard.path.parent.name): {
+                "factor_file": shard.payload.get("factor_file"),
+                "factor_file_sha256": shard.payload.get("factor_file_sha256"),
+            }
+            for shard in shards
+        },
         "shard_count": len(shards),
         "identity": identity,
         "candidate_count": len(entries),
@@ -183,8 +212,6 @@ def merge_batch_manifests(
         "panel_file_sha256",
         "panel_price_basis",
         "data_snapshot_hash",
-        "factor_file",
-        "factor_file_sha256",
         "factor_sidecar_data_start",
         "factor_sidecar_data_end",
         "configuration_file",
@@ -193,6 +220,10 @@ def merge_batch_manifests(
     ):
         if shards[0].payload.get(field) is not None:
             payload[field] = shards[0].payload[field]
+    # Left explicitly unset: see `factor_files_by_shard`. `cross_check` skips a digest that is
+    # declared as None, which is the honest outcome here -- there is no single file to hash.
+    payload["factor_file"] = None
+    payload["factor_file_sha256"] = None
     # The merged manifest must still carry the run identity, otherwise the cross-check (and any
     # human reading it) cannot tell which code and which split produced these verdicts.
     payload["code_commit"] = identity["code_commit"]

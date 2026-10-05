@@ -4,6 +4,15 @@ Only tracked files go up, so nothing gitignored (data/, runtime/, secrets/) is
 copied. Uses the committed tree rather than the working directory: the server
 should run the same revision CI ran.
 
+Runtime data is PRESERVED across the upload. The server keeps accumulated
+evidence *inside* the deploy directory -- `configs/validation_gates.yaml` puts
+per-factor results under `<repo>/data/factor_lab/validation_runs`, and the server
+tree is not a git checkout, so that evidence is untracked and would otherwise be
+destroyed by the wipe-and-extract. That happened for real: an upload during the
+213-shard run deleted the results of every shard that had already finished, and
+because scoring and FDR both read that directory the delivery would have been
+built from the few results that happened to land afterwards.
+
     python -X utf8 scripts/dev/upload_repo.py --remote-dir /home/data/agentmatrix_run/agentmatrix
 """
 
@@ -18,6 +27,9 @@ import paramiko
 
 ROOT = Path(__file__).resolve().parents[2]
 CREDENTIALS = ROOT / "secrets" / "server-access.txt"
+
+#: Directories that hold accumulated runtime evidence and must survive an upload.
+PRESERVED = ("data", "runtime", "logs")
 
 
 def load_credentials(path: Path) -> dict[str, str]:
@@ -39,10 +51,13 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     archive = ROOT / args.archive
+    # The FULL sha, not `--short`: `_git_commit()` records this verbatim into every run
+    # manifest, and the delivery cross-check requires a 40-char hex commit.
     revision = subprocess.run(
-        ["git", "rev-parse", "--short", "HEAD"], cwd=ROOT, capture_output=True, text=True
+        ["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True
     ).stdout.strip()
-    print(f"uploading revision {revision}")
+    short = revision[:7]
+    print(f"uploading revision {short} ({revision})")
 
     # Refuse to upload a dirty tree: the server must run exactly what was verified.
     dirty = subprocess.run(
@@ -86,18 +101,50 @@ def main(argv: list[str] | None = None) -> int:
         sftp.close()
         print("  uploaded")
 
+        # Move runtime evidence out, wipe, extract, move it back. Without this the wipe
+        # below deletes every validation result accumulated so far, and the failure is
+        # silent: the delivery is then scored and FDR-corrected over whatever survived.
+        preserve = f"{args.remote_dir}.deploy_preserve"
+        names = " ".join(PRESERVED)
         code, out, err = run(
-            f"cd {args.remote_dir} && tar xf {remote_archive} && rm -f {remote_archive} "
-            f"&& echo '{revision}' > COMMIT "
-            f"&& echo 'extracted' && ls COMMIT && cat COMMIT"
+            f"set -e; "
+            f"mkdir -p {args.remote_dir}; "
+            f"rm -rf {preserve}; mkdir -p {preserve}; "
+            f"for name in {names}; do "
+            f"  if [ -e {args.remote_dir}/$name ]; then mv {args.remote_dir}/$name {preserve}/$name; fi; "
+            f"done; "
+            f"rm -rf {args.remote_dir}; mkdir -p {args.remote_dir}; "
+            f"tar xf {remote_archive} -C {args.remote_dir}; "
+            f"rm -f {remote_archive}; "
+            f"for name in {names}; do "
+            f"  if [ -e {preserve}/$name ]; then "
+            f"    if [ -e {args.remote_dir}/$name ]; then "
+            f"      cp -an {preserve}/$name/. {args.remote_dir}/$name/ || true; "
+            f"    else mv {preserve}/$name {args.remote_dir}/$name; fi; "
+            f"  fi; "
+            f"done; "
+            f"rm -rf {preserve}; "
+            f"echo '{revision}' > {args.remote_dir}/COMMIT; "
+            f"echo extracted; cat {args.remote_dir}/COMMIT",
+            timeout=1800,
         )
         print(out.strip())
         if code != 0:
             print(f"extract failed: {err}")
             return 1
 
-        code, out, _ = run(f"cd {args.remote_dir} && git rev-parse --short HEAD 2>/dev/null; "
-                           f"cat configs/validation_gates.yaml | head -5")
+        # Report what runtime evidence survived, so a wipe can never again go unnoticed.
+        code, out, _ = run(
+            f"echo '--- preserved runtime data ---'; "
+            f"for name in {names}; do "
+            f"  if [ -e {args.remote_dir}/$name ]; then "
+            f"    echo \"  $name: $(find {args.remote_dir}/$name -type f | wc -l) files\"; "
+            f"  else echo \"  $name: (absent)\"; fi; "
+            f"done"
+        )
+        print(out.strip())
+
+        code, out, _ = run(f"cd {args.remote_dir} && cat configs/validation_gates.yaml | head -3")
         print("--- sanity ---")
         print(out.strip()[:400])
     finally:
