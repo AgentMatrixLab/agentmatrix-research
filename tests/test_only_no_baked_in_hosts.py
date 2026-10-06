@@ -68,6 +68,7 @@ DEPLOYMENT_COUPLED_FILES = {
     "scripts/dev/stop_and_deliver.sh",
     "scripts/dev/pool_watchdog.sh",
     "scripts/dev/auto_deliver.sh",
+    "docs/delivery/HANDOFF-PROMPT.md",
     "scripts/dev/resume_after_reboot.sh",
     "scripts/dev/verify_loader_memory.sh",
     "scripts/dev/retain_passing_values.py",
