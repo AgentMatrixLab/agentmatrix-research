@@ -1,7 +1,7 @@
 RUN=/home/data/agentmatrix_run
 REPO=$RUN/agentmatrix
 PY=/home/data/conda-envs/rqsdk/bin/python
-THRESHOLD=308
+THRESHOLD=330
 TOTAL=213
 
 echo "════════ 交付状态 $(date '+%m-%d %H:%M') ════════"
