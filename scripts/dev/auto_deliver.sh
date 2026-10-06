@@ -159,24 +159,30 @@ while true; do
     status=$?
     log "chain finished with exit $status"
 
+    # 4. the acceptance verdict, BEFORE the done-marker.
+    #
+    # The chain reports success when the critical steps succeed; the cross-check and the
+    # packaging step are advisory by design, so a chain exit of 0 does NOT mean the artifacts are
+    # consistent. Leaving acceptance out of the recorded line would let a future reader treat
+    # "chain_exit=0" as "delivered cleanly". So the verdict goes in the same line.
+    acceptance="skipped"
+    if [ -f "$REPO/scripts/verify_delivery.py" ]; then
+      "$PY" -X utf8 "$REPO/scripts/verify_delivery.py" --delivery-dir "$RUN/delivery" \
+        >> "$RUN/logs/auto_deliver_acceptance.log" 2>&1
+      acceptance=$?
+      log "acceptance check exit $acceptance; see logs/auto_deliver_acceptance.log"
+    fi
+
     if [ -f "$RUN/delivery/delivery_manifest.summary.json" ]; then
       delivered=$("$PY" -X utf8 -c "
 import json
 print(json.load(open('$RUN/delivery/delivery_manifest.summary.json')).get('in_delivery_package'))
 " 2>/dev/null || echo "?")
       log "delivered factors in package: $delivered"
-      echo "$(date -Is) chain_exit=$status in_delivery_package=$delivered" > "$DONE_MARK"
+      echo "$(date -Is) chain_exit=$status acceptance_exit=$acceptance in_delivery_package=$delivered" > "$DONE_MARK"
     else
       log "no delivery manifest was produced"
-      echo "$(date -Is) chain_exit=$status no_manifest" > "$DONE_MARK"
-    fi
-
-    # Record the acceptance verdict alongside the chain result, so an unattended delivery
-    # leaves an audit trail rather than a count that has to be taken on trust.
-    if [ -f "$REPO/scripts/verify_delivery.py" ]; then
-      "$PY" -X utf8 "$REPO/scripts/verify_delivery.py" --delivery-dir "$RUN/delivery" \
-        >> "$RUN/logs/auto_deliver_acceptance.log" 2>&1
-      log "acceptance check exit $?; see logs/auto_deliver_acceptance.log"
+      echo "$(date -Is) chain_exit=$status acceptance_exit=$acceptance no_manifest" > "$DONE_MARK"
     fi
 
     # Leave the pool stopped: the run is over, and a restart would only add load.
