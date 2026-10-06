@@ -150,6 +150,22 @@ while true; do
     fi
     sleep 5
 
+    # The chain's supplementary layer forks six workers and the demo holds a ranked block, so
+    # it wants the memory the pool was using. The kill above leaves ~20 s for the kernel to
+    # reclaim it, which is normally plenty -- but "normally" is doing a lot of work when nobody
+    # is watching and the alternative is an OOM partway through the delivery. Wait for the
+    # memory to actually be available, bounded, and say so in the log.
+    MIN_FREE_GB=30
+    for _ in $(seq 1 40); do
+      AVAIL=$(free -g | awk '/^Mem:/{print $7}')
+      if [ "${AVAIL:-0}" -ge "$MIN_FREE_GB" ]; then
+        break
+      fi
+      log "waiting for memory: ${AVAIL}GB available, want ${MIN_FREE_GB}GB"
+      sleep 15
+    done
+    log "starting the chain with ${AVAIL}GB available"
+
     # 3. the chain
     log "starting the downstream chain"
     cd "$REPO" || { log "repo missing"; exit 1; }
