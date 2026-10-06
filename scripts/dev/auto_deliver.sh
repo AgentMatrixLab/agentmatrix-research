@@ -92,6 +92,21 @@ while true; do
       log "deadline ($DEADLINE) reached with $pass_n passing (< $THRESHOLD); delivering what exists"
     fi
 
+    # Retention writes a shard's part a few seconds AFTER its oos manifest appears, so the two
+    # counts can disagree by one for a moment. Entering the chain inside that window makes
+    # step 2 fall back to rebuilding EVERY passing factor instead of using the parts -- hours of
+    # work and a lot of memory, triggered by a timing accident. Wait for them to agree first.
+    for _ in $(seq 1 60); do
+      OOS_N=$(completed)
+      PART_N=$(ls "$RUN"/delivery/values/parts/*.parquet 2>/dev/null | wc -l)
+      if [ "$PART_N" -ge "$OOS_N" ]; then
+        break
+      fi
+      log "waiting for retention to catch up: parts=$PART_N oos=$OOS_N"
+      sleep 15
+    done
+    log "retention coverage at chain start: oos=$OOS_N parts=$PART_N"
+
     # A chain run in progress owns the delivery directory; do not race it.
     CHAIN_N=$(ps -eo args | awk '/run_downstream\.sh/ && !/awk/ {c++} END {print c+0}')
     if [ "$CHAIN_N" -gt 0 ]; then
