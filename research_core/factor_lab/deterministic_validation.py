@@ -431,6 +431,30 @@ def _rolling_factor(panel: pd.DataFrame, factor_id: str, config: dict[str, Any],
     return rolled.replace([np.inf, -np.inf], np.nan)
 
 
+def _session_panel(panel: pd.DataFrame) -> pd.DataFrame:
+    """Align to observed market sessions without filling missing observations."""
+    _require_columns(panel, ["date", "code"], "session alignment")
+    source = panel.reset_index(drop=True).copy()
+    source["date"] = pd.to_datetime(source["date"]).dt.normalize()
+    if source[["date", "code"]].isna().any().any():
+        raise ValueError("Missing date/code in session panel.")
+    if source.duplicated(["date", "code"]).any():
+        raise ValueError("Duplicate date/code in session panel.")
+    sessions = pd.DatetimeIndex(source["date"].unique()).sort_values()
+    keys = pd.MultiIndex.from_product(
+        [sorted(source["code"].unique()), sessions], names=["code", "date"]
+    )
+    return source.set_index(["code", "date"]).reindex(keys).reset_index()
+
+
+def _observed_session_rows(calculated: pd.DataFrame, panel: pd.DataFrame) -> pd.DataFrame:
+    keys = pd.MultiIndex.from_arrays(
+        [panel["code"], pd.to_datetime(panel["date"]).dt.normalize()],
+        names=["code", "date"],
+    )
+    return calculated.set_index(["code", "date"]).reindex(keys).reset_index()
+
+
 def _factor_lookup(
     panel: pd.DataFrame,
     factor_id: str,
@@ -438,8 +462,7 @@ def _factor_lookup(
     *,
     window: int | None = None,
 ) -> pd.Series:
-    source_panel = panel.reset_index(drop=True).copy()
-    source_panel["date"] = pd.to_datetime(source_panel["date"]).dt.normalize()
+    source_panel = _session_panel(panel)
     values = _rolling_factor(source_panel, factor_id, config, window=window)
     keys = pd.MultiIndex.from_frame(source_panel[["date", "code"]])
     return pd.Series(values.to_numpy(), index=keys)
@@ -461,7 +484,9 @@ def _build_styles(panel: pd.DataFrame, config: dict[str, Any]) -> pd.DataFrame:
     styles = config["styles"]
     shares_field = styles["size_shares_field"]
     _require_columns(panel, ["close", "total_turnover", shares_field], "style factors")
-    frame = panel.sort_values(["code", "date"]).copy()
+    frame = _session_panel(panel)
+    for column in ["close", "total_turnover", shares_field]:
+        frame[column] = pd.to_numeric(frame[column], errors="coerce")
     grouped = frame.groupby("code", sort=False)
     returns = grouped["close"].pct_change(fill_method=None)
     frame["size"] = np.log((frame["close"] * frame[shares_field]).where(lambda value: value > 0))
@@ -491,18 +516,23 @@ def _build_styles(panel: pd.DataFrame, config: dict[str, Any]) -> pd.DataFrame:
         .sort_index()
     )
     frame["liquidity"] = np.log(liquidity.where(liquidity > 0))
-    return frame
+    return _observed_session_rows(frame, panel)
 
 
 def _attach_forward_returns(frame: pd.DataFrame, horizons: list[int]) -> pd.DataFrame:
-    enriched = frame.sort_values(["code", "date"]).copy()
+    enriched = _session_panel(frame)
+    enriched["close"] = pd.to_numeric(enriched["close"], errors="coerce")
+    price = enriched["close"].where(
+        (enriched["close"] > 0) & np.isfinite(enriched["close"])
+    )
+    enriched["close"] = price
     grouped = enriched.groupby("code", sort=False)
     for horizon in horizons:
         future_price = grouped["close"].shift(-int(horizon))
         future_date = grouped["date"].shift(-int(horizon))
         enriched[f"forward_return_{horizon}d"] = future_price / enriched["close"] - 1.0
         enriched[f"target_date_{horizon}d"] = future_date
-    return enriched
+    return _observed_session_rows(enriched, frame)
 
 
 def _bounded_period(frame: pd.DataFrame, start: str, end: str, horizons: list[int]) -> pd.DataFrame:
@@ -771,21 +801,21 @@ def validate_panel(
         selected_factor = config["factor"]["fallback"]
         fallback_reason = fallback_reason or "turnover_rate_field_missing"
 
-    clean = _eligible_panel(panel, config)
+    history = _build_styles(panel, config)
     if precomputed is not None:
         # Factor values come from a validated local export; the pipeline only maps them
-        # onto the eligible panel. No transform, threshold or split logic is bypassed.
-        clean["factor_value"] = _map_factor_values(clean, precomputed.require(selected_factor))
-    elif config["factor"]["definitions"][selected_factor]["transform"] == "negative_pct_change":
-        clean["factor_value"] = _map_factor_values(
-            clean,
+        # by date/code. No transform, threshold or split logic is bypassed.
+        history["factor_value"] = _map_factor_values(history, precomputed.require(selected_factor))
+    else:
+        history["factor_value"] = _map_factor_values(
+            history,
             _factor_lookup(panel, selected_factor, config),
         )
-    else:
-        clean["factor_value"] = _rolling_factor(clean, selected_factor, config)
-    clean = _build_styles(clean, config)
     horizons = [int(value) for value in config["forward_returns"]["horizons"]]
-    enriched = _attach_forward_returns(clean, horizons)
+    # Eligibility applies to the decision date, never to future label endpoints
+    # or to observations inside the historical rolling windows.
+    enriched = _eligible_panel(_attach_forward_returns(history, horizons), config)
+    clean = enriched
     split = config["split"]
     train = _bounded_period(enriched, split["train_start"], split["train_end"], horizons)
     if segment == "train":
@@ -902,13 +932,11 @@ def validate_panel(
                 perturbation_passed = False
                 continue
             perturbed["perturbed_factor"] = _map_factor_values(perturbed, variant_values)
-        elif config["factor"]["definitions"][selected_factor]["transform"] == "negative_pct_change":
+        else:
             perturbed["perturbed_factor"] = _map_factor_values(
                 perturbed,
                 _factor_lookup(panel, selected_factor, config, window=window),
             )
-        else:
-            perturbed["perturbed_factor"] = _rolling_factor(clean, selected_factor, config, window=window)
         perturbed_oos = _bounded_period(perturbed, split["oos_start"], split["oos_end"], horizons)
         series = _daily_rank_ic(
             perturbed_oos,
