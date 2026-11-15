@@ -1,0 +1,43 @@
+{
+  "factor_id": "JQGM:turnover_ratio_40d",
+  "formula": "Mean(turnover_rate, 40)",
+  "unit": "percentage_points",
+  "evaluation_start": "2023-01-01",
+  "source_end": "2026-10-16",
+  "verification_stage": "partial_proof",
+  "admission_status": "pending_independent_review",
+  "online_submission_id": null,
+  "horizons": {
+    "5": {
+      "rank_ic": -0.04198792471899369,
+      "rank_ic_ci95": [
+        -0.07308414572402405,
+        -0.013035376104841892
+      ],
+      "holm_p": 0.010913638307249255,
+      "pearson_ic": -0.010989861312830765,
+      "low_minus_high": 0.00041141949763824365,
+      "q1_annualized_cost_proxy": -0.0017835577078322284,
+      "q1_endpoint_max_drawdown": -0.28390499479862397
+    },
+    "10": {
+      "rank_ic": -0.05017513351296825,
+      "rank_ic_ci95": [
+        -0.0889428371495797,
+        -0.011132312571945042
+      ],
+      "holm_p": 0.011962944298811562,
+      "pearson_ic": -0.021978515550691597,
+      "low_minus_high": 0.0017099427951996315,
+      "q1_annualized_cost_proxy": 0.059439353108296844,
+      "q1_endpoint_max_drawdown": -0.23176399776684298
+    }
+  },
+  "limitations": [
+    "历史诊断不是冻结后的前向业绩，未完成独立确认检验。",
+    "涨跌停价格缺失、行业覆盖不足；来源时点及容量未验证。",
+    "Rank IC排序倾向不等于收益差显著，Q1成本代理并非最低50只股票策略。",
+    "成本代理不包含冲击、部分成交和持有期内每日回撤。",
+    "仅候选目录待审核，不表示已经提交线上私有队列或已批准入库。"
+  ]
+}

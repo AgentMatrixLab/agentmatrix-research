@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="zh-CN"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; connect-src 'self' https://*.supabase.co; img-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'">
+<title>私有因子提交与审核 | AgentMatrix</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f5f7f8;color:#18333a;font:14px/1.65 "Segoe UI","Microsoft YaHei",sans-serif}header{padding:18px 5%;background:#fff;border-bottom:1px solid #dce4e7;display:flex;justify-content:space-between;align-items:center;gap:20px}header strong{font-size:20px}a{color:#126858}main{max-width:1200px;margin:25px auto;padding:0 20px}.panel{padding:24px;background:white;border:1px solid #dce4e7;border-radius:6px;margin-bottom:20px}h1{font-size:25px;margin:0 0 12px}h2{font-size:19px;margin:0 0 16px}p,small{color:#64777c}label{display:block;margin:12px 0}input,textarea,select{display:block;font:inherit;width:100%;padding:9px 12px;border:1px solid #c7d3d7;border-radius:4px;background:white}textarea{min-height:90px}button{font:inherit;padding:8px 16px;border-radius:4px;border:1px solid #bccdd0;background:white;color:#174b43;cursor:pointer;margin:5px 8px 5px 0}button.primary{background:#176b59;color:white;border-color:#176b59}button:disabled{opacity:.5;cursor:wait}.grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}.notice{padding:12px 18px;border-left:3px solid #b68935;background:#fcf6e9;margin-bottom:20px}#status{white-space:pre-wrap;overflow-wrap:anywhere}pre{font:12px/1.7 Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere;background:#f3f6f7;padding:15px}table{width:100%;border-collapse:collapse}td,th{padding:10px 8px;border-bottom:1px solid #dde5e7;text-align:left}td{overflow-wrap:anywhere}.scroll{overflow:auto}code{overflow-wrap:anywhere}.row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}.row input[type=checkbox]{width:auto}#login-panel{max-width:520px;margin:30px auto}[hidden]{display:none!important}@media(max-width:750px){.grid{grid-template-columns:1fr}header{align-items:flex-start;flex-direction:column}.panel{padding:18px}}
+</style>
+<script src="./private-config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.8/dist/umd/supabase.js"></script>
+</head><body>
+<header><strong>AgentMatrix · 私有因子提交</strong><div><a href="./">公开因子目录</a> · <a href="../">门户</a> <button id="logout" hidden>退出账号</button></div></header>
+<main>
+<div class="notice">邀请制独立账号。提交内容仅本人及管理员可见；入库不等于公开。上传文件不会自动执行，待人工检查。公开目录的共享密码不适用于此工作区。</div>
+<p id="status" role="status" aria-live="polite">正在检查账号及私有服务…</p>
+<section class="panel" id="login-panel"><h1>登录私有工作区</h1><p>请使用管理员邀请的邮箱账号，没有公开注册入口。</p>
+<form id="login-form"><label>邮箱<input id="email" type="email" autocomplete="username" required></label><label>独立密码<input id="password" type="password" autocomplete="current-password" required minlength="8"></label><button class="primary">登录</button></form></section>
+<section class="panel" id="account-panel" hidden><div class="row"><h2 id="identity">账号</h2><button id="refresh">刷新私有记录</button></div>
+<details><summary>邀请后设置密码／管理员MFA</summary><p>管理员必须使用TOTP二次验证，未通过时看不到私有提交。请勿外发密钥。</p>
+<form id="password-form"><label>设置或更改独立密码<input id="new-password" type="password" minlength="12" autocomplete="new-password" required></label><button>设置密码</button></form>
+<button id="enroll-mfa">添加TOTP验证器</button><pre id="mfa-secret" hidden></pre>
+<form id="mfa-form"><label>验证器<select id="mfa-factor"></select></label><label>六位验证码<input id="mfa-code" inputmode="numeric" pattern="[0-9]{6}" autocomplete="one-time-code" required></label><button>二次验证</button></form>
+</details></section>
+<div id="workspace" hidden>
+<section class="panel"><h2 id="list-title">我的提交</h2><label>搜索当前可访问记录<input id="search" type="search" placeholder="名称／因子ID／状态"></label><div class="scroll"><table><thead><tr><th>因子／版本</th><th>验证阶段</th><th>审核状态</th><th>操作</th></tr></thead><tbody id="submission-list"></tbody></table></div></section>
+<div class="grid"><section class="panel"><h2>新建或编辑私有草稿</h2><p>已提交版本不可改；退回后新建递增版本。所有者由真实登录身份绑定。</p>
+<label>导入本地草稿包<input id="import-manifest" type="file" accept=".json"></label>
+<form id="draft-form">
+<label>因子ID<input id="factor-id" required maxlength="160" placeholder="JQGM:turnover_ratio_40d"></label>
+<label>版本<input id="version" type="number" min="1" max="999999" value="1" required></label>
+<label>名称<input id="title" required maxlength="200"></label>
+<label>公式<textarea id="formula" required maxlength="4000"></textarea></label>
+<label>附件许可说明<textarea id="license" required maxlength="4000"></textarea></label>
+<label>代码SHA256<input id="code-hash" pattern="[0-9a-f]{64}" required></label>
+<label>配置SHA256<input id="config-hash" pattern="[0-9a-f]{64}" required></label>
+<label>数据SHA256<input id="data-hash" pattern="[0-9a-f]{64}" required></label>
+<label>验证阶段<select id="verification-stage"><option value="implemented">已实现，尚未验证</option><option value="partial_proof">部分验证</option><option value="internal_validated">内部验证声明，待审核核实</option></select></label>
+<label>汇总指标JSON<textarea id="metrics">{}</textarea></label>
+<label>验证缺口JSON数组<textarea id="blockers">[]</textarea></label>
+<button class="primary" id="save-draft">保存新草稿</button><button type="button" id="new-draft">清空选择，新建版本</button>
+</form></section>
+<section class="panel"><h2>当前版本与证据</h2><p id="selected-label">请先选择或保存草稿。</p><pre id="submission-detail"></pre>
+<label>私有附件，每文件≤25MB／版本≤100MB<input id="upload-files" type="file" multiple accept=".py,.json,.md,.pdf,.csv,.parquet"></label>
+<button id="upload">上传至私有桶</button><button id="submit" class="primary">冻结证据并提交待审核</button>
+<div id="file-list"></div><h2>审核与审计记录</h2><pre id="review-history"></pre>
+<div id="review-panel" hidden><h2>管理员审核</h2><p>先领取审核，再下载附件核验SHA256并人工检查；本人不得审核自己的提交。布尔门禁是审核人的声明，不是自动市场验证。</p>
+<button id="begin-review">领取审核</button>
+<label>审核决定<select id="decision"><option value="returned">退回补证</option><option value="rejected">拒绝</option><option value="admitted">批准入库，仍私有</option></select></label>
+<label>审核意见<textarea id="review-note"></textarea></label>
+<label>入库证明JSON：全部门禁、独立节点及证据引用<textarea id="attestation">{}</textarea></label>
+<button id="review" class="primary">保存独立审核决定</button></div>
+</section></div></div>
+</main><script type="module" src="./submissions.js"></script></body></html>

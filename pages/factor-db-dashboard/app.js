@@ -16,6 +16,7 @@ const state = {
   source: "",
   tier: "",
   search: "",
+  publicResearch: null,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -69,6 +70,14 @@ async function loadData() {
   state.factors = state.snapshot.factors || [];
   state.stats = state.snapshot.stats || {};
   state.trust = state.snapshot.trust || null;
+  try {
+    const evidence = await fetch("./data/turnover40-summary.json", {cache:"no-store"});
+    if (!evidence.ok) throw new Error("summary unavailable");
+    const summary = await evidence.json();
+    if (summary.factor_id === "JQGM:turnover_ratio_40d") state.publicResearch = summary;
+  } catch {
+    state.publicResearch = null;
+  }
   state.factors.forEach((f) => state.byId.set(f.factor_id, f));
   state.filtered = [...state.factors];
 
@@ -238,6 +247,23 @@ function metaCell(k, v) {
   return `<div class="meta-cell"><div class="k">${escapeHtml(k)}</div><div class="v">${escapeHtml(v || "—")}</div></div>`;
 }
 
+function publicResearchSection(f) {
+  if (f.factor_id !== "JQGM:turnover_ratio_40d") return "";
+  const summary = state.publicResearch;
+  if (!summary) return '<div class="section"><div class="section-title">真实研究证据</div><p>公开汇总尚未加载，不表示验证通过。</p></div>';
+  const rows = Object.entries(summary.horizons || {}).map(([h,m]) =>
+    `<tr><td>${escapeHtml(h)}日</td><td>${escapeHtml(fmtNum(m.rank_ic))}</td>` +
+    `<td>${escapeHtml((m.rank_ic_ci95 || []).map(fmtNum).join(" ~ "))}</td>` +
+    `<td>${escapeHtml(fmtNum(m.holm_p))}</td>` +
+    `<td>${escapeHtml(fmtNum(m.low_minus_high * 100))}%</td></tr>`).join("");
+  const limitations = (summary.limitations || []).map(v=>`<li>${escapeHtml(v)}</li>`).join("");
+  return `<div class="section"><div class="section-title">真实历史验证 · 待审核入库／部分验证</div>
+    <div class="section-body"><p>数据截至 ${escapeHtml(summary.source_end)}。目录登记不是正式入库。</p>
+    <table><thead><tr><th>周期</th><th>Rank IC</th><th>95%时间块区间</th><th>Holm p</th><th>低减高毛收益差</th></tr></thead><tbody>${rows}</tbody></table>
+    <ul>${limitations}</ul><p>线上私有回执：${escapeHtml(summary.online_submission_id || "尚未提交，不伪造回执")}</p>
+    <a href="./submissions.html">真实账号登录 · 私有提交／管理员审核</a></div></div>`;
+}
+
 /* 信任分级区块：这个因子凭什么可信（口径 research_core.factor_db.trust） */
 function trustSection(f) {
   const t = f.trust_tier || "—";
@@ -286,6 +312,7 @@ function renderDetail(f) {
     </div>
 
     ${trustSection(f)}
+    ${publicResearchSection(f)}
 
     <div class="section">
       <div class="section-title">因子定义</div>
