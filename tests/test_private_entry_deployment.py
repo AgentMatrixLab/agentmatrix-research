@@ -21,3 +21,8 @@ def test_portal_exposes_public_summary_and_backup_without_changing_password():
     assert "https://factor.liangjun.net.cn/factor-lab/" in html
     app = (ROOT / "pages/factor-db-dashboard/app.js").read_text(encoding="utf-8")
     assert 'const ACCESS_PASSWORD = window.FACTORDB_ACCESS_PASSWORD || "factorlab2026"' in app
+
+
+def test_static_permission_workflow_does_not_load_research_fixtures():
+    workflow = (ROOT / ".github/workflows/private-factor-checks.yml").read_text(encoding="utf-8")
+    assert "--noconftest" in workflow

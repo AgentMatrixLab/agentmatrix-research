@@ -33,4 +33,4 @@ jobs:
           node tests/private-factor-client.cjs
           node tests/private-factor-panel.cjs "$RUNNER_TEMP/private-factor-tests/node_modules/linkedom"
       - name: Verify explicit deployment gate and unchanged legacy login
-        run: python -m pytest tests/test_private_entry_deployment.py -q -p no:cacheprovider
+        run: python -m pytest tests/test_private_entry_deployment.py -q -p no:cacheprovider --noconftest
