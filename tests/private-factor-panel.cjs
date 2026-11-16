@@ -7,8 +7,11 @@ const { parseHTML } = require(process.argv[2]);
 
 (async () => {
   const { window, document } = parseHTML(fs.readFileSync("pages/factor-db-dashboard/submissions.html","utf8"));
+  assert(!document.body.textContent.includes("邀请制独立账号。提交内容仅本人及管理员可见"));
+  assert(document.getElementById("recover-password"));
   global.window=window; global.document=document;
   const $=id=>document.getElementById(id);
+  $("email").checkValidity=()=>true;
   const storage=new Map();
   window.sessionStorage={getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)};
   for(const form of document.querySelectorAll("form")) form.reset=()=>{};
@@ -26,6 +29,11 @@ const { parseHTML } = require(process.argv[2]);
       getUser:async()=>({data:{user},error:null}),
       signInWithPassword:async()=>{user={id:"owner-a",email:"a@example.test"};return {error:null}},
       signOut:async()=>{user=null;authEvent("SIGNED_OUT");return {error:null}},
+      resetPasswordForEmail:async(email,options)=>{
+        assert.equal(email,"a@example.test");
+        assert(options.redirectTo.includes("submissions.html"));
+        return {error:null};
+      },
       onAuthStateChange:fn=>{authEvent=fn;return {data:{subscription:{unsubscribe(){}}}}},
       mfa:{listFactors:async()=>({data:{all:[]},error:null})}
     },
@@ -47,6 +55,10 @@ const { parseHTML } = require(process.argv[2]);
   async function settle() { for(let i=0;i<12;i++) await new Promise(resolve=>setImmediate(resolve)); }
   function fire(id,event) { $(id).dispatchEvent(new window.Event(event,{cancelable:true})); }
   assert.equal($("workspace").hidden,true);
+  window.location={origin:"https://factor.liangjun.net.cn",pathname:"/factor-lab/workspace/submissions.html"};
+  $("email").value="a@example.test";
+  fire("recover-password","click");await settle();
+  assert($("status").textContent.includes("邮件"));
   $("email").value="a@example.test";$("password").value="test-password";
   fire("login-form","submit");await settle();
   assert.equal($("workspace").hidden,false);

@@ -4,6 +4,7 @@ const $ = id => document.getElementById(id);
 const STATES = {draft:"草稿",submitted:"待审核",under_review:"审核中",admitted:"已入库／仍私有",
   returned:"退回补证",rejected:"已拒绝"};
 let api, sdk, currentUser, selected, records = [], files = [], isAdmin = false, generation = 0;
+let passwordRecovery = false;
 const downloaded = new Set();
 const text = (tag,value) => { const node=document.createElement(tag); node.textContent=value; return node; };
 const status = message => { $("status").textContent=message; };
@@ -24,9 +25,13 @@ function clearPrivate() {
 async function action(fn) {
   const buttons=[...document.querySelectorAll("button")];
   buttons.forEach(button=>{button.disabled=true});
+  status("正在处理，请稍候…");
   try { await fn(); }
   catch(error) { status("操作未完成："+error.message+"。不会回退到演示数据。"); }
-  finally { buttons.forEach(button=>{button.disabled=false}); }
+  finally {
+    buttons.forEach(button=>{button.disabled=false});
+    if($("status").textContent==="正在处理，请稍候…") status("操作完成。");
+  }
 }
 
 function payloadFromForm() {
@@ -124,7 +129,13 @@ async function showSession() {
   const epoch=generation;
   const {data,error}=await sdk.auth.getUser();
   if(epoch!==generation) return;
-  if(error || !data.user) { $("login-panel").hidden=false; status("请使用受邀账号登录。"); return; }
+  if(error || !data.user) {
+    $("login-panel").hidden=false;
+    if(error && error.name!=="AuthSessionMissingError" && ![400,401,403].includes(error.status)) {
+      throw new Error("账号服务暂时不可用，请检查网络后重试；这不代表密码错误。");
+    }
+    status("请使用受邀账号登录。"); return;
+  }
   currentUser=data.user;
   $("login-panel").hidden=true; $("account-panel").hidden=false; $("logout").hidden=false;
   $("identity").textContent=`${currentUser.email} · 真实账号`;
@@ -138,25 +149,44 @@ async function showSession() {
   const allowed=await api.rpc("pf_member",{});
   if(epoch!==generation) return;
   if(!allowed) {
-    status("账号尚未加入私有成员表，或管理员尚未完成MFA。请联系管理员配置，不会读取旧公开表。"); return;
+    $("account-setup").open=true;
+    status("密码登录已成功。管理员请完成下方MFA二次验证后进入工作区；若你是协作者，请联系管理员确认成员授权。"); return;
   }
   isAdmin=await api.rpc("pf_admin",{});
   if(epoch!==generation) return;
   $("list-title").textContent=isAdmin ? "管理员 · 待审核及全部私有提交" : "我的私有提交";
   $("workspace").hidden=false;
   await reload();
-  status("已通过真实认证和成员权限。列表仅包含当前身份可访问的记录。");
+  if(epoch!==generation) return;
+  if(passwordRecovery) {
+    $("account-setup").open=true;
+    status("密码恢复链接已验证，请在账号设置中填写新密码。");
+  } else {
+    status("已通过真实认证和成员权限。列表仅包含当前身份可访问的记录。");
+  }
 }
 
 $("login-form").addEventListener("submit",event=>{
   event.preventDefault(); action(async()=>{
     const {error}=await sdk.auth.signInWithPassword({email:$("email").value.trim(),password:$("password").value});
     $("password").value="";
-    if(error) throw new Error(error.message);
+    if(error) {
+      const invalid = error.code === "invalid_credentials" || /invalid login credentials/i.test(error.message);
+      throw new Error(invalid ? "邮箱或独立密码不正确；首次使用请打开邀请邮件激活并设置密码，也可点击“首次设置／找回密码”。共享访问密码不能用于此账号。" : error.message);
+    }
     await showSession();
   });
 });
+$("recover-password").addEventListener("click",()=>action(async()=>{
+  const email=$("email").value.trim();
+  if(!email || !$("email").checkValidity()) throw new Error("请先填写有效邮箱");
+  const redirectTo=window.location.origin+window.location.pathname;
+  const {error}=await sdk.auth.resetPasswordForEmail(email,{redirectTo});
+  if(error) throw new Error(error.message);
+  status("如果该邮箱已有受邀账号，系统会发送密码设置邮件。请从邮件中的链接进入，再设置独立密码；未收到请检查垃圾邮件。");
+}));
 $("logout").addEventListener("click",()=>action(async()=>{
+  passwordRecovery=false;
   clearPrivate(); $("login-panel").hidden=false;
   const {error}=await sdk.auth.signOut({scope:"local"});
   if(error) throw new Error(error.message);
@@ -168,6 +198,7 @@ $("password-form").addEventListener("submit",event=>{
   event.preventDefault(); action(async()=>{
     const {error}=await sdk.auth.updateUser({password:$("new-password").value});
     $("new-password").value=""; if(error) throw new Error(error.message);
+    passwordRecovery=false;
     status("账号密码已更新。");
   });
 });
@@ -178,6 +209,7 @@ $("enroll-mfa").addEventListener("click",()=>action(async()=>{
   $("mfa-secret").textContent=`在验证器手动添加此TOTP密钥，验证后不再显示：\n${data.totp.secret}`;
   const option=text("option","新验证器"); option.value=data.id; $("mfa-factor").append(option);
   $("mfa-factor").value=data.id;
+  status("验证器密钥已生成。请在手机验证器中添加密钥，再输入当前六位验证码完成绑定。");
 }));
 $("mfa-form").addEventListener("submit",event=>{
   event.preventDefault(); action(async()=>{
@@ -185,8 +217,10 @@ $("mfa-form").addEventListener("submit",event=>{
     const challenge=await sdk.auth.mfa.challenge({factorId});
     if(challenge.error) throw new Error(challenge.error.message);
     const verified=await sdk.auth.mfa.verify({factorId,challengeId:challenge.data.id,code:$("mfa-code").value});
-    $("mfa-code").value=""; $("mfa-secret").textContent=""; $("mfa-secret").hidden=true;
-    if(verified.error) throw new Error(verified.error.message);
+    $("mfa-code").value="";
+    if(verified.error) throw new Error(verified.error.code==="mfa_verification_failed" ?
+      "验证码不正确或已过期，请确认手机时间自动同步，再输入验证器当前的六位数字。" : verified.error.message);
+    $("mfa-secret").textContent=""; $("mfa-secret").hidden=true;
     await showSession();
   });
 });
@@ -257,7 +291,7 @@ await action(async()=>{
   if (window.PRIVATE_FACTOR_BACKEND_ENABLED === false) {
     clearPrivate();
     $("login-panel").hidden=true;
-    status("后端尚未开通：现有Supabase项目域名无法解析，正在等待恢复项目并完成权限验收。当前不能登录、上传或提交审核。公开40日因子摘要仍可查看，原服务器研究入口不受影响。");
+    status("此入口的私有后端尚未开通，当前不能登录或上传。请使用服务器私有工作区备用入口。");
     return;
   }
   if(!window.supabase || !window.FACTOR_LAB_SUPABASE_URL || !window.FACTOR_LAB_SUPABASE_ANON_KEY) {
@@ -270,6 +304,10 @@ await action(async()=>{
   api=new PrivateFactorClient(sdk);
   sdk.auth.onAuthStateChange(event=>{
     if(event==="SIGNED_OUT") { clearPrivate(); $("login-panel").hidden=false; status("会话已退出。"); }
+    // Initial load and the login handler each await showSession themselves.
+    // Re-entering it on SIGNED_IN races those calls and overwrites their result.
+    // Recovery is raised during SDK initialization, before getUser resolves.
+    if(event==="PASSWORD_RECOVERY") passwordRecovery=true;
   });
   await showSession();
 });
