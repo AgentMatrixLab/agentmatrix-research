@@ -9,16 +9,16 @@
 <style>
 *{box-sizing:border-box}body{margin:0;background:#f5f7f8;color:#18333a;font:14px/1.65 "Segoe UI","Microsoft YaHei",sans-serif}header{padding:18px 5%;background:#fff;border-bottom:1px solid #dce4e7;display:flex;justify-content:space-between;align-items:center;gap:20px}header strong{font-size:20px}a{color:#126858}main{max-width:1200px;margin:25px auto;padding:0 20px}.panel{padding:24px;background:white;border:1px solid #dce4e7;border-radius:6px;margin-bottom:20px}h1{font-size:25px;margin:0 0 12px}h2{font-size:19px;margin:0 0 16px}p,small{color:#64777c}label{display:block;margin:12px 0}input,textarea,select{display:block;font:inherit;width:100%;padding:9px 12px;border:1px solid #c7d3d7;border-radius:4px;background:white}textarea{min-height:90px}button{font:inherit;padding:8px 16px;border-radius:4px;border:1px solid #bccdd0;background:white;color:#174b43;cursor:pointer;margin:5px 8px 5px 0}button.primary{background:#176b59;color:white;border-color:#176b59}button:disabled{opacity:.5;cursor:wait}.grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}.notice{padding:12px 18px;border-left:3px solid #b68935;background:#fcf6e9;margin-bottom:20px}#status{white-space:pre-wrap;overflow-wrap:anywhere}pre{font:12px/1.7 Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere;background:#f3f6f7;padding:15px}table{width:100%;border-collapse:collapse}td,th{padding:10px 8px;border-bottom:1px solid #dde5e7;text-align:left}td{overflow-wrap:anywhere}.scroll{overflow:auto}code{overflow-wrap:anywhere}.row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}.row input[type=checkbox]{width:auto}#login-panel{max-width:520px;margin:30px auto}[hidden]{display:none!important}@media(max-width:750px){.grid{grid-template-columns:1fr}header{align-items:flex-start;flex-direction:column}.panel{padding:18px}}
 </style>
-<script src="./private-config.js"></script>
+<script src="./private-config.js?v=20261116b"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.8/dist/umd/supabase.js"></script>
 </head><body>
-<header><strong>AgentMatrix · 私有因子提交</strong><div><a href="./">公开因子目录</a> · <a href="../">门户</a> <button id="logout" hidden>退出账号</button></div></header>
+<header><strong>AgentMatrix · 私有因子提交</strong><div><a href="./">公开因子目录</a> · <a href="../">门户</a> · <a href="https://factor.liangjun.net.cn/factor-lab/workspace/submissions.html">服务器备用入口</a> <button id="logout" hidden>退出账号</button></div></header>
 <main>
 <p id="status" role="status" aria-live="polite">正在检查账号及私有服务…</p>
 <section class="panel" id="login-panel"><h1>登录私有工作区</h1><p>请使用管理员邀请的邮箱账号，没有公开注册入口。</p>
-<form id="login-form"><label>邮箱<input id="email" type="email" autocomplete="username" required></label><label>独立密码<input id="password" type="password" autocomplete="current-password" required minlength="8"></label><button class="primary">登录</button><button type="button" id="recover-password">首次设置／找回密码</button></form></section>
+<form id="login-form"><label>邮箱<input id="email" type="email" autocomplete="username" required></label><label>独立密码<input id="password" type="password" autocomplete="current-password" required></label><button class="primary">登录</button><button type="button" id="recover-password">首次设置／找回密码</button></form></section>
 <section class="panel" id="account-panel" hidden><div class="row"><h2 id="identity">账号</h2><button id="refresh">刷新私有记录</button></div>
-<details id="account-setup"><summary>邀请后设置密码／管理员MFA</summary><p>管理员必须使用TOTP二次验证，未通过时看不到私有提交。请勿外发密钥。</p>
+<details id="account-setup"><summary>账号设置与二次验证</summary><p>首次使用：点击“添加TOTP验证器”，在 Microsoft Authenticator 或 Google Authenticator 中手动添加下方密钥，再输入生成的六位验证码。已绑定验证器的管理员直接输入验证码，无需重新设置密码。请勿外发密钥。</p>
 <form id="password-form"><label>设置或更改独立密码<input id="new-password" type="password" minlength="12" autocomplete="new-password" required></label><button>设置密码</button></form>
 <button id="enroll-mfa">添加TOTP验证器</button><pre id="mfa-secret" hidden></pre>
 <form id="mfa-form"><label>验证器<select id="mfa-factor"></select></label><label>六位验证码<input id="mfa-code" inputmode="numeric" pattern="[0-9]{6}" autocomplete="one-time-code" required></label><button>二次验证</button></form>
@@ -52,4 +52,4 @@
 <label>入库证明JSON：全部门禁、独立节点及证据引用<textarea id="attestation">{}</textarea></label>
 <button id="review" class="primary">保存独立审核决定</button></div>
 </section></div></div>
-</main><script type="module" src="./submissions.js?v=20261116"></script></body></html>
+</main><script type="module" src="./submissions.js?v=20261116b"></script></body></html>

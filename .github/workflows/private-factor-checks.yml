@@ -24,13 +24,17 @@ jobs:
           python-version: "3.11"
       - name: Install isolated test dependencies
         run: |
-          npm install --prefix "$RUNNER_TEMP/private-factor-tests" @electric-sql/pglite@0.5.16 linkedom@0.18.15 --no-audit --no-fund
+          npm install --prefix "$RUNNER_TEMP/private-factor-tests" @electric-sql/pglite@0.5.16 linkedom@0.18.15 playwright@1.65.1 --no-audit --no-fund
           python -m pip install pytest
+      - name: Install browser for real SDK login regressions
+        run: node "$RUNNER_TEMP/private-factor-tests/node_modules/playwright/cli.js" install --with-deps chromium
       - name: Execute owner isolation and independent review transactions
         run: node tests/private-factor-db.cjs "$RUNNER_TEMP/private-factor-tests/node_modules/@electric-sql/pglite" supabase/migrations/202611150001_private_factor_submissions.sql
       - name: Execute client and DOM checks
         run: |
           node tests/private-factor-client.cjs
           node tests/private-factor-panel.cjs "$RUNNER_TEMP/private-factor-tests/node_modules/linkedom"
+      - name: Execute browser authentication and MFA regressions
+        run: node tests/private-factor-auth-browser.cjs "$RUNNER_TEMP/private-factor-tests/node_modules/playwright"
       - name: Verify explicit deployment gate and unchanged legacy login
         run: python -m pytest tests/test_private_entry_deployment.py -q -p no:cacheprovider --noconftest

@@ -3,13 +3,17 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_disabled_backend_is_explicit_and_independent_of_legacy_config():
+def test_verified_backend_config_is_public_and_independent_of_legacy_config():
     html = (ROOT / "pages/factor-db-dashboard/submissions.html").read_text(encoding="utf-8")
     js = (ROOT / "pages/factor-db-dashboard/submissions.js").read_text(encoding="utf-8")
     config = (ROOT / "pages/factor-db-dashboard/private-config.js").read_text(encoding="utf-8")
     assert "./private-config.js" in html
     assert "../factor-lab-dashboard/config.js" not in html
-    assert "PRIVATE_FACTOR_BACKEND_ENABLED = false" in config
+    assert "PRIVATE_FACTOR_BACKEND_ENABLED = true" in config
+    assert "https://wcexkmmpqmaqwiywntnc.supabase.co" in config
+    assert "sb_publishable_" in config
+    assert "sb_secret_" not in config
+    assert "sbp_" not in config
     assert "PRIVATE_FACTOR_BACKEND_ENABLED === false" in js
     assert "后端尚未开通" in js
 
