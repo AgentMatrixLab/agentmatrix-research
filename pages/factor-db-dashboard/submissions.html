@@ -14,12 +14,11 @@
 </head><body>
 <header><strong>AgentMatrix · 私有因子提交</strong><div><a href="./">公开因子目录</a> · <a href="../">门户</a> <button id="logout" hidden>退出账号</button></div></header>
 <main>
-<div class="notice">邀请制独立账号。提交内容仅本人及管理员可见；入库不等于公开。上传文件不会自动执行，待人工检查。公开目录的共享密码不适用于此工作区。</div>
 <p id="status" role="status" aria-live="polite">正在检查账号及私有服务…</p>
 <section class="panel" id="login-panel"><h1>登录私有工作区</h1><p>请使用管理员邀请的邮箱账号，没有公开注册入口。</p>
-<form id="login-form"><label>邮箱<input id="email" type="email" autocomplete="username" required></label><label>独立密码<input id="password" type="password" autocomplete="current-password" required minlength="8"></label><button class="primary">登录</button></form></section>
+<form id="login-form"><label>邮箱<input id="email" type="email" autocomplete="username" required></label><label>独立密码<input id="password" type="password" autocomplete="current-password" required minlength="8"></label><button class="primary">登录</button><button type="button" id="recover-password">首次设置／找回密码</button></form></section>
 <section class="panel" id="account-panel" hidden><div class="row"><h2 id="identity">账号</h2><button id="refresh">刷新私有记录</button></div>
-<details><summary>邀请后设置密码／管理员MFA</summary><p>管理员必须使用TOTP二次验证，未通过时看不到私有提交。请勿外发密钥。</p>
+<details id="account-setup"><summary>邀请后设置密码／管理员MFA</summary><p>管理员必须使用TOTP二次验证，未通过时看不到私有提交。请勿外发密钥。</p>
 <form id="password-form"><label>设置或更改独立密码<input id="new-password" type="password" minlength="12" autocomplete="new-password" required></label><button>设置密码</button></form>
 <button id="enroll-mfa">添加TOTP验证器</button><pre id="mfa-secret" hidden></pre>
 <form id="mfa-form"><label>验证器<select id="mfa-factor"></select></label><label>六位验证码<input id="mfa-code" inputmode="numeric" pattern="[0-9]{6}" autocomplete="one-time-code" required></label><button>二次验证</button></form>
@@ -53,4 +52,4 @@
 <label>入库证明JSON：全部门禁、独立节点及证据引用<textarea id="attestation">{}</textarea></label>
 <button id="review" class="primary">保存独立审核决定</button></div>
 </section></div></div>
-</main><script type="module" src="./submissions.js"></script></body></html>
+</main><script type="module" src="./submissions.js?v=20261116"></script></body></html>

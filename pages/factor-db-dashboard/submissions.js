@@ -152,10 +152,21 @@ $("login-form").addEventListener("submit",event=>{
   event.preventDefault(); action(async()=>{
     const {error}=await sdk.auth.signInWithPassword({email:$("email").value.trim(),password:$("password").value});
     $("password").value="";
-    if(error) throw new Error(error.message);
+    if(error) {
+      const invalid = error.code === "invalid_credentials" || /invalid login credentials/i.test(error.message);
+      throw new Error(invalid ? "邮箱或独立密码不正确；首次使用请打开邀请邮件激活并设置密码，也可点击“首次设置／找回密码”。共享访问密码不能用于此账号。" : error.message);
+    }
     await showSession();
   });
 });
+$("recover-password").addEventListener("click",()=>action(async()=>{
+  const email=$("email").value.trim();
+  if(!email || !$("email").checkValidity()) throw new Error("请先填写有效邮箱");
+  const redirectTo=window.location.origin+window.location.pathname;
+  const {error}=await sdk.auth.resetPasswordForEmail(email,{redirectTo});
+  if(error) throw new Error(error.message);
+  status("如果该邮箱已有受邀账号，系统会发送密码设置邮件。请从邮件中的链接进入，再设置独立密码；未收到请检查垃圾邮件。");
+}));
 $("logout").addEventListener("click",()=>action(async()=>{
   clearPrivate(); $("login-panel").hidden=false;
   const {error}=await sdk.auth.signOut({scope:"local"});
@@ -270,6 +281,16 @@ await action(async()=>{
   api=new PrivateFactorClient(sdk);
   sdk.auth.onAuthStateChange(event=>{
     if(event==="SIGNED_OUT") { clearPrivate(); $("login-panel").hidden=false; status("会话已退出。"); }
+    if(event==="PASSWORD_RECOVERY" || event==="SIGNED_IN") {
+      // Auth callbacks must not await further auth calls while the SDK holds its lock.
+      setTimeout(()=>action(async()=>{
+        await showSession();
+        if(currentUser) {
+          $("account-setup").open=true;
+          status("账号已认证。首次使用请先设置独立密码，再完成管理员MFA验证。");
+        }
+      }),0);
+    }
   });
   await showSession();
 });
