@@ -34,12 +34,12 @@ function session(user,aal="aal1") {
   browser=await chromium.launch({headless:true,
     ...(process.env.AMX_CHROMIUM_PATH?{executablePath:process.env.AMX_CHROMIUM_PATH}:{})});
   let checks=0;
-  for(const scenario of ["short_password","successful_login","mfa_retry","refresh_failure","recovery_link"]) {
+  for(const scenario of ["short_password","successful_login","password_admin","refresh_failure","recovery_link"]) {
     if(process.env.AMX_AUTH_SCENARIO && process.env.AMX_AUTH_SCENARIO!==scenario) continue;
     const context=await browser.newContext();
     const page=await context.newPage();
     const calls=[],errors=[];
-    let factors=[],aal="aal1",member=scenario!=="mfa_retry",userFailure=false;
+    let factors=[],aal="aal1",member=true,userFailure=false;
     const user=()=>({id:userId,aud:"authenticated",role:"authenticated",email:"test@example.invalid",
       email_confirmed_at:"2026-01-01T00:00:00Z",created_at:"2026-01-01T00:00:00Z",
       app_metadata:{provider:"email",providers:["email"]},user_metadata:{},factors});
@@ -59,7 +59,7 @@ function session(user,aal="aal1") {
         body=user();
         if(userFailure) {status=503;body={code:"unexpected_failure",msg:"fixture service unavailable"};}
       } else if(url.pathname==="/rest/v1/rpc/pf_member") body=member;
-      else if(url.pathname==="/rest/v1/rpc/pf_admin") body=aal==="aal2";
+      else if(url.pathname==="/rest/v1/rpc/pf_admin") body=scenario==="password_admin";
       else if(url.pathname==="/rest/v1/pf_submissions") body=[];
       else if(url.pathname==="/auth/v1/factors") {
         factors=[{id:factorId,factor_type:"totp",status:"unverified",friendly_name:"Test"}];
@@ -80,6 +80,9 @@ function session(user,aal="aal1") {
         token_type:"bearer",expires_in:"3600",type:"recovery"});
     }
     await page.goto(url,{waitUntil:"networkidle"});
+    assert.equal(await page.locator("#enroll-mfa, #mfa-form, #mfa-secret").count(),0,
+      "temporary password workflow must not render TOTP controls");checks++;
+    assert(!calls.some(p=>p.includes("/factors")),"no MFA calls on session initialization");checks++;
     if(scenario==="recovery_link") {
       assert(await page.locator("#password-form").isVisible(),"recovery link opens password form");checks++;
       assert((await page.locator("#status").innerText()).includes("密码恢复链接已验证"),"recovery status is not overwritten");checks++;
@@ -102,23 +105,9 @@ function session(user,aal="aal1") {
       await page.reload({waitUntil:"networkidle"});
       assert(await page.locator("#workspace").isVisible(),"reload retains authenticated workspace");checks++;
     }
-    if(scenario==="mfa_retry") {
-      assert(!(await page.locator("#workspace").isVisible()),"aal1 admin cannot read private workspace");checks++;
-      assert(!calls.includes("/rest/v1/pf_submissions"),"no private list request before MFA");checks++;
-      assert(await page.locator("#enroll-mfa").isVisible(),"MFA controls must open without searching");checks++;
-      await page.reload({waitUntil:"networkidle"});
-      assert(await page.locator("#enroll-mfa").isVisible(),"MFA controls must also open on reload");checks++;
-      await page.locator("#enroll-mfa").click();
-      await page.locator("#mfa-secret").waitFor({state:"visible"});
-      assert(!(await page.locator("#status").innerText()).includes("正在处理"),"enrollment must finish its progress status");checks++;
-      await page.locator("#mfa-code").fill("000000");
-      await page.locator("#mfa-form button").click();
-      await page.waitForFunction(()=>document.getElementById("status").textContent.includes("操作未完成"));
-      assert(await page.locator("#mfa-secret").isVisible(),"failed TOTP must preserve the unverified setup secret");checks++;
-      await page.locator("#mfa-code").fill("123456");
-      await page.locator("#mfa-form button").click();
-      await page.locator("#workspace").waitFor({state:"visible"});
-      assert(!(await page.locator("#mfa-secret").isVisible()),"successful TOTP clears setup secret");checks++;
+    if(scenario==="password_admin") {
+      assert(await page.locator("#workspace").isVisible(),"password admin can enter workspace");checks++;
+      assert((await page.locator("#list-title").innerText()).includes("管理员"),"server role determines admin view");checks++;
     }
     if(scenario==="refresh_failure") {
       userFailure=true;

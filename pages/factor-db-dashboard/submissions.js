@@ -16,10 +16,9 @@ function clearPrivate() {
   $("workspace").hidden=true; $("account-panel").hidden=true; $("logout").hidden=true;
   $("submission-list").replaceChildren(); $("file-list").replaceChildren();
   $("submission-detail").textContent=""; $("review-history").textContent="";
-  $("mfa-secret").textContent=""; $("mfa-secret").hidden=true; $("mfa-factor").replaceChildren();
   $("identity").textContent="账号"; $("selected-label").textContent="请先选择或保存草稿。";
   $("draft-form").reset(); $("review-note").value=""; $("attestation").value="{}";
-  $("upload-files").value=""; $("import-manifest").value=""; $("new-password").value=""; $("mfa-code").value="";
+  $("upload-files").value=""; $("import-manifest").value=""; $("new-password").value="";
 }
 
 async function action(fn) {
@@ -139,18 +138,11 @@ async function showSession() {
   currentUser=data.user;
   $("login-panel").hidden=true; $("account-panel").hidden=false; $("logout").hidden=false;
   $("identity").textContent=`${currentUser.email} · 真实账号`;
-  const factors=await sdk.auth.mfa.listFactors();
-  if(epoch!==generation) return;
-  if(factors.error) throw new Error(factors.error.message);
-  for(const factor of factors.data.all.filter(f=>f.factor_type==="totp")) {
-    const option=text("option",factor.friendly_name || factor.id); option.value=factor.id;
-    $("mfa-factor").append(option);
-  }
   const allowed=await api.rpc("pf_member",{});
   if(epoch!==generation) return;
   if(!allowed) {
     $("account-setup").open=true;
-    status("密码登录已成功。管理员请完成下方MFA二次验证后进入工作区；若你是协作者，请联系管理员确认成员授权。"); return;
+    status("账号已认证，但邮箱尚未验证或成员授权无效，请联系管理员确认。"); return;
   }
   isAdmin=await api.rpc("pf_admin",{});
   if(epoch!==generation) return;
@@ -200,28 +192,6 @@ $("password-form").addEventListener("submit",event=>{
     $("new-password").value=""; if(error) throw new Error(error.message);
     passwordRecovery=false;
     status("账号密码已更新。");
-  });
-});
-$("enroll-mfa").addEventListener("click",()=>action(async()=>{
-  const {data,error}=await sdk.auth.mfa.enroll({factorType:"totp",friendlyName:"AgentMatrix admin"});
-  if(error) throw new Error(error.message);
-  $("mfa-secret").hidden=false;
-  $("mfa-secret").textContent=`在验证器手动添加此TOTP密钥，验证后不再显示：\n${data.totp.secret}`;
-  const option=text("option","新验证器"); option.value=data.id; $("mfa-factor").append(option);
-  $("mfa-factor").value=data.id;
-  status("验证器密钥已生成。请在手机验证器中添加密钥，再输入当前六位验证码完成绑定。");
-}));
-$("mfa-form").addEventListener("submit",event=>{
-  event.preventDefault(); action(async()=>{
-    const factorId=$("mfa-factor").value;
-    const challenge=await sdk.auth.mfa.challenge({factorId});
-    if(challenge.error) throw new Error(challenge.error.message);
-    const verified=await sdk.auth.mfa.verify({factorId,challengeId:challenge.data.id,code:$("mfa-code").value});
-    $("mfa-code").value="";
-    if(verified.error) throw new Error(verified.error.code==="mfa_verification_failed" ?
-      "验证码不正确或已过期，请确认手机时间自动同步，再输入验证器当前的六位数字。" : verified.error.message);
-    $("mfa-secret").textContent=""; $("mfa-secret").hidden=true;
-    await showSession();
   });
 });
 $("draft-form").addEventListener("submit",event=>{
