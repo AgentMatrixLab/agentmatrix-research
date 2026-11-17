@@ -1,0 +1,20 @@
+name: Factor Lab Pages Sync Checks
+on:
+  pull_request:
+    paths:
+      - "pages/factor-lab-dashboard/**"
+      - "tests/factor-lab-pages-sync.cjs"
+      - ".github/workflows/factor-lab-pages-sync.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  pages-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: node --check pages/factor-lab-dashboard/app.js
+      - run: node tests/factor-lab-pages-sync.cjs

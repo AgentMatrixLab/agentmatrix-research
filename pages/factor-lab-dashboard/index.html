@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <!--
   本次修改点：
   1. 调整左侧导航展示顺序为：因子监控 → 因子库 → 策略看板 → 任务监控 → 设置。
@@ -12,7 +12,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Factor Lab 因子库</title>
-    <link rel="stylesheet" href="./styles.css?v=20260825-factor-strategy-trace" />
+    <link rel="stylesheet" href="./styles.css?v=20261102-strategy-board" />
   </head>
   <body class="auth-locked">
     <section id="loginView" class="login-view" aria-label="登录">
@@ -21,18 +21,18 @@
           <img src="./assets/factor-lab-logo.png" alt="" />
           <div>
             <strong>Factor Lab</strong>
-            <span>公司内部研究面板</span>
+            <span>因子研究平台</span>
           </div>
         </div>
         <form id="loginForm" class="login-form">
           <label>
             访问密码
-            <input id="loginPassword" type="password" autocomplete="current-password" placeholder="请输入公司访问密码" />
+            <input id="loginPassword" type="password" autocomplete="current-password" placeholder="请输入访问密码" />
           </label>
           <button type="submit">登录</button>
           <p id="loginError" class="login-error" aria-live="polite"></p>
         </form>
-        <p class="login-note">GitHub Pages 仅做前端门禁和只读展示；真实数据权限仍由 Supabase RLS / 后端控制。</p>
+        <p class="login-note">数据由本平台自建服务提供，访问范围按交付约定授权。</p>
       </div>
     </section>
     <div class="app-shell">
@@ -53,6 +53,10 @@
           <button class="nav-item" type="button" data-view="library">
             <span class="nav-icon">⌁</span>
             <span>因子库</span>
+          </button>
+          <button class="nav-item" type="button" data-view="strategy-board">
+            <span class="nav-icon">▤</span>
+            <span>策略看板</span>
           </button>
           <div class="nav-group quant-desk-nav-group" id="quantDeskNavGroup">
             <button class="nav-item" type="button" data-view="quant-desk">
@@ -95,8 +99,8 @@
           <div class="page-heading">
             <h1 id="pageTitle">因子监控</h1>
             <span class="divider"></span>
-            <span id="localStatus" class="status-pill status-warn">本地 Flask：检测中</span>
-            <span id="cloudStatus" class="status-pill status-warn">云端信息库：未同步</span>
+            <span id="localStatus" class="status-pill status-warn">数据服务：检测中</span>
+            <span id="cloudStatus" class="status-pill status-warn">数据源：检测中</span>
             <span id="quantStatus" class="status-pill status-warn">Quant API：检测中</span>
           </div>
 
@@ -110,6 +114,10 @@
             <div class="avatar" aria-label="当前用户">JD</div>
           </div>
         </header>
+
+        <!-- Data as-of banner: the panel tracks factors daily, so the client must be able
+             to see how current each artifact is instead of assuming "today". -->
+        <div id="freshnessBanner" class="freshness-banner hidden" role="status" aria-live="polite"></div>
 
         <section id="libraryView" class="content hidden">
           <section class="library-head">
@@ -158,13 +166,13 @@
             <div class="toolbar-left">
               <span class="toolbar-label">快速筛选：</span>
               <label class="inline-toggle"><input id="usableOnlyToggle" type="checkbox" />只看可用因子</label>
-              <select id="proofFilter">
+              <select id="proofFilter" class="legacy-only">
                 <option value="all">复现状态：全部</option>
                 <option value="passed">复现状态：已通过</option>
                 <option value="failed">复现状态：失败</option>
                 <option value="missing">复现状态：缺失</option>
               </select>
-              <select id="truthFilter">
+              <select id="truthFilter" class="legacy-only">
                 <option value="all">真值校验：全部</option>
                 <option value="exact_match">真值校验：完全匹配</option>
                 <option value="mismatch">真值校验：不匹配</option>
@@ -174,13 +182,13 @@
                 <option value="empty_compare">真值校验：对照异常</option>
                 <option value="missing">真值校验：缺失</option>
               </select>
-              <select id="reuseFilter">
+              <select id="reuseFilter" class="legacy-only">
                 <option value="all">复用建议：全部</option>
                 <option value="reusable">复用建议：可复用</option>
                 <option value="rerun">复用建议：建议重跑</option>
                 <option value="missing">复用建议：未复现</option>
               </select>
-              <select id="comparisonFilter">
+              <select id="comparisonFilter" class="legacy-only">
                 <option value="all">因子对照：全部</option>
                 <option value="matched">因子对照：已对照</option>
                 <option value="review">因子对照：需复核</option>
@@ -213,15 +221,19 @@
                     <th>大类</th>
                     <th>子类因子</th>
                     <th>方向</th>
-                    <th>因子对照</th>
-                    <th>复现状态</th>
-                    <th>真值校验</th>
+                    <th class="legacy-only">因子对照</th>
+                    <th class="legacy-only">复现状态</th>
+                    <th class="legacy-only">真值校验</th>
                     <th class="number sortable" data-sort="coverage_ratio">覆盖率</th>
                     <th class="number sortable" data-sort="rank_ic_mean">IC均值</th>
                     <th class="number sortable" data-sort="rank_ic_ir">IR均值</th>
-                    <th class="number sortable" data-sort="long_short_mean">多空均值</th>
-                    <th>最近校验时间</th>
-                    <th>复用建议</th>
+                    <th class="number sortable" data-sort="perf_long_annualized" title="多头展示组合（TopN 等权）年化收益；可投资口径，含市场 beta">多头年化</th>
+                    <th class="number sortable" data-sort="perf_long_excess_annualized" title="多头展示组合相对全市场等权基准的年化超额">多头超额</th>
+                    <th class="number sortable" data-sort="perf_last_1m_return" title="多头展示组合最近 1 个月收益">近1月</th>
+                    <th class="number sortable" data-sort="perf_research_spread_annualized" title="研究口径多空（Top20% − Bottom20%，毛收益）；A 股不能直接做空，仅用于比较因子纯度">研究多空</th>
+                    <th class="number sortable legacy-only" data-sort="long_short_mean">多空均值</th>
+                    <th class="legacy-only">最近校验时间</th>
+                    <th class="legacy-only">复用建议</th>
                   </tr>
                 </thead>
                 <tbody id="factorTableBody"></tbody>
@@ -329,6 +341,46 @@
           ></iframe>
         </section>
 
+        <section id="strategyBoardView" class="content strategy-board-view hidden" aria-label="策略看板">
+          <section class="monitor-head">
+            <div>
+              <h2>策略看板</h2>
+              <p>策略实例按年化收益降序排列，夏普比率与最大回撤同列展示；点击任一行查看净值与回撤曲线。策略是组合层结果，不是因子验证结论。</p>
+            </div>
+            <div class="monitor-note">
+              <strong>口径</strong>
+              <span>默认区间为样本外起（2023-01-03），成本按页面参数扣减；单因子与多因子策略都登记在这里，单因子的信号证据仍在因子库。</span>
+            </div>
+          </section>
+
+          <section id="strategyStats" class="monitor-stats" aria-label="策略统计"></section>
+
+          <section class="table-card strategy-table-card" aria-label="策略收益排行榜">
+            <header class="table-card-head">
+              <strong>策略收益排行榜</strong>
+              <span>默认按年化收益降序 · 点表头可切换年化 / 夏普 / 回撤排序</span>
+            </header>
+            <div class="table-scroll">
+              <table class="strategy-table">
+                <thead>
+                  <tr>
+                    <th class="strategy-sortable" data-strategy-sort="name">策略名称</th>
+                    <th>成分因子</th>
+                    <th>股票池</th>
+                    <th>调仓 / 成本</th>
+                    <th class="number strategy-sortable" data-strategy-sort="annualReturn">年化收益</th>
+                    <th class="number strategy-sortable" data-strategy-sort="sharpe">夏普比率</th>
+                    <th class="number strategy-sortable" data-strategy-sort="maxDrawdown">最大回撤</th>
+                    <th>状态</th>
+                    <th>更新日期</th>
+                  </tr>
+                </thead>
+                <tbody id="strategyTableBody"></tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+
         <section id="strategyBuilderView" class="content strategy-builder-view hidden" aria-label="策略构建页"></section>
 
         <section id="taskView" class="content task-view hidden" aria-label="任务监控">
@@ -389,8 +441,11 @@
         </footer>
       </main>
     </div>
-    <script src="./config.js?v=20260722-truth-summary-row-fix"></script>
-    <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
-    <script src="./app.js?v=20260825-factor-strategy-trace"></script>
+    <script src="./config.js?v=20261117-server-sync"></script>
+    <!-- Vendored rather than loaded from a public CDN: jsdelivr is intermittent in
+         mainland China, and a failed load leaves the charts silently blank. Apache-2.0,
+         version 5.5.1, committed under assets/. -->
+    <script src="./assets/echarts.min.js"></script>
+    <script src="./app.js?v=20261117-server-sync"></script>
   </body>
 </html>
