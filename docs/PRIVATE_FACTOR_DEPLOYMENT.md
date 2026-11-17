@@ -9,6 +9,20 @@
 - 私有提交界面使用独立`private-config.js`，不继承旧面板的共享密码或服务配置。
 - 私有数据库增量迁移包含RLS、事务RPC、私有附件、冻结及独立审核，已应用于新项目。此次登录修复不更改数据库权限。
 
+## 2026-11-17 临时密码登录
+
+用户明确确认暂时采用“已验证邮箱＋独立密码”，取消本工作区强制MFA。此节取代下面历史记录中的管理员MFA要求，不等于邮件OTP已经上线。
+
+- 新迁移`202611170001_private_factor_password_only.sql`只替换`pf_member`及`pf_admin`，服务端检查`auth.users.email_confirmed_at`、有效成员及受控管理员角色。作者隔离、冻结和禁止自审不变。
+- 页面移除TOTP设置与验证控件，不调用MFA API；密码设置和邮件恢复入口保留。
+- 不更改全项目Auth配置，不删除已有验证器绑定，不代改用户密码；其他应用不由本工作区决定登录规则。
+- 本地新迁移40项数据库检查、30项浏览器断言、客户端与DOM测试及3项部署检查通过。旧迁移仍单独测试其历史MFA行为。
+- 服务器真实临时账号验证密码管理员aal1可访问，未确认邮箱管理员不可访问；作者、其他协作者和匿名Storage隔离仍成立。刷新、退出及无验证器页面通过。
+- 权限撤销测试使用无缓存独立请求。已下载或缓存的内容不能被追溯撤回，本次不保证缓存即时撤销。
+- 真实用户检查到已有已确认邮箱、已设置密码和有效管理员角色，但测试账号成功不代表用户本人已经完成本轮登录。
+
+新迁移必须最后应用，不能只重新运行旧初始迁移，否则会恢复旧MFA要求。
+
 ## 2026-11-16 登录验收
 
 当前项目为 `wcexkmmpqmaqwiywntnc.supabase.co`。公开注册关闭，私有界面只使用 publishable key。旧项目不可解析的记录仅为历史状态，不再代表当前服务。
@@ -37,7 +51,7 @@ GitHub Pages门户：`https://agentmatrixlab.github.io/agentmatrix-research/`。
 
 服务器保留原研究站点`https://factor.liangjun.net.cn/factor-lab/`，新增备用工作区目录`/factor-lab/workspace/`，内容与本次Pages目录来自同一发布包。不覆盖原研究页面、配置、共享密码或API。
 
-不同站点使用同一账号和后端，但浏览器会话不自动跨域共享，两个域名分别登录及完成MFA。
+不同站点使用同一账号和后端，但浏览器会话不自动跨域共享，两个域名分别密码登录；当前无需TOTP。
 
 ## Nginx模块类型
 
@@ -66,6 +80,7 @@ python -B -X utf8 -m pytest tests/test_private_entry_deployment.py -q -p no:cach
 node tests/private-factor-client.cjs
 node tests/private-factor-panel.cjs "$env:TEMP/amx-private-pg-tests/node_modules/linkedom"
 node tests/private-factor-db.cjs "$env:TEMP/amx-private-pg-tests/node_modules/@electric-sql/pglite" supabase/migrations/202611150001_private_factor_submissions.sql
+node tests/private-factor-db.cjs "$env:TEMP/amx-private-pg-tests/node_modules/@electric-sql/pglite" supabase/migrations/202611150001_private_factor_submissions.sql supabase/migrations/202611170001_private_factor_password_only.sql
 node tests/private-factor-auth-browser.cjs "$env:TEMP/amx-private-pg-tests/node_modules/playwright"
 ```
 

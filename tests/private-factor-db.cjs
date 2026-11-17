@@ -15,7 +15,7 @@ const assert = require("node:assert/strict");
     create role service_role bypassrls;
     create schema auth;
     create schema storage;
-    create table auth.users(id uuid primary key);
+    create table auth.users(id uuid primary key, email_confirmed_at timestamptz default now());
     create function auth.uid() returns uuid language sql stable as
       $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;
     create function auth.jwt() returns jsonb language sql stable as
@@ -28,12 +28,18 @@ const assert = require("node:assert/strict");
       name text,metadata jsonb,primary key(bucket_id,name));
     alter table storage.objects enable row level security;
     grant select,insert,update,delete on storage.objects to authenticated;
-    insert into auth.users values('${A}'),('${B}'),('${ADMIN}');
+    insert into auth.users(id) values('${A}'),('${B}'),('${ADMIN}');
   `);
   const sql = fs.readFileSync(process.argv[3], "utf8");
   await db.exec(sql);
   // Reapplication must preserve records and remain idempotent.
   await db.exec(sql);
+  const passwordOnly = !!process.argv[4];
+  if(passwordOnly) {
+    const incremental=fs.readFileSync(process.argv[4],"utf8");
+    await db.exec(incremental);
+    await db.exec(incremental);
+  }
   await db.exec(`insert into public.pf_members(user_id,role) values
     ('${A}','collaborator'),('${B}','collaborator'),('${ADMIN}','admin')`);
   async function user(id, aal = "aal1") {
@@ -88,8 +94,21 @@ const assert = require("node:assert/strict");
   assert.equal((await db.query("select * from storage.objects")).rows.length,0); checks++;
   assert.equal((await db.query("select * from public.pf_audit")).rows.length,0); checks++;
   await user(ADMIN);
-  assert.equal((await db.query("select * from public.pf_submissions")).rows.length,0); checks++;
-  await denied("select public.pf_begin_review($1)",[id]);
+  if(passwordOnly) {
+    assert.equal((await db.query("select * from public.pf_submissions")).rows.length,1); checks++;
+    await db.exec("reset role");
+    await db.query("update auth.users set email_confirmed_at=null where id=$1",[ADMIN]);
+    await user(ADMIN,"aal2");
+    assert.equal((await db.query("select public.pf_admin() as allowed")).rows[0].allowed,false); checks++;
+    await denied("select public.pf_begin_review($1)",[id]);
+    await db.exec("reset role");
+    await db.query("update auth.users set email_confirmed_at=now() where id=$1",[ADMIN]);
+    await user(ADMIN);
+    await db.query("select public.pf_begin_review($1)",[id]);
+  } else {
+    assert.equal((await db.query("select * from public.pf_submissions")).rows.length,0); checks++;
+    await denied("select public.pf_begin_review($1)",[id]);
+  }
   await user(ADMIN,"aal2");
   assert.equal((await db.query("select * from public.pf_submissions")).rows.length,1); checks++;
   await db.query("select public.pf_begin_review($1)",[id]);

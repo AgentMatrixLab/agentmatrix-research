@@ -29,12 +29,14 @@ jobs:
       - name: Install browser for real SDK login regressions
         run: node "$RUNNER_TEMP/private-factor-tests/node_modules/playwright/cli.js" install --with-deps chromium
       - name: Execute owner isolation and independent review transactions
-        run: node tests/private-factor-db.cjs "$RUNNER_TEMP/private-factor-tests/node_modules/@electric-sql/pglite" supabase/migrations/202611150001_private_factor_submissions.sql
+        run: |
+          node tests/private-factor-db.cjs "$RUNNER_TEMP/private-factor-tests/node_modules/@electric-sql/pglite" supabase/migrations/202611150001_private_factor_submissions.sql
+          node tests/private-factor-db.cjs "$RUNNER_TEMP/private-factor-tests/node_modules/@electric-sql/pglite" supabase/migrations/202611150001_private_factor_submissions.sql supabase/migrations/202611170001_private_factor_password_only.sql
       - name: Execute client and DOM checks
         run: |
           node tests/private-factor-client.cjs
           node tests/private-factor-panel.cjs "$RUNNER_TEMP/private-factor-tests/node_modules/linkedom"
-      - name: Execute browser authentication and MFA regressions
+      - name: Execute browser authentication and password recovery regressions
         run: node tests/private-factor-auth-browser.cjs "$RUNNER_TEMP/private-factor-tests/node_modules/playwright"
       - name: Verify explicit deployment gate and unchanged legacy login
         run: python -m pytest tests/test_private_entry_deployment.py -q -p no:cacheprovider --noconftest

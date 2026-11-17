@@ -18,10 +18,8 @@
 <section class="panel" id="login-panel"><h1>登录私有工作区</h1><p>请使用管理员邀请的邮箱账号，没有公开注册入口。</p>
 <form id="login-form"><label>邮箱<input id="email" type="email" autocomplete="username" required></label><label>独立密码<input id="password" type="password" autocomplete="current-password" required></label><button class="primary">登录</button><button type="button" id="recover-password">首次设置／找回密码</button></form></section>
 <section class="panel" id="account-panel" hidden><div class="row"><h2 id="identity">账号</h2><button id="refresh">刷新私有记录</button></div>
-<details id="account-setup"><summary>账号设置与二次验证</summary><p>首次使用：点击“添加TOTP验证器”，在 Microsoft Authenticator 或 Google Authenticator 中手动添加下方密钥，再输入生成的六位验证码。已绑定验证器的管理员直接输入验证码，无需重新设置密码。请勿外发密钥。</p>
+<details id="account-setup"><summary>设置或更改密码</summary>
 <form id="password-form"><label>设置或更改独立密码<input id="new-password" type="password" minlength="12" autocomplete="new-password" required></label><button>设置密码</button></form>
-<button id="enroll-mfa">添加TOTP验证器</button><pre id="mfa-secret" hidden></pre>
-<form id="mfa-form"><label>验证器<select id="mfa-factor"></select></label><label>六位验证码<input id="mfa-code" inputmode="numeric" pattern="[0-9]{6}" autocomplete="one-time-code" required></label><button>二次验证</button></form>
 </details></section>
 <div id="workspace" hidden>
 <section class="panel"><h2 id="list-title">我的提交</h2><label>搜索当前可访问记录<input id="search" type="search" placeholder="名称／因子ID／状态"></label><div class="scroll"><table><thead><tr><th>因子／版本</th><th>验证阶段</th><th>审核状态</th><th>操作</th></tr></thead><tbody id="submission-list"></tbody></table></div></section>
@@ -52,4 +50,4 @@
 <label>入库证明JSON：全部门禁、独立节点及证据引用<textarea id="attestation">{}</textarea></label>
 <button id="review" class="primary">保存独立审核决定</button></div>
 </section></div></div>
-</main><script type="module" src="./submissions.js?v=20261116b"></script></body></html>
+</main><script type="module" src="./submissions.js?v=20261117password"></script></body></html>
