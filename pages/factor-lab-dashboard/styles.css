@@ -4145,4 +4145,494 @@ code {
 .truth-execution-panel header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
 .truth-metric-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 6px 16px; font-size: 13px; }
 
+/* A failed strategy run shows this instead of invented numbers. */
+.builder-result-error { border-color: #e6b8b8; background: #fff7f7; }
+.builder-result-error .builder-error-title {
+  font-weight: 700;
+  color: #b42318;
+  margin-bottom: 6px;
+}
+.builder-result-error p { margin: 6px 0; font-size: 13px; color: #4b5563; }
+.builder-result-error ul { margin: 8px 0 8px 18px; font-size: 12px; color: #6b7280; }
+.builder-result-error code {
+  background: #f3f4f6;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+.builder-error-hint { color: #6b7280; }
 
+/* ── Delivery evidence card (real eight-gate numbers) ─────────────── */
+.delivery-evidence {
+  margin: 14px 0 18px;
+  padding: 16px 18px;
+  border: 1px solid #d7e3f4;
+  border-radius: 12px;
+  background: #f8fbff;
+}
+.delivery-evidence > header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.delivery-evidence h3 { margin: 0; font-size: 15px; }
+.delivery-evidence h4 {
+  margin: 14px 0 6px;
+  font-size: 12.5px;
+  color: #6b7280;
+  letter-spacing: 0.4px;
+}
+.delivery-badge-ok { color: #047857; border-color: #10b981; }
+.delivery-badge-bad { color: #b42318; border-color: #ef4444; }
+.delivery-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.delivery-table th {
+  text-align: left;
+  color: #6b7280;
+  font-weight: 600;
+  padding: 5px 6px;
+  border-bottom: 1px solid #dbe6f5;
+}
+.delivery-table td { padding: 5px 6px; border-bottom: 1px solid #eef4fc; vertical-align: top; }
+.delivery-mono { font-family: var(--mono, ui-monospace, monospace); font-size: 11.8px; }
+.delivery-mono.muted { color: #9aa4b2; }
+.delivery-ok { color: #047857; font-weight: 600; }
+.delivery-bad { color: #b42318; font-weight: 600; }
+.delivery-kv {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 6px 18px;
+  font-size: 12.5px;
+  margin: 0;
+}
+.delivery-kv > div { display: flex; justify-content: space-between; gap: 10px; }
+.delivery-kv dt { color: #6b7280; }
+.delivery-kv dd { margin: 0; text-align: right; }
+.delivery-empty {
+  font-size: 12.8px;
+  color: #4b5563;
+  padding: 10px 12px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 8px;
+  margin: 0;
+}
+.delivery-reason {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 11.8px;
+  background: #fff7f7;
+  border: 1px solid #f0c9c9;
+  border-radius: 8px;
+  padding: 8px 10px;
+  color: #7f1d1d;
+  word-break: break-all;
+}
+.delivery-note { font-size: 11.5px; color: #6b7280; margin: 10px 0 0; }
+.delivery-note code { background: #eef2f7; padding: 1px 5px; border-radius: 4px; }
+.delivery-chart { width: 100%; height: auto; display: block; margin: 6px 0 2px; }
+/* Data as-of banner: quiet when current, loud when the pipeline has stopped. */
+.freshness-banner {
+  display: flex; flex-wrap: wrap; gap: 16px; align-items: center;
+  padding: 9px 18px; margin: 0; border-bottom: 1px solid #e2e8f0;
+  background: #f8fafc; font-size: 12.5px; color: #475569;
+}
+.freshness-banner.is-stale { background: #fef2f2; border-bottom-color: #fecaca; color: #991b1b; }
+.freshness-banner strong { color: #0f172a; }
+.freshness-banner.is-stale strong { color: #991b1b; }
+.freshness-banner .freshness-item { white-space: nowrap; }
+.freshness-banner .freshness-note { color: #64748b; }
+.freshness-banner.is-stale .freshness-note { color: #b91c1c; }
+/* A fit can legitimately take 10-30s; an unexplained pause reads as a hang. */
+.builder-result-running {
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 18px 20px; border: 1px solid #bfdbfe; border-radius: 10px;
+  background: #eff6ff; color: #1e3a8a; font-size: 13px;
+}
+.builder-result-running strong { font-size: 14px; }
+.builder-result-running span { color: #3b6ba5; }
+
+
+
+/* ---------------------------------------------------------------------------
+   Dark theme.
+   `applyTheme()` has always set body[data-theme="dark"]; until now no selector read
+   it, so the toggle changed only its own label. The palette below overrides the same
+   variables :root defines, and `color-scheme` lets form controls and scrollbars follow.
+   --------------------------------------------------------------------------- */
+body[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0e1319;
+  --surface: #161c23;
+  --surface-soft: #1b222a;
+  --line: #2a323c;
+  --line-strong: #3a4450;
+  --text: #e6edf3;
+  --muted: #8b98a5;
+  --primary: #6cb6ff;
+  --primary-soft: #16283c;
+  --green: #4ac26b;
+  --green-bg: #10261a;
+  --red: #ff7b72;
+  --red-bg: #2c1618;
+  --orange: #e3a008;
+  --orange-bg: #2a2113;
+  --gray-bg: #1b222a;
+  --shadow: 0 12px 36px rgba(0, 0, 0, 0.5);
+}
+
+/* Surfaces that hardcode white rather than using --surface. */
+body[data-theme="dark"] .login-card,
+body[data-theme="dark"] .card,
+body[data-theme="dark"] .table-card,
+body[data-theme="dark"] .panel,
+body[data-theme="dark"] .drawer,
+body[data-theme="dark"] .modal,
+body[data-theme="dark"] .info-strip,
+body[data-theme="dark"] .artifact-alert,
+body[data-theme="dark"] .empty-state,
+body[data-theme="dark"] .chart-placeholder,
+body[data-theme="dark"] .settings-page-panel,
+body[data-theme="dark"] .agent-task-card {
+  background: var(--surface);
+  border-color: var(--line);
+}
+
+/* Inputs and chips that hardcode white or near-white. */
+body[data-theme="dark"] input,
+body[data-theme="dark"] select,
+body[data-theme="dark"] textarea,
+body[data-theme="dark"] .search input,
+body[data-theme="dark"] .hint-chip,
+body[data-theme="dark"] .market-chip,
+body[data-theme="dark"] .toggle-btn,
+body[data-theme="dark"] .factor-table th {
+  background: var(--surface-soft);
+  color: var(--text);
+  border-color: var(--line);
+}
+
+body[data-theme="dark"] .factor-table tr:hover td {
+  background: var(--surface-soft);
+}
+
+/* The sidebar and header sit above the page background. */
+body[data-theme="dark"] .sidebar,
+body[data-theme="dark"] .topbar,
+body[data-theme="dark"] .app-header {
+  background: var(--surface);
+  border-color: var(--line);
+}
+
+/* dark pass 2: components that set their own background instead of using a variable */
+body[data-theme="dark"] .monitor-note,
+body[data-theme="dark"] .freshness-banner,
+body[data-theme="dark"] .info-strip,
+body[data-theme="dark"] .boundary-card,
+body[data-theme="dark"] .monitor-head,
+body[data-theme="dark"] .toolbar,
+body[data-theme="dark"] .monitor-toolbar,
+body[data-theme="dark"] .selection-bar {
+  background: var(--surface-soft);
+  color: var(--text);
+  border-color: var(--line);
+}
+
+body[data-theme="dark"] th,
+body[data-theme="dark"] .factor-table th,
+body[data-theme="dark"] .monitor-table th,
+body[data-theme="dark"] thead th {
+  background: var(--surface-soft);
+  color: var(--muted);
+  border-color: var(--line);
+}
+
+body[data-theme="dark"] td,
+body[data-theme="dark"] .factor-table td {
+  border-color: var(--line);
+  color: var(--text);
+}
+
+body[data-theme="dark"] .nav-item.active,
+body[data-theme="dark"] .nav-item:hover {
+  background: var(--primary-soft);
+  color: var(--text);
+}
+
+body[data-theme="dark"] .tab,
+body[data-theme="dark"] .market-filter,
+body[data-theme="dark"] .monitor-filter,
+body[data-theme="dark"] .toggle-btn {
+  background: var(--surface-soft);
+  color: var(--muted);
+  border-color: var(--line);
+}
+
+/* The accent colour stays as-is; only its foreground needs to read on dark. */
+body[data-theme="dark"] .tab.active,
+body[data-theme="dark"] .monitor-filter.active,
+body[data-theme="dark"] .primary-action {
+  background: var(--primary);
+  color: #08121e;
+  border-color: var(--primary);
+}
+
+body[data-theme="dark"] .empty-row td,
+body[data-theme="dark"] .empty-cell {
+  background: var(--surface);
+  color: var(--muted);
+}
+
+body[data-theme="dark"] .brand-mark,
+body[data-theme="dark"] .login-brand img,
+body[data-theme="dark"] .brand img {
+  background: transparent;
+}
+
+body[data-theme="dark"] hr,
+body[data-theme="dark"] .divider {
+  border-color: var(--line);
+}
+
+/* dark pass 3: pills and unclassed filter chips that still paint light */
+body[data-theme="dark"] .direction-pill,
+body[data-theme="dark"] .direction-pill.positive,
+body[data-theme="dark"] .direction-pill.negative,
+body[data-theme="dark"] .pill,
+body[data-theme="dark"] .chip,
+body[data-theme="dark"] .badge {
+  background: var(--surface-soft);
+  color: var(--text);
+  border-color: var(--line);
+}
+
+body[data-theme="dark"] .direction-pill.positive {
+  background: var(--green-bg);
+  color: var(--green);
+}
+
+body[data-theme="dark"] .direction-pill.negative {
+  background: var(--red-bg);
+  color: var(--red);
+}
+
+/* The 对照 / 方向 filter rows use bare buttons with no class. */
+body[data-theme="dark"] .monitor-filter-panel button,
+body[data-theme="dark"] .filter-group button,
+body[data-theme="dark"] [class*="filter"] > button:not([class]) {
+  background: var(--surface-soft);
+  color: var(--muted);
+  border-color: var(--line);
+}
+
+body[data-theme="dark"] .monitor-filter-panel button.active,
+body[data-theme="dark"] .filter-group button.active {
+  background: var(--primary);
+  color: #08121e;
+}
+
+/* dark pass 4: the version label under the brand */
+body[data-theme="dark"] .brand-version,
+body[data-theme="dark"] .version,
+body[data-theme="dark"] .brand small {
+  background: transparent;
+  color: var(--muted);
+}
+
+/* dark pass 5: text that kept its light-theme colour and now reads dim on dark.
+   The stat numbers are the important case — they are the first thing on the page. */
+body[data-theme="dark"] .monitor-stat strong,
+body[data-theme="dark"] .monitor-stat .stat-value,
+body[data-theme="dark"] .stat-card strong,
+body[data-theme="dark"] .stat-value,
+body[data-theme="dark"] #monitorStats strong,
+body[data-theme="dark"] #monitorStats .value {
+  color: var(--text);
+}
+
+body[data-theme="dark"] .monitor-stat,
+body[data-theme="dark"] .stat-card,
+body[data-theme="dark"] #monitorStats > * {
+  background: var(--surface);
+  border-color: var(--line);
+}
+
+body[data-theme="dark"] .freshness-banner,
+body[data-theme="dark"] .freshness-banner * {
+  color: var(--text);
+}
+
+body[data-theme="dark"] .freshness-banner .freshness-note {
+  color: var(--muted);
+}
+
+body[data-theme="dark"] h1,
+body[data-theme="dark"] h2,
+body[data-theme="dark"] h3,
+body[data-theme="dark"] strong,
+body[data-theme="dark"] b {
+  color: var(--text);
+}
+
+body[data-theme="dark"] .monitor-note,
+body[data-theme="dark"] .monitor-note * {
+  color: var(--text);
+}
+
+/* ---------------------------------------------------------------------------
+   术语解释提示（悬停显示）
+   面板上大量术语对做量化的人是常识，对采购方与刚接手的人不是。凡是词条表里有的，
+   悬停即显示解释；下面加一条虚线下划线作为「这里可以悬停」的提示。
+   --------------------------------------------------------------------------- */
+.glossary-term {
+  border-bottom: 1px dashed currentColor;
+  cursor: help;
+}
+
+.glossary-tip {
+  position: fixed;
+  z-index: 9999;
+  max-width: 420px;
+  padding: 14px 18px;
+  border-radius: 10px;
+  background: rgba(17, 24, 33, 0.97);
+  color: #eef3f8;
+  font-size: 14px;
+  line-height: 1.62;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.32);
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+.glossary-tip.hidden {
+  display: none;
+}
+
+.glossary-tip strong {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 15px;
+  color: #7cc0ff;
+}
+
+.glossary-tip span {
+  display: block;
+  color: #dfe7ef;
+}
+
+body[data-theme="dark"] .glossary-tip {
+  background: rgba(8, 12, 18, 0.98);
+  border: 1px solid var(--line);
+}
+
+/* 加载与计算中的可见状态。没有它，10 秒的服务端计算在页面上是一片空白。 */
+.loading-pill {
+  margin-left: 12px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.loading-progress { padding: 22px 4px 10px; }
+
+.loading-bar {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--gray-bg);
+  overflow: hidden;
+}
+
+.loading-bar span {
+  display: block;
+  height: 100%;
+  width: 38%;
+  border-radius: 999px;
+  background: var(--primary);
+  animation: loading-slide 1.35s ease-in-out infinite;
+}
+
+@keyframes loading-slide {
+  0%   { transform: translateX(-105%); }
+  100% { transform: translateX(275%); }
+}
+
+.loading-note {
+  margin: 14px 0 0;
+  font-size: 14px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loading-bar span { animation: none; width: 100%; opacity: .5; }
+}
+
+
+/* 综合表现前 10 名的徽标。名次是三项指标的百分位平均，不是单看某一列。 */
+.rank-badge {
+  display: inline-block;
+  margin-right: 8px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .3px;
+  vertical-align: middle;
+  background: linear-gradient(135deg, #1b6ef0, #0e8a5f);
+  color: #fff;
+}
+
+body[data-theme="dark"] .rank-badge {
+  background: linear-gradient(135deg, #6cb6ff, #4ac26b);
+  color: #08121e;
+}
+
+
+/* ---------------------------------------------------------------------------
+   旧验证流程专用的列与筛选器
+   因子对照 / 复现状态 / 真值校验 出自旧的 WQ101 真值对照流程，交付因子不走这条线，
+   因此这三列在交付数据源下恒为空。留着标记、按数据源隐藏——宁可少一列，也不要让
+   客户看到一整列「缺失」而以为我们没做事。
+   --------------------------------------------------------------------------- */
+body[data-library-source="delivery"] .legacy-only,
+body[data-library-source="delivery"] .legacy-cell {
+  display: none;
+}
+
+
+/* 持仓明细。列多且代码长，用等宽字体让代码对齐便于核对。 */
+.holdings-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.holdings-table th,
+.holdings-table td { padding: 9px 10px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+.holdings-table th { font-weight: 600; color: var(--muted); white-space: nowrap; }
+.holdings-table td.nowrap { white-space: nowrap; }
+.holdings-table code {
+  display: inline-block; margin: 1px 3px 1px 0; padding: 1px 6px;
+  border-radius: 4px; background: var(--gray-bg);
+  font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px;
+}
+.holdings-table code.buy { background: rgba(14, 138, 95, .14); color: #0e8a5f; }
+.holdings-table code.sell { background: rgba(198, 40, 40, .12); color: #c62828; }
+body[data-theme="dark"] .holdings-table code.buy { color: #4ac26b; }
+body[data-theme="dark"] .holdings-table code.sell { color: #ff8a80; }
+
+.holdings-notes { margin-top: 14px; font-size: 13px; color: var(--muted); line-height: 1.7; }
+.holdings-notes summary { cursor: pointer; font-weight: 600; }
+.holdings-notes ul { margin: 8px 0 0; padding-left: 20px; }
+
+.ghost-button {
+  margin-top: 10px; padding: 8px 18px; border-radius: 8px;
+  border: 1px solid var(--primary); background: transparent; color: var(--primary);
+  font-size: 14px; font-weight: 600; cursor: pointer;
+}
+.ghost-button:hover { background: var(--primary-soft); }
+
+/* 策略构建：逐因子权重编辑器（P1 策略面板） */
+.builder-weight-editor { margin-top: 14px; border-top: 1px dashed var(--line); padding-top: 12px; }
+.builder-weight-editor header { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; color: var(--muted); margin-bottom: 10px; }
+.builder-weight-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px 14px; }
+
+/* 因子库：研究口径多空列弱化显示，避免被读成可交易收益 */
+.perf-research { color: var(--muted); font-style: italic; }
