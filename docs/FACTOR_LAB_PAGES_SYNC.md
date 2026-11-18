@@ -47,3 +47,17 @@ add_header Strict-Transport-Security "max-age=31536000" always;
 后续页面更新应先合并仓库并发布同版资产到服务器，避免再次只改服务器。
 本次为人工同步，不宣称建立了服务器到Pages的自动定时同步。
 部署差异仅限API host和服务器本地配置；不得将服务器目录整体作为公开发布包。
+
+## 2026-11-18 重新同步
+
+用户反馈 Pages 与服务器仍不一致。核对后发现内容本身已在上一次同步中一致（app.js/styles.css 换行归一后逐字节相同），
+但线上 HTML 的资产版本号仍是 2026-11-17，且浏览器/GitHub Pages CDN 会缓存 10 分钟，容易继续看到旧构建。
+
+本次以服务器 `/var/www/factor-lab/` 当前文件为唯一来源重新导出：
+- `app.js` / `styles.css` / `assets/**` 与服务器一致（git 按文本规则归一换行）；
+- `index.html` 仅去掉服务器专用 `config.local.js` 引用，资产版本统一为 `20261118-server-sync`，
+  并加入 `<meta name="factor-lab-sync" content="20261118-server-sync">` 便于一眼确认页面构建；
+- `config.js` 保持指向 `https://factor.liangjun.net.cn`（Pages 通过服务器 API 取数，不是数据快照）。
+
+验证：`node tests/factor-lab-pages-sync.cjs` 通过；部署后用无痕 Chromium 从 Pages 源登录服务器 API，
+因子库渲染 50 行、四列因子收益与策略看板均存在，数值与服务器一致。
